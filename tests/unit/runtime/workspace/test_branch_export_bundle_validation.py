@@ -13,6 +13,7 @@ from crewplane.runtime.workspace.branch_export import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     update_state_bundle_metadata,
@@ -29,6 +30,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.branch_export_support import (
     export_record_path,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

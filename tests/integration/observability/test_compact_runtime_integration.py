@@ -36,6 +36,7 @@ from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.workflow import execute_workflow
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
+from tests.helpers.platforms import requires_tmux_support
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 from tests.integration.observability.cases import VisualizationCase
 from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
@@ -476,6 +477,7 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
         runtime.stop(RunResult(status="succeeded"))
 
 
+@requires_tmux_support
 def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

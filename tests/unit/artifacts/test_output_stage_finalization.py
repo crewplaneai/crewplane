@@ -97,10 +97,9 @@ def test_finalize_stage_namespaces_workspace_generated_files_by_task(
     assert (generated_dir / "beta" / "src" / "app.txt").read_text(
         encoding="utf-8"
     ) == "beta content"
-    assert (
-        stat.S_IMODE((generated_dir / "alpha" / "src" / "app.txt").stat().st_mode)
-        == 416
-    )
+    assert stat.S_IMODE(
+        (generated_dir / "alpha" / "src" / "app.txt").stat().st_mode
+    ) == stat.S_IMODE((alpha_workspace / "src" / "app.txt").stat().st_mode)
 
 
 def test_finalize_stage_preserves_result_when_generated_file_copy_fails(
@@ -111,22 +110,22 @@ def test_finalize_stage_preserves_result_when_generated_file_copy_fails(
     workspace = base_dir / "workspace"
     (workspace / "blocked").mkdir(parents=True)
     (workspace / "blocked" / "app.txt").write_text(
-        "blocked content",
-        encoding="utf-8",
+        "blocked content", encoding="utf-8", newline="\n"
     )
-    (workspace / "good.txt").write_text("good content", encoding="utf-8")
+    (workspace / "good.txt").write_text("good content", encoding="utf-8", newline="\n")
     stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     provider_output = stage_dir / "alpha_round1.md"
     provider_output.write_text(
         "## Generated Files\n\n- `blocked/app.txt`\n- `good.txt`\n",
         encoding="utf-8",
+        newline="\n",
     )
     snapshot = snapshot_generated_file_workspace(provider_output, workspace)
     blocking_path = (
         output.results_dir / "generated-files" / "build.node" / "alpha" / "blocked"
     )
     blocking_path.parent.mkdir(parents=True, exist_ok=True)
-    blocking_path.write_text("preserve me", encoding="utf-8")
+    blocking_path.write_text("preserve me", encoding="utf-8", newline="\n")
 
     result = output.finalize_node(
         node_artifact_request("build.node"),
@@ -169,8 +168,8 @@ def test_finalize_stage_removes_partial_generated_file_copy(tmp_path: Path) -> N
         raise OSError("disk full")
 
     with patch(
-        "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
-        side_effect=fail_after_partial_copy,
+        "crewplane.artifacts.generated_files.catalog.copy_regular_file",
+        new=fail_after_partial_copy,
     ):
         result = output.finalize_node(
             node_artifact_request("build.node"),

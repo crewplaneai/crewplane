@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from hashlib import sha256
 from pathlib import Path
+from typing import BinaryIO
 
+from crewplane.architecture.safe_file_reads import stable_file_signature
+from crewplane.architecture.safe_files import is_safe_relative_path
 from crewplane.core.file_hashing import FILE_HASH_CHUNK_BYTES
 
 from .snapshot_policy import GeneratedFileSnapshotCandidate
@@ -15,6 +20,8 @@ def copy_generated_file_snapshot_candidate(
     target: Path,
     resolved_workspace_root: Path,
 ) -> tuple[int, str]:
+    if os.name == "nt":
+        return _copy_windows_candidate(candidate, target, resolved_workspace_root)
     source_descriptor: int | None = None
     try:
         source_descriptor = _open_generated_file_snapshot_candidate(
@@ -82,6 +89,7 @@ def _open_generated_file_snapshot_directory(
 ) -> int:
     flags = (
         os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
         | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_DIRECTORY", 0)
         | getattr(os, "O_NOFOLLOW", 0)
@@ -114,6 +122,7 @@ def _open_generated_file_snapshot_source(
 ) -> int:
     flags = (
         os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
         | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_NONBLOCK", 0)
@@ -165,12 +174,18 @@ def _copy_open_generated_file_snapshot_candidate(
     candidate: GeneratedFileSnapshotCandidate,
     target: Path,
 ) -> tuple[int, str]:
+    with target.open("wb") as target_handle:
+        return _copy_snapshot_bytes(source_descriptor, candidate, target_handle)
+
+
+def _copy_snapshot_bytes(
+    source_descriptor: int,
+    candidate: GeneratedFileSnapshotCandidate,
+    target_handle: BinaryIO,
+) -> tuple[int, str]:
     digest = sha256()
     bytes_read = 0
-    with (
-        os.fdopen(source_descriptor, "rb", closefd=False) as source_handle,
-        target.open("wb") as target_handle,
-    ):
+    with os.fdopen(source_descriptor, "rb", closefd=False) as source_handle:
         for payload in iter(lambda: source_handle.read(FILE_HASH_CHUNK_BYTES), b""):
             bytes_read += len(payload)
             if bytes_read > candidate.size_bytes:
@@ -191,12 +206,69 @@ def _copy_open_generated_file_snapshot_candidate(
 def _validate_generated_file_snapshot_relative_path(
     candidate: GeneratedFileSnapshotCandidate,
 ) -> None:
-    relative_path = candidate.relative_path
-    if (
-        relative_path.is_absolute()
-        or not relative_path.parts
-        or any(part in {"", ".", ".."} for part in relative_path.parts)
-    ):
+    if not is_safe_relative_path(candidate.relative_label):
         raise RuntimeError(
             f"Generated-file snapshot source path is unsafe: {candidate.relative_label}"
         )
+
+
+def _copy_windows_candidate(
+    candidate: GeneratedFileSnapshotCandidate, target: Path, root: Path
+) -> tuple[int, str]:
+    from crewplane.architecture.safe_files_windows import (
+        delete_matching_entry,
+        open_writable_file,
+        protected_directory,
+    )
+    from crewplane.architecture.windows_file_handles import descriptor_identity
+
+    _validate_generated_file_snapshot_relative_path(candidate)
+    with protected_directory(target.parent) as parent:
+        identity: tuple[int, int] | None = None
+        try:
+            with _open_windows_snapshot_source(root, candidate) as descriptor:
+                initial = os.fstat(descriptor)
+                if (initial.st_dev, initial.st_ino, initial.st_size) != (
+                    candidate.source_device,
+                    candidate.source_inode,
+                    candidate.size_bytes,
+                ):
+                    raise RuntimeError(
+                        f"Generated-file snapshot source changed before copying: {candidate.relative_label}"
+                    )
+                with open_writable_file(target) as destination:
+                    identity = descriptor_identity(destination, target)
+                    with os.fdopen(destination, "wb", closefd=False) as stream:
+                        result = _copy_snapshot_bytes(descriptor, candidate, stream)
+                    if stable_file_signature(initial) != stable_file_signature(
+                        os.fstat(descriptor)
+                    ):
+                        raise RuntimeError(
+                            f"Generated-file snapshot source changed while copying: {candidate.relative_label}"
+                        )
+                    return result
+        except (OSError, ValueError, RuntimeError):
+            if identity is not None:
+                delete_matching_entry(parent, target.name, identity)
+            raise
+
+
+@contextmanager
+def _open_windows_snapshot_source(
+    root: Path, candidate: GeneratedFileSnapshotCandidate
+) -> Iterator[int]:
+    from contextlib import ExitStack
+
+    from crewplane.architecture.safe_files_windows import open_regular_file
+
+    with ExitStack() as handles:
+        try:
+            descriptor = handles.enter_context(
+                open_regular_file(root.joinpath(*candidate.relative_path.parts))
+            )
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                "Generated-file snapshot source changed before copying: "
+                f"{candidate.relative_label}"
+            ) from exc
+        yield descriptor

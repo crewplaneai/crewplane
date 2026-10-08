@@ -13,8 +13,11 @@ from crewplane.artifacts.workspace.state.invocations import (
     ExpectedWorkspaceInvocation,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan
 from tests.helpers.resume_validation import source_record
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("audit_round_num", [None, 1, 2])

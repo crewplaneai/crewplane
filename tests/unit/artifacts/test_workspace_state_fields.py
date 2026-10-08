@@ -9,6 +9,9 @@ from crewplane.artifacts.workspace.state.fields import (
     int_field,
     nullable_int_field,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

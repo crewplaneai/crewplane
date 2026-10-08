@@ -9,6 +9,8 @@ from crewplane.core.config import AgentConfig, Config
 from crewplane.core.workflow.models import ProviderSpec, WorkflowNode, WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def request(command=None, environment=None, **config_values) -> CliInvocationRequest:
     return CliInvocationRequest(
@@ -236,7 +238,11 @@ def test_deepseek_validation_does_not_inspect_native_settings(
     tmp_path, monkeypatch
 ) -> None:
     settings = tmp_path / "settings.yaml"
-    settings.write_text("permission:\n  defaultPreset: workspace-write\n")
+    settings.write_text(
+        "permission:\n  defaultPreset: workspace-write\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     invocation = request(
         environment={
             "DSH_HOME": str(tmp_path),

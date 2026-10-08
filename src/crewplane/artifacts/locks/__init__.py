@@ -11,7 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.core.execution_state import TerminalRunStatus
+from crewplane.core.platform import is_native_windows
 
 from ..atomic import atomic_write_json, atomic_write_json_if_absent
 from ..naming import build_lock_name, validate_run_key_name
@@ -47,6 +49,8 @@ def run_lock_activity(
         return "none"
     if not locks_root.is_dir() or locks_root.is_symlink():
         return "unverifiable"
+    if is_native_windows():
+        return "unverifiable" if any(locks_root.iterdir()) else "none"
     matched_stale = False
     for lock_dir in sorted(locks_root.iterdir()):
         if not lock_dir.is_dir() or lock_dir.is_symlink():
@@ -197,6 +201,11 @@ def acquire_same_context_lock(
             _write_new_owner(lock_dir, owner)
             return SameContextLock(lock_dir=lock_dir, owner_token=owner_token)
         except FileExistsError:
+            if is_native_windows():
+                raise ResumeLockError(
+                    f"Same-context lock already exists: {lock_dir}. "
+                    "Automatic lock recovery is unsupported on native Windows."
+                ) from None
             _recover_or_raise(
                 lock_dir,
                 state_dir,
@@ -377,9 +386,7 @@ def _new_owner(
 
 def _read_owner(lock_dir: Path) -> LockOwner | None:
     try:
-        payload = json.loads(
-            (lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
-        )
+        payload = json.loads(read_contained_bytes(lock_dir, LOCK_OWNER_FILENAME))
     except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     try:

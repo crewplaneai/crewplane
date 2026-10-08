@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.cli.workspace_cleanup_evidence_support import (
     RUN_KEY,
     collect_cleanup_evidence,
@@ -15,6 +16,8 @@ from tests.unit.cli.workspace_cleanup_evidence_support import (
     write_cleanup_claim,
     write_cleanup_evidence_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_evidence_distinguishes_no_claim_from_corrupt_run(

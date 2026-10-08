@@ -15,6 +15,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import (
     build_adapter_invocation_failure_error,
 )
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from ..activity.console import execution_console, progress_context, should_print_console
 from ..activity.telemetry import ExecutionTelemetry
@@ -118,9 +119,14 @@ def _build_invoke_callback(
                 log_file,
                 invocation_context=invocation_context,
             )
-        except InvocationFailureError:
-            raise
         except RuntimeError as exc:
+            cleanup_error = unconfirmed_process_cleanup(exc)
+            if cleanup_error is not None:
+                if cleanup_error is exc:
+                    raise
+                raise cleanup_error from None
+            if isinstance(exc, InvocationFailureError):
+                raise
             raise build_adapter_invocation_failure_error(exc, log_file) from exc
 
     return invoke

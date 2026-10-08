@@ -5,10 +5,14 @@ from pathlib import Path
 
 from tests.helpers import isolated_git as _isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_workflow_runner import (
     run_workspace_enabled_mock_e2e,
     run_workspace_real_run_rejects_non_filesystem_artifacts,
 )
+
+pytestmark = requires_workspace_support
+
 
 isolated_git = _isolated_git_support.isolated_git
 

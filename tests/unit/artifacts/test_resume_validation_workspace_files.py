@@ -21,6 +21,7 @@ from crewplane.runtime.execution.workflow.cleanup import (
 )
 from crewplane.runtime.execution.workspace_files import resolve_workspace_file
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -42,6 +43,8 @@ from tests.helpers.resume_validation import (
     write_lineage_bundle_for_payload,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 def test_validate_frontier_accepts_matching_rendered_workspace_file_descriptors(

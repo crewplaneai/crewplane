@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 from rich.console import Console
 
@@ -196,8 +197,9 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
 
 
 def test_mock_invoker_review_loop_integration_keeps_last_valid_candidate_after_invalid_round_and_drift(
-    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
+    tmp_path = tmp_path_factory.mktemp("review")
     config = _load_mock_review_config(tmp_path, FIXTURE_OUTPUT_DIR)
     workflow = WorkflowPlan(
         name="mock.review.loop.drift",

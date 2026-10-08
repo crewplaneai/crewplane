@@ -17,6 +17,7 @@ from crewplane.runtime.agent.invocation.command import (
     run_command_once,
 )
 from crewplane.runtime.agent.workspace_environment import workspace_child_environment
+from tests.helpers.platforms import requires_posix
 from tests.integration.runtime.agent.invocation_command_support import (
     command_workspace_context,
 )
@@ -235,6 +236,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         assert result.returncode == 0
         assert record_calls == 1
 
+    @requires_posix
     async def test_run_command_once_does_not_record_child_environment_when_spawn_fails(
         self,
     ) -> None:

@@ -111,17 +111,58 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  windows:
+    name: windows (${{ matrix.python-version }})
+    runs-on: windows-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: "packaging/uv-bootstrap-version.txt"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
+
+      - name: Run native Windows suite
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q
+
+      - name: Build installed-wheel fixtures
+        run: uv build
+
+      - name: Smoke-test pip installation outside checkout
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
+
+      - name: Smoke-test uv installation outside checkout
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer uv
+
   package:
     name: package
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [lint, test]
+    needs: [lint, test, windows]
     if: ${{ always() }}
     steps:
       - name: Verify required prerequisite jobs
         run: |
           test '${{ needs.lint.result }}' = 'success'
           test '${{ needs.test.result }}' = 'success'
+          test '${{ needs.windows.result }}' = 'success'
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

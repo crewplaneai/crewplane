@@ -7,7 +7,8 @@ from crewplane.architecture.ports.artifacts import (
     StageFinalizeResult,
     StageTaskSpec,
 )
-from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.architecture.safe_file_reads import read_contained_bytes
+from crewplane.artifacts.atomic import atomic_write_bytes, atomic_write_text
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..generated_files.detection import GeneratedFileReferenceDetector
@@ -166,9 +167,9 @@ class ResultWriter:
         selected_files: dict[str, Path],
     ) -> StageFinalizeResult:
         input_file = selected_files["input"]
-        atomic_write_text(
+        atomic_write_bytes(
             result_file,
-            input_file.read_text(encoding="utf-8"),
+            read_contained_bytes(input_file.parent, input_file.name),
         )
         return StageFinalizeResult(
             stage_name=stage_name,

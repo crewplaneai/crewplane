@@ -2,6 +2,9 @@ import pytest
 
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workspace.selection import selected_worktree_name
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("declarations", [(), ("primary",), ("primary", "secondary")])

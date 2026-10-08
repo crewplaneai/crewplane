@@ -6,13 +6,20 @@ from pathlib import Path
 import pytest
 
 from crewplane.core.preflight.secrets import FingerprintKeyProvider, SecretContext
+from tests.helpers.platforms import symlink_or_skip
 
 
 @pytest.mark.parametrize(
     ("kind", "message"),
     [
         ("short", "exactly 32 bytes"),
-        ("permissions", "owner-only"),
+        pytest.param(
+            "permissions",
+            "owner-only",
+            marks=pytest.mark.skipif(
+                os.name != "posix", reason="Windows fingerprint keys rely on ACLs"
+            ),
+        ),
         ("directory", "regular file"),
         ("symlink", "must not be a symlink"),
     ],
@@ -29,7 +36,7 @@ def test_existing_invalid_fingerprint_key_returns_diagnostic_without_replacement
         target = tmp_path / "external-key"
         target.write_bytes(b"s" * 32)
         target.chmod(0o600)
-        key_path.symlink_to(target)
+        symlink_or_skip(key_path, target)
     else:
         key_path.write_bytes(b"s" * (31 if kind == "short" else 32))
         key_path.chmod(0o644 if kind == "permissions" else 0o600)

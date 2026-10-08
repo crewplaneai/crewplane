@@ -20,12 +20,15 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
     workspace_config,
     workspace_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

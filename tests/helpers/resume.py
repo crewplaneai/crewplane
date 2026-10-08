@@ -102,6 +102,7 @@ def write_run_manifest(state_dir: Path, manifest: RunManifest) -> Path:
     path.write_text(
         manifest.model_dump_json(indent=2, exclude_none=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return path
 
@@ -422,6 +423,7 @@ def write_snapshot_workspace_state(
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     attach_workspace_descriptor(run_dir, plan, node.id)
     return path
@@ -432,7 +434,7 @@ def write_result(
 ) -> ArtifactDescriptor:
     path = results_dir / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(content.encode("utf-8"))
     return ArtifactDescriptor(
         kind="findings" if relative_path.endswith("-findings.md") else "output",
         relative_path=relative_path,
@@ -470,6 +472,7 @@ def write_node_state(run_dir: Path, node_state: NodeState) -> Path:
     path.write_text(
         node_state.model_dump_json(indent=2, exclude_none=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return path
 
@@ -495,6 +498,7 @@ def attach_workspace_descriptor(
     node_state_path.write_text(
         updated.model_dump_json(indent=2, exclude_none=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

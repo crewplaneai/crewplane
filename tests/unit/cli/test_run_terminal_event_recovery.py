@@ -22,6 +22,7 @@ from crewplane.core.execution_state import RunManifest, TerminalRunStatus
 from crewplane.observability import ObservabilityHub
 from crewplane.observability.events import ExecutionEvent, read_event_log
 from crewplane.observability.persistent import PersistentRunLogger
+from tests.helpers.platforms import requires_lock_recovery
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -204,6 +205,7 @@ def test_terminal_event_retry_does_not_duplicate_completed_append(
     assert coordinator.committed is True
 
 
+@requires_lock_recovery
 def test_permanent_terminal_event_failure_leaves_manifest_running(
     tmp_path: Path,
 ) -> None:
@@ -271,6 +273,7 @@ def test_permanent_terminal_event_failure_leaves_manifest_running(
         replacement.release()
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     ("status", "reason", "event_type"),
     [

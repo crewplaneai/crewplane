@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import dataclass
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from ...workspace.worktree.cache import WorktreeReuseCleanupResult
 from ..common import (
@@ -32,14 +34,24 @@ class _WorkspaceCleanupPhaseResult:
     worktree_reuse: WorktreeReuseCleanupResult
 
 
-async def _cancel_running_node_tasks(session: WorkflowExecutionSession) -> None:
+async def _cancel_running_node_tasks(
+    session: WorkflowExecutionSession,
+) -> list[Exception]:
     remaining_tasks = list(session.state.running.values())
     if not remaining_tasks:
-        return
+        return []
     for task in remaining_tasks:
         if not task.done():
             task.cancel()
-    await asyncio.gather(*remaining_tasks, return_exceptions=True)
+    errors: list[Exception] = []
+    for task in remaining_tasks:
+        try:
+            await task
+        except BaseException as exc:
+            cleanup_error = unconfirmed_process_cleanup(exc)
+            if cleanup_error is not None:
+                errors.append(cleanup_error)
+    return errors
 
 
 async def collect_workflow_postconditions(
@@ -48,7 +60,16 @@ async def collect_workflow_postconditions(
 ) -> list[Exception]:
     runtime_context = session.runtime_context
     try:
-        await _cancel_running_node_tasks(session)
+        process_errors = await _cancel_running_node_tasks(session)
+        if process_errors:
+            active_error = sys.exception()
+            evidence = ExceptionGroup(
+                "Provider cleanup was not confirmed", process_errors
+            )
+            if active_error is not None:
+                active_error.__cause__ = evidence
+            else:
+                raise evidence
         cleanup_result = await _collect_workspace_cleanup_phases(
             runtime_context,
             session.telemetry,

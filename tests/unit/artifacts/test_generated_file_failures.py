@@ -9,7 +9,6 @@ import pytest
 from crewplane.artifacts.generated_files.catalog import (
     build_generated_file_links_section,
     generated_file_links_for_content,
-    generated_file_snapshot_rejection_summary,
     snapshot_generated_file_workspace,
 )
 from crewplane.artifacts.generated_files.detection import (
@@ -24,10 +23,15 @@ from crewplane.artifacts.generated_files.paths import (
 from crewplane.artifacts.generated_files.snapshot_io import (
     copy_generated_file_snapshot_candidate,
 )
+from crewplane.artifacts.generated_files.snapshot_metadata import (
+    generated_file_snapshot_rejection_summary,
+)
 from crewplane.artifacts.generated_files.snapshot_policy import (
     GeneratedFileSnapshotPolicy,
     select_generated_file_snapshot_candidates,
 )
+from crewplane.core.platform import is_native_windows
+from tests.helpers.platforms import symlink_or_skip
 
 
 @pytest.mark.parametrize(
@@ -50,11 +54,11 @@ from crewplane.artifacts.generated_files.snapshot_policy import (
         ".crewplane-generated-file-snapshot.json",
     ],
 )
-def test_generated_file_reservations_are_case_sensitive_root_components(name) -> None:
+def test_generated_file_reservations_follow_platform_casing(name) -> None:
     assert is_reserved_workspace_path(Path(name))
     assert is_reserved_workspace_path(Path(name) / "file.txt")
     assert not is_reserved_workspace_path(Path("nested") / name)
-    assert not is_reserved_workspace_path(Path(name.upper()))
+    assert is_reserved_workspace_path(Path(name.upper())) is is_native_windows()
     assert not is_reserved_workspace_path(Path(name + "-output"))
 
 
@@ -166,15 +170,17 @@ def test_unreadable_snapshot_metadata_is_handled_without_exposing_files(
     assert generated_file_links_for_content(
         content, snapshot, tmp_path / "result.md", "draft"
     ).links == (GeneratedFileLink("report.md", report),)
-    original_read = Path.read_text
+    from crewplane.artifacts.generated_files import snapshot_metadata
 
-    def read(path: Path, *args: object, **kwargs: object) -> str:
-        if path == metadata:
+    original_read = snapshot_metadata.read_contained_bytes
+
+    def read(root: Path, relative: str) -> bytes:
+        if root / relative == metadata:
             raise OSError("metadata unavailable")
-        return original_read(path, *args, **kwargs)
+        return original_read(root, relative)
 
     with monkeypatch.context() as patch:
-        patch.setattr(Path, "read_text", read)
+        patch.setattr(snapshot_metadata, "read_contained_bytes", read)
         links = generated_file_links_for_content(
             content, snapshot, tmp_path / "result.md", "draft"
         )
@@ -393,15 +399,15 @@ def test_snapshot_publication_rejects_an_unsafe_destination_root(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     output = tmp_path / "output.md"
-    output.write_text("No generated files.")
+    output.write_text("No generated files.", encoding="utf-8", newline="\n")
     snapshot = tmp_path / "snapshots" / "output"
     snapshot.parent.mkdir()
     external = tmp_path / "external"
     external.mkdir()
     if kind == "file":
-        snapshot.write_text("peer")
+        snapshot.write_text("peer", encoding="utf-8", newline="\n")
     else:
-        snapshot.symlink_to(external, target_is_directory=True)
+        symlink_or_skip(snapshot, external, target_is_directory=True)
 
     with pytest.raises(RuntimeError, match="not a directory"):
         snapshot_generated_file_workspace(output, workspace, snapshot_root=snapshot)
@@ -420,7 +426,7 @@ def test_snapshot_revalidates_directory_created_by_competing_writer(
     generated = workspace / "report.txt"
     generated.write_bytes(b"generated output")
     output = tmp_path / "provider.md"
-    output.write_text("Created `report.txt`.", encoding="utf-8")
+    output.write_text("Created `report.txt`.", encoding="utf-8", newline="\n")
     shared = tmp_path / "shared"
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -436,7 +442,7 @@ def test_snapshot_revalidates_directory_created_by_competing_writer(
             if raced_kind == "directory":
                 original_mkdir(path)
             else:
-                path.symlink_to(outside, target_is_directory=True)
+                symlink_or_skip(path, outside, target_is_directory=True)
         original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
 
     monkeypatch.setattr(Path, "mkdir", competing_mkdir)

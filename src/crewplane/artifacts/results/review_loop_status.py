@@ -10,6 +10,7 @@ from typing import NotRequired, Protocol, TypedDict
 
 from crewplane.architecture.contracts.artifacts import build_review_audit_directory_name
 from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.core.workflow.keywords import ProviderRole
@@ -237,7 +238,7 @@ def validate_review_loop_output_set(
 
 def load_status_payload(status_path: Path) -> dict[str, object]:
     try:
-        payload = json.loads(status_path.read_text(encoding="utf-8"))
+        payload = json.loads(read_contained_bytes(status_path.parent, status_path.name))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         raise status_error(f"malformed JSON in '{status_path}'") from exc
     if not isinstance(payload, dict):
@@ -317,7 +318,7 @@ def parse_status_entry(
     output_file = resolve_status_output_file(
         stage_dir, relative_path, field_name, index
     )
-    payload = output_file.read_bytes()
+    payload = read_contained_bytes(output_file.parent, output_file.name)
     if len(payload) != size_bytes or hashlib.sha256(payload).hexdigest() != sha256:
         raise status_error(f"{field_name}[{index}] bytes do not match its descriptor")
     return ReviewLoopStatusEntry(

@@ -14,6 +14,7 @@ from crewplane.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_lineage_bundles import create_result_bundle
 from tests.helpers.workspace_service import (
     create_git_repo,
@@ -25,6 +26,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.artifacts.workspace_state_contracts_support import (
     valid_worktree_payload,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("bundle_size", [0, 42])

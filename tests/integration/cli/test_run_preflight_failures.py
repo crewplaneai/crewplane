@@ -17,6 +17,8 @@ from tests.integration.cli.cli_workflow_helpers import (
     write_basic_workflow,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class CliRunPreflightFailureTests(unittest.TestCase):
     @pytest.fixture(autouse=True)
@@ -154,8 +156,11 @@ class CliRunPreflightFailureTests(unittest.TestCase):
         stream = io.StringIO()
 
         def fail_update_run(self, run_id: str, run_key_name: str) -> None:
-            del self, run_id, run_key_name
-            raise ResumeLockError("Cannot update a lock owned by another process.")
+            del run_id, run_key_name
+            raise ResumeLockError(
+                "Cannot update a lock owned by another process: "
+                f"{self.lock_dir.as_posix()}"
+            )
 
         with cli_process_state(stream) as process_state:
             process_state.setattr(

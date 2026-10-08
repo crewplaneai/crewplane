@@ -27,6 +27,7 @@ from crewplane.runtime.execution.review_loop.types import (
     ReviewerRoundArtifact,
     ReviewLoopProgress,
 )
+from tests.helpers.platforms import symlink_or_skip
 
 
 def _reviewer_artifact(node_dir: Path) -> ReviewerRoundArtifact:
@@ -198,7 +199,7 @@ def test_status_payload_rejects_symlinked_review_output(tmp_path: Path) -> None:
     outside.write_text("outside", encoding="utf-8")
     output_file = node_dir / "exec_executor_0_round1.md"
     try:
-        output_file.symlink_to(outside)
+        symlink_or_skip(output_file, outside)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     executor = ExecutorRoundArtifact(
@@ -285,7 +286,7 @@ def test_persist_review_loop_status_rejects_symlinked_review_state_directory(
     outside.mkdir()
     review_state_dir = node_dir / "review-state"
     try:
-        review_state_dir.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(review_state_dir, outside, target_is_directory=True)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

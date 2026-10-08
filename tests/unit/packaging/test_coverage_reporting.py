@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.helpers.platforms import requires_posix
+
+pytestmark = requires_posix
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -21,10 +25,12 @@ def test_make_test_reports_coverage_in_fresh_processes(tmp_path: Path) -> None:
         '[project.scripts]\ncrewplane = "crewplane:main"\n'
         '[tool.pytest.ini_options]\naddopts = ["--disable-plugin-autoload"]\n',
         encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "crewplane.py").write_text(
         "def choose(flag):\n    if flag:\n        return 1\n    return 2\n",
         encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "test_example.py").write_text(
         "import coverage\n"
@@ -39,6 +45,7 @@ def test_make_test_reports_coverage_in_fresh_processes(tmp_path: Path) -> None:
         "    coverage.Coverage.report = forbid_reporting_in_test_process\n"
         "    coverage.Coverage.json_report = forbid_reporting_in_test_process\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     result = subprocess.run(

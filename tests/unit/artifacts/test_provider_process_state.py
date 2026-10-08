@@ -34,7 +34,7 @@ def test_provider_process_state_records_start_and_exit(tmp_path) -> None:
     started = InvocationProcessEvent(
         attempt=1,
         pid=os.getpid(),
-        process_group_id=os.getpgrp(),
+        process_group_id=os.getpgrp() if os.name == "posix" else None,
         status="started",
     )
 
@@ -56,7 +56,7 @@ def test_provider_process_state_records_start_and_exit(tmp_path) -> None:
         InvocationProcessEvent(
             attempt=1,
             pid=os.getpid(),
-            process_group_id=os.getpgrp(),
+            process_group_id=os.getpgrp() if os.name == "posix" else None,
             status="exited",
             returncode=0,
         ),

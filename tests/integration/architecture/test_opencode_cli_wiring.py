@@ -1,6 +1,7 @@
 import asyncio
 import io
 
+import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import CommandResult
@@ -13,6 +14,7 @@ from tests.helpers.observability import topology_from_workflow
 from tests.helpers.opencode import fixture_text
 
 
+@pytest.mark.usefixtures("posix_cli_plans")
 def test_existing_cli_composition_uses_opencode_and_generic_formatter(
     tmp_path, monkeypatch
 ):
@@ -50,9 +52,9 @@ def test_existing_cli_composition_uses_opencode_and_generic_formatter(
     output = tmp_path / "answer.md"
     asyncio.run(components.base_invoker.invoke(agent, None, "prompt", output, tmp_path))
     assert calls[0][1:] == ["run", "--format", "json", "--dir", str(tmp_path)]
-    assert output.read_text() == "Answer λ\n"
+    assert output.read_text(encoding="utf-8") == "Answer λ\n"
     log = tmp_path / "events.log"
-    log.write_text(fixture_text())
+    log.write_text(fixture_text(), encoding="utf-8", newline="\n")
     snapshot = format_log_file(log, descriptor, line_budget=50)
     assert any("Answer" in line for line in snapshot.lines)
-    assert log.read_text() == fixture_text()
+    assert log.read_text(encoding="utf-8") == fixture_text()

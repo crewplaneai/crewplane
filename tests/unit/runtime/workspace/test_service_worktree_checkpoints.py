@@ -9,6 +9,7 @@ from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -20,6 +21,8 @@ from tests.helpers.workspace_worktree_reuse import (
     three_node_lineage_plan,
     workspace_request,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_three_node_same_worktree_chain_emits_additive_state_and_bundles(

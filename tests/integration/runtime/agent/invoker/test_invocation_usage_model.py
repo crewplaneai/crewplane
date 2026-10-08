@@ -1,6 +1,10 @@
 import unittest
 
+import pytest
+
 from crewplane.runtime.agent.usage import InvocationUsage
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 class InvocationUsageModelTests(unittest.IsolatedAsyncioTestCase):

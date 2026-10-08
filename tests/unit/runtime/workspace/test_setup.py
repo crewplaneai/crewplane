@@ -35,7 +35,10 @@ from crewplane.runtime.workspace.setup import (
     run_workspace_setup,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix, requires_workspace_support
 from tests.helpers.workspace_records import WORKTREE_CONTRACT, workspace_setup_policy
+
+pytestmark = requires_workspace_support
 
 
 def test_run_workspace_setup_writes_success_metadata_and_log(tmp_path: Path) -> None:
@@ -259,6 +262,7 @@ def test_run_workspace_setup_uses_controlled_git_environment(
     assert env_payload["GIT_ALLOW_PROTOCOL"] == "https"
 
 
+@requires_posix
 def test_run_workspace_setup_uses_process_group_capability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -331,6 +335,7 @@ def test_setup_cancellation_uses_plain_process_termination_without_posix_groups(
     assert process.kill_calls == 1
 
 
+@requires_posix
 def test_setup_cancellation_uses_process_group_signals(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -380,6 +385,7 @@ def test_setup_cancellation_uses_process_group_signals(
         release_workspace_mutator(state_path)
 
 
+@requires_posix
 def test_setup_permission_denial_records_unresolved_process_drain(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -418,6 +424,7 @@ def test_setup_permission_denial_records_unresolved_process_drain(
     release_workspace_mutator(state_path)
 
 
+@requires_posix
 def test_setup_process_drain_write_failure_preserves_error_and_fence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

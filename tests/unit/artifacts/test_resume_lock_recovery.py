@@ -20,6 +20,7 @@ from crewplane.observability.events import (
     format_execution_event_log_line,
     workflow_event,
 )
+from tests.helpers.platforms import requires_lock_recovery, symlink_or_skip
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -111,6 +112,7 @@ def _write_terminal_views(
     )
 
 
+@requires_lock_recovery
 def test_stale_lock_finalizes_running_manifest_as_cancelled(tmp_path) -> None:
     stale = acquire_same_context_lock(
         tmp_path,
@@ -140,6 +142,7 @@ def test_stale_lock_finalizes_running_manifest_as_cancelled(tmp_path) -> None:
         lock.release()
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     ("status", "reason", "reason_field"),
     [
@@ -189,6 +192,7 @@ def test_stale_lock_replays_recorded_terminal_recovery(
         lock.release()
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     ("event_count", "summary_status", "unsafe_view", "fault"),
     [
@@ -234,7 +238,7 @@ def test_stale_lock_cancels_selected_outcome_without_matching_terminal_views(
         outside = tmp_path / unsafe_view
         view_path.replace(outside)
         if fault == "symlink":
-            view_path.symlink_to(outside)
+            symlink_or_skip(view_path, outside)
         elif fault == "hardlink":
             os.link(outside, view_path)
 
@@ -253,6 +257,7 @@ def test_stale_lock_cancels_selected_outcome_without_matching_terminal_views(
         lock.release()
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     ("status", "reason", "reason_field"),
     [
@@ -302,6 +307,7 @@ def test_stale_lock_replays_selected_outcome_with_matching_terminal_views(
         lock.release()
 
 
+@requires_lock_recovery
 def test_stale_lock_rejects_duplicate_matching_terminal_events(tmp_path) -> None:
     stale = acquire_same_context_lock(
         tmp_path,

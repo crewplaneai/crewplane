@@ -20,9 +20,11 @@ from crewplane.artifacts.locks.process_identity import (
     ProcessInspector,
     process_start_identity,
 )
+from tests.helpers.platforms import requires_lock_recovery, symlink_or_skip
 from tests.helpers.resume_locks import FakeProcessInspector
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize("live", [False, True])
 def test_run_activity_distinguishes_matching_locks_from_other_runs(
     tmp_path: Path, request: pytest.FixtureRequest, live: bool
@@ -34,7 +36,9 @@ def test_run_activity_distinguishes_matching_locks_from_other_runs(
     request.addfinalizer(lock.release)
     lock.update_run("run-a", "flow-run-a")
     (tmp_path / "locks" / "unrelated-file").write_bytes(b"ignored")
-    (tmp_path / "locks" / "symlink").symlink_to(lock.lock_dir, target_is_directory=True)
+    symlink_or_skip(
+        tmp_path / "locks" / "symlink", lock.lock_dir, target_is_directory=True
+    )
 
     assert run_lock_activity(tmp_path, "flow-run-a", inspector) == (
         "live" if live else "stale"
@@ -52,7 +56,7 @@ def test_unverifiable_lock_storage_is_never_reported_inactive(
     elif kind == "symlink":
         target = tmp_path / "elsewhere"
         target.mkdir()
-        root.symlink_to(target, target_is_directory=True)
+        symlink_or_skip(root, target, target_is_directory=True)
     else:
         (root / "unowned").mkdir(parents=True)
 
@@ -162,6 +166,7 @@ def test_terminal_recovery_repeated_phase_is_idempotent(
     assert path.stat().st_mtime_ns == before.st_mtime_ns
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     "field", ["owner_token", "workflow_identity", "workflow_signature"]
 )
@@ -217,6 +222,7 @@ def test_terminal_recovery_requires_an_outcome_consistent_reason(
         TerminalRecoveryIntent(phase="outcome_selected", status=status, reason=reason)
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize(
     "stat_content", ["no closing delimiter", "123 (process) S 1 2"]
 )
@@ -232,6 +238,7 @@ def test_process_start_identity_rejects_incomplete_proc_records(
     reader.assert_called_once_with("/proc/123/stat", encoding="utf-8")
 
 
+@requires_lock_recovery
 def test_process_start_identity_handles_unreadable_proc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -245,6 +252,7 @@ def test_process_start_identity_handles_unreadable_proc(
     reader.assert_called_once_with("/proc/123/stat", encoding="utf-8")
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize("kind", ["remote-host", "missing-start", "invalid-pid"])
 def test_process_liveness_never_trusts_unverifiable_identities(kind: str) -> None:
     inspector = ProcessInspector()
@@ -262,6 +270,7 @@ def test_process_liveness_never_trusts_unverifiable_identities(kind: str) -> Non
             inspector.is_live(identity)
 
 
+@requires_lock_recovery
 @pytest.mark.parametrize("kind", ["invalid", "unsupported", "permission"])
 def test_process_group_liveness_preserves_permission_and_platform_semantics(
     monkeypatch: pytest.MonkeyPatch, kind: str

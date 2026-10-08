@@ -20,6 +20,7 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointGeneratedMapping,
     CheckpointInvocation,
 )
+from tests.helpers.platforms import symlink_or_skip
 
 
 @pytest.fixture
@@ -162,20 +163,20 @@ def test_unavailable_evidence_precedes_source_json_validation(
 ) -> None:
     source = snapshot / GENERATED_FILE_SOURCE_METADATA_NAME
     metadata = snapshot / GENERATED_FILE_SNAPSHOT_METADATA_NAME
-    source.write_text("{")
+    source.write_text("{", encoding="utf-8", newline="\n")
     if damage == "source_missing":
         source.unlink()
     elif damage == "source_symlink":
         other = tmp_path / "source.json"
-        other.write_text("{")
+        other.write_text("{", encoding="utf-8", newline="\n")
         source.unlink()
-        source.symlink_to(other)
+        symlink_or_skip(source, other)
     elif damage == "snapshot_missing":
         metadata.unlink()
     elif damage == "snapshot_invalid":
-        metadata.write_text("{")
+        metadata.write_text("{", encoding="utf-8", newline="\n")
     else:
-        (snapshot / "a.txt").write_text("changed size")
+        (snapshot / "a.txt").write_text("changed size", encoding="utf-8", newline="\n")
     with pytest.raises(
         ValueError,
         match="^Checkpoint generated-file snapshot evidence is unavailable\\.$",
@@ -199,15 +200,15 @@ def test_source_read_error_propagates(
     invocation: CheckpointInvocation,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = Path.read_bytes
+    original = checkpoint_generated_files.read_contained_bytes
     error = OSError("source read failed")
 
-    def read_bytes(path: Path) -> bytes:
-        if path == snapshot / GENERATED_FILE_SOURCE_METADATA_NAME:
+    def read_bytes(root: Path, relative: str) -> bytes:
+        if root / relative == snapshot / GENERATED_FILE_SOURCE_METADATA_NAME:
             raise error
-        return original(path)
+        return original(root, relative)
 
-    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(checkpoint_generated_files, "read_contained_bytes", read_bytes)
     with pytest.raises(OSError) as caught:
         describe_generated_mapping(tmp_path, "candidate.md", snapshot, invocation)
     assert caught.value is error

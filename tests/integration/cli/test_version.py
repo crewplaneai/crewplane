@@ -31,7 +31,7 @@ def test_help_lists_global_version_option() -> None:
 
     assert result.exit_code == 0, result.output
 
-    output = unstyle(result.output)  # normalize the captured output
+    output = " ".join(unstyle(result.output).replace("│", " ").split())
 
     assert "--version" in output
     assert re.search(r"(?<![\w-])-v(?![\w-])", output) is not None

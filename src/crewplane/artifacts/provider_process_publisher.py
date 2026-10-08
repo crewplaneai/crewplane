@@ -12,6 +12,7 @@ from crewplane.architecture.ports.artifacts import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
 )
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
     ensure_contained_directory,
     is_single_link_regular_file,
@@ -183,7 +184,7 @@ class ProviderProcessPublisher:
             if not is_single_link_regular_file(state):
                 raise RuntimeError("Provider process state is not a safe file.")
             return ProviderProcessState.model_validate_json(
-                path.read_text(encoding="utf-8")
+                read_contained_bytes(path.parent, path.name)
             )
         except (OSError, RuntimeError, ValidationError) as exc:
             raise RuntimeError(

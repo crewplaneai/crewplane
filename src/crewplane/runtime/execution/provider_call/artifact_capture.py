@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.artifacts.generated_files.catalog import (
+from crewplane.artifacts.generated_files.snapshot_metadata import (
     generated_file_snapshot_rejection_summary,
 )
 from crewplane.runtime.workspace import PreparedWorkspace

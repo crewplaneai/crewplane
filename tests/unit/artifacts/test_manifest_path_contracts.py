@@ -13,6 +13,7 @@ from crewplane.artifacts.run_history import (
     RunHistoryError,
     find_same_context_runs,
 )
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -95,8 +96,8 @@ def test_manifest_path_escape_and_missing_descendant_contract(
     assert ensure_no_symlink_manifest_components(root, missing) is None
 
     linked = tmp_path / "linked"
-    linked.symlink_to(root, target_is_directory=True)
-    (root / "linked").symlink_to(tmp_path / "absent")
+    symlink_or_skip(linked, root, target_is_directory=True)
+    symlink_or_skip(root / "linked", tmp_path / "absent")
     for inspected_root, candidate in [
         (linked, linked / "missing"),
         (linked / "missing", linked / "missing" / "run.json"),
@@ -120,7 +121,7 @@ def test_manifest_consumers_keep_missing_file_inspection_order(tmp_path: Path) -
     real_run_dir = root / "real"
     real_run_dir.mkdir(parents=True)
     run_dir = root / "workflow--source"
-    run_dir.symlink_to(real_run_dir, target_is_directory=True)
+    symlink_or_skip(run_dir, real_run_dir, target_is_directory=True)
 
     assert (
         find_same_context_runs(

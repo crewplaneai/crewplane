@@ -8,6 +8,9 @@ from crewplane.artifacts.workspace.state.invocation import (
     state_invocation_slug,
 )
 from crewplane.core.workspace.invocation_identity import invocation_slug
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 MISSING = object()
 

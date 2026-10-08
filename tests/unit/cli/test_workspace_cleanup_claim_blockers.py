@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.cli.workspace_cleanup_evidence import WorkspaceCleanupEvidence
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.cli.workspace_cleanup_evidence_support import (
     REPOSITORY_ID,
     RUN_KEY,
@@ -15,6 +16,8 @@ from tests.unit.cli.workspace_cleanup_evidence_support import (
     worktree_claim_payload,
     write_cleanup_claim,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_evidence_reports_identity_status_and_contract_blockers(

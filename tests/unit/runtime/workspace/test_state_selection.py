@@ -24,6 +24,7 @@ from crewplane.runtime.workspace.state_selection import (
 from crewplane.runtime.workspace.worktree.source_refs import (
     invocation_source_ref,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.unit.runtime.workspace.state_selection_support import (
     ArtifactStore,
@@ -35,6 +36,8 @@ from tests.unit.runtime.workspace.state_selection_support import (
     write_selection_review_status,
     write_selection_state,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_required_lineage_state_uses_review_loop_canonical_output(

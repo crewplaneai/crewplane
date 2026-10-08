@@ -141,9 +141,10 @@ def workspace_export_relative_path(logical_worktree_name: str) -> Path:
 
 
 def build_generated_file_result_dir_name(name: str) -> str:
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).lstrip(".-").rstrip("-")
     if not safe_name:
         return "stage"
+    safe_name = _artifact_contracts.windows_safe_generated_name(safe_name, name)
     if len(safe_name) <= MAX_GENERATED_FILE_RESULT_DIR_CHARS:
         return safe_name
     digest = hashlib.sha256(name.encode()).hexdigest()

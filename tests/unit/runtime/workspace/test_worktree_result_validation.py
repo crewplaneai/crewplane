@@ -11,7 +11,10 @@ from crewplane.runtime.workspace.worktree.result_validation import (
     validate_portable_path_collisions,
     validate_result_tree,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import create_git_repo, run_git_text
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

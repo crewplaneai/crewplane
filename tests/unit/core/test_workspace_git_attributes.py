@@ -6,6 +6,9 @@ from crewplane.core.workspace.git_attributes import (
     attribute_records,
     byte_transforming_attribute,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

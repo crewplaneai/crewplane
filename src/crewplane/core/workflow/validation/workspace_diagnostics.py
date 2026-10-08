@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from crewplane.core.config import Config
+from crewplane.core.platform import is_native_windows
 from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
 from crewplane.core.workflow.graph import ancestor_map
 from crewplane.core.workflow.keywords import ProviderRole
@@ -16,6 +17,18 @@ DISABLED_WORKSPACE_MESSAGE = (
     "Managed worktrees require settings.workspace.enabled: true. Enable workspace "
     "isolation or remove workflow worktrees."
 )
+WINDOWS_WORKSPACE_MESSAGE = (
+    "Managed workspaces are not supported on native Windows. Set "
+    "settings.workspace.enabled: false, or use WSL for workspace isolation."
+)
+
+
+def platform_workspace_diagnostics(
+    config: Config,
+) -> tuple[WorkflowValidationDiagnostic, ...]:
+    if is_native_windows() and config.settings.workspace.enabled:
+        return (_diagnostic(WINDOWS_WORKSPACE_MESSAGE),)
+    return ()
 
 
 def repeat_force_run_workspace_diagnostics(

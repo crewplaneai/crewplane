@@ -29,6 +29,7 @@ from crewplane.runtime.workspace.snapshot_scan import (
     WorkspaceSnapshotRaceError,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.workspace_preflight import init_git_repo
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.integration.runtime.execution.review_loop_rounds_support import (
@@ -228,13 +229,14 @@ def test_invalid_generated_file_invalidates_entire_candidate(
     artifact = artifact_for(request, "Candidate body")
     generated = tmp_path / "generated"
     generated.mkdir()
-    (generated / "valid.txt").write_text("data", encoding="utf-8")
+    (generated / "valid.txt").write_text("data", encoding="utf-8", newline="\n")
     outside = tmp_path / "outside.txt"
-    outside.write_text("data", encoding="utf-8")
-    (generated / "link.txt").symlink_to(outside)
+    outside.write_text("data", encoding="utf-8", newline="\n")
+    symlink_or_skip(generated / "link.txt", outside)
     (generated / GENERATED_FILE_SNAPSHOT_METADATA_NAME).write_text(
         json.dumps({"files": [{"path": "valid.txt", "size_bytes": 4}, invalid_entry]}),
         encoding="utf-8",
+        newline="\n",
     )
     request.runtime_context.generated_file_workspaces.record(
         request.node.id, artifact.output_file, generated

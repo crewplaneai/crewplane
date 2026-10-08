@@ -14,6 +14,8 @@ from tests.helpers.opencode import (
     text_event,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def decode(*events):
     return decode_opencode_usage(CommandResult(0, stream(*events), ""))
@@ -157,11 +159,11 @@ def test_usage_reads_borrowed_capture_instead_of_inline_tail(
     tmp_path, contents, reports
 ):
     capture = tmp_path / "stdout.jsonl"
-    capture.write_text(contents)
+    capture.write_text(contents, encoding="utf-8", newline="\n")
     result = decode_opencode_usage(
         CommandResult(0, "invalid tail", "", stdout_path=capture)
     )
     assert result.valid_report_count == reports
     assert result.error is None
-    assert capture.read_text() == contents
+    assert capture.read_bytes().decode("utf-8") == contents
     assert list(tmp_path.iterdir()) == [capture]

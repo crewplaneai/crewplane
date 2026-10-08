@@ -73,7 +73,9 @@ def test_partial_generated_capture_continues_and_resumes(
     interruption: str | None,
 ) -> None:
     async def run():
-        (tmp_path / "README.md").write_text("Generated-file capture fixture.\n")
+        (tmp_path / "README.md").write_text(
+            "Generated-file capture fixture.\n", encoding="utf-8", newline="\n"
+        )
         init_git_repo(tmp_path)
         count = 101 if rejection == "file_count_limit" else 2
         generated = [tmp_path / f"built-{index:03}.txt" for index in range(count)]
@@ -114,7 +116,7 @@ def test_partial_generated_capture_continues_and_resumes(
             async def invoke(self, *args, **kwargs):
                 if not self.calls:
                     for path in generated:
-                        path.write_text(path.name)
+                        path.write_text(path.name, encoding="utf-8", newline="\n")
                 await super().invoke(*args, **kwargs)
 
         invoker = GeneratedFilesInvoker([content, review_output(verdict="NO_FINDINGS")])
@@ -217,7 +219,7 @@ def test_generated_mapping_tristate_and_absolute_claim_survive_finalization(
         origin = project if mapping_state != "snapshot" else tmp_path / "old-workspace"
         origin.mkdir(exist_ok=True)
         generated = origin / "built.txt"
-        generated.write_text("captured bytes")
+        generated.write_text("captured bytes", encoding="utf-8", newline="\n")
         output, runtime = await finalized_checkpoint(
             project, f"Created `{generated}`.\n"
         )
@@ -278,9 +280,12 @@ def test_generated_mapping_tristate_and_absolute_claim_survive_finalization(
                 copied is not None
                 and (copied / "built.txt").read_text() == "captured bytes"
             )
-            assert json.loads(
-                (copied / GENERATED_FILE_SOURCE_METADATA_NAME).read_text()
-            )["source_root"] == str(origin)
+            assert (
+                json.loads((copied / GENERATED_FILE_SOURCE_METADATA_NAME).read_text())[
+                    "source_root"
+                ]
+                == origin.as_posix()
+            )
             assert (copied / GENERATED_FILE_SNAPSHOT_METADATA_NAME).is_file()
         invoker = MockAgentInvoker([])
         await execute_node(
@@ -318,11 +323,11 @@ def test_generated_dependencies_must_remain_intact(
 ) -> None:
     async def run():
         generated = tmp_path / "built.txt"
-        generated.write_text("captured bytes")
+        generated.write_text("captured bytes", encoding="utf-8", newline="\n")
         candidates = [generated]
         if partial_capture:
             rejected = tmp_path / "rejected.txt"
-            rejected.write_text("rejected bytes")
+            rejected.write_text("rejected bytes", encoding="utf-8", newline="\n")
             candidates.append(rejected)
             monkeypatch.setattr(catalog, "MAX_GENERATED_FILE_SNAPSHOT_FILES", 1)
         output, runtime = await finalized_checkpoint(tmp_path, "Created `built.txt`.\n")
@@ -362,7 +367,7 @@ def test_generated_dependencies_must_remain_intact(
             "snapshot_metadata": GENERATED_FILE_SNAPSHOT_METADATA_NAME,
             "bytes": "built.txt",
         }[damage]
-        (snapshot / target).write_text("corrupt")
+        (snapshot / target).write_text("corrupt", encoding="utf-8", newline="\n")
         frontier = validate_resume_frontier(
             write_manifest(output, runtime, "failed"),
             runtime.plan,

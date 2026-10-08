@@ -38,6 +38,7 @@ from crewplane.core.workflow.models import (
 from crewplane.runtime.execution import execute_workflow
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
+from tests.helpers.platforms import requires_tmux_support
 
 
 def _compiled_test_plan(
@@ -405,6 +406,7 @@ class ContainerTests(unittest.TestCase):
         self.assertFalse((tmp_path / "execution-stages").exists())
         self.assertFalse((tmp_path / "execution-results").exists())
 
+    @requires_tmux_support
     def test_container_passes_default_tmux_liveness_options_to_runtime(self) -> None:
         workflow = self._build_workflow()
         config = self._build_config()
@@ -484,6 +486,7 @@ class ContainerTests(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertIn("log_cli_output=true", warnings[-1])
 
+    @requires_tmux_support
     def test_container_passes_runtime_dependencies_to_dotted_tmux_override(
         self,
     ) -> None:

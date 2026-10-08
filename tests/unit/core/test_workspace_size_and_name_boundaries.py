@@ -10,6 +10,9 @@ from crewplane.core.workspace.checkout_size import (
     estimated_working_tree_size_bytes,
 )
 from crewplane.core.workspace.policy import WorktreeDeclaration, validate_worktree_name
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

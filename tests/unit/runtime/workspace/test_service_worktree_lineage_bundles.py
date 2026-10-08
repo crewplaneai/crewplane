@@ -29,6 +29,7 @@ from crewplane.runtime.workspace.worktree.temporary_refs import (
 from crewplane.runtime.workspace.worktree.types import (
     WorktreeCaptureRequest,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_lineage_bundles import (
     create_full_bundle_chain,
     create_pruned_result_bundle,
@@ -44,6 +45,8 @@ from tests.unit.runtime.workspace.service_worktree_lineage_bundles_support impor
     import_owner_state,
     project_source_ref,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_worktree_workspace_imports_missing_bundle_source_commit(

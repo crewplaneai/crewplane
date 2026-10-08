@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from crewplane.cli.app import app
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_review import review_workflow, write_review_fixtures
 from tests.helpers.workspace_workflow_fixtures import (
     run_dirs,
@@ -24,6 +25,9 @@ from tests.helpers.workspace_workflow_runner import (
     workspace_config,
     workspace_project,
 )
+
+pytestmark = requires_workspace_support
+
 
 isolated_git = isolated_git_support.isolated_git
 

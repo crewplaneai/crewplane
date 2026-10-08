@@ -17,6 +17,7 @@ from crewplane.runtime.workspace.worktree.lineage import (
     ensure_source_commit_available,
     verify_source_commit_available,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_lineage_bundles import (
     create_full_bundle_chain,
 )
@@ -30,6 +31,8 @@ from tests.unit.runtime.workspace.service_worktree_lineage_bundles_support impor
     import_owner_state,
     project_source_ref,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_worktree_workspace_imports_depth_three_full_bundle_chain(

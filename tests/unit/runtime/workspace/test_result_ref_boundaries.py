@@ -14,6 +14,9 @@ from crewplane.runtime.workspace.worktree.ref_publication import (
     reconcile_result_ref_publication,
 )
 from crewplane.runtime.workspace.worktree.result_validation import validate_result_tree
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

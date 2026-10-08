@@ -6,6 +6,9 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import (
     rendered_workspace_file_invocation_id,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

@@ -10,6 +10,7 @@ from crewplane.artifacts.resume.validation import (
     contained_regular_file,
     validate_resume_frontier,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 from tests.helpers.resume import (
     make_node_state,
     make_plan,
@@ -22,10 +23,10 @@ from tests.helpers.resume_validation import source_record
 def test_symlink_result_is_not_reusable(tmp_path) -> None:
     source = source_record(tmp_path)
     outside = tmp_path / "outside.md"
-    outside.write_text("a output", encoding="utf-8")
+    outside.write_text("a output", encoding="utf-8", newline="\n")
     result_path = source.results_dir / "a-result.md"
     result_path.parent.mkdir(parents=True)
-    os.symlink(outside, result_path)
+    symlink_or_skip(result_path, outside)
     descriptor = write_result(tmp_path / "descriptor-source", "a-result.md", "a output")
     descriptor = descriptor.model_copy(update={"relative_path": "a-result.md"})
     write_node_state(
@@ -57,7 +58,7 @@ def test_symlink_results_root_is_not_reusable(tmp_path) -> None:
     outside_results = tmp_path / "outside-results"
     descriptor = write_result(outside_results, "a-result.md", "a output")
     source.results_dir.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(outside_results, source.results_dir, target_is_directory=True)
+    symlink_or_skip(source.results_dir, outside_results, target_is_directory=True)
     write_node_state(
         source.run_dir,
         make_node_state(source.manifest, "a", [descriptor]),
@@ -73,8 +74,8 @@ def test_symlink_results_root_parent_is_not_reusable(tmp_path) -> None:
     root = tmp_path / "execution-results" / "run"
     result = real_root / "run" / "a-result.md"
     result.parent.mkdir(parents=True)
-    result.write_text("a output", encoding="utf-8")
-    os.symlink(real_root, root.parent, target_is_directory=True)
+    result.write_text("a output", encoding="utf-8", newline="\n")
+    symlink_or_skip(root.parent, real_root, target_is_directory=True)
 
     assert contained_regular_file(root, "a-result.md") is None
 
@@ -92,7 +93,7 @@ def test_symlink_node_state_file_is_not_reusable(tmp_path) -> None:
     node_state_dir.mkdir(parents=True)
     symlink_path = node_state_dir / build_node_state_filename("a")
     try:
-        symlink_path.symlink_to(external_state_path)
+        symlink_or_skip(symlink_path, external_state_path)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -114,7 +115,8 @@ def test_symlink_node_state_directory_is_not_reusable(tmp_path) -> None:
     node_state_parent.mkdir(exist_ok=True)
     symlink_path = node_state_parent / "nodes"
     try:
-        symlink_path.symlink_to(
+        symlink_or_skip(
+            symlink_path,
             external_state_path.parent,
             target_is_directory=True,
         )
@@ -143,6 +145,7 @@ def test_hardlinked_node_state_file_is_not_reusable(tmp_path) -> None:
     assert frontier.resumed_node_ids == ()
 
 
+@requires_posix
 def test_permission_error_during_artifact_validation_fails_loudly(
     tmp_path,
     monkeypatch,

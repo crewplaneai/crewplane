@@ -184,7 +184,7 @@ class _ClaudeJsonParser:
         if self._cursor.peek() != '"':
             self._skip_value()
             raise ClaudeJsonParseError("Claude result must be a JSON string.")
-        with output_path.open("w", encoding="utf-8") as handle:
+        with output_path.open("w", encoding="utf-8", newline="") as handle:
             return self._stream_string(handle)
 
     def _read_captured_value(self) -> object | None:

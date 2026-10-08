@@ -37,12 +37,16 @@ def terminate_process_or_group(
     process: asyncio.subprocess.Process,
     process_group_id: int | None,
 ) -> None:
-    if send_process_group_signal(process_group_id, signal.SIGTERM):
+    if os.name == "posix" and send_process_group_signal(
+        process_group_id, signal.SIGTERM
+    ):
         return
     process.terminate()
 
 
 async def terminate_process_group(process_group_id: int | None) -> None:
+    if os.name != "posix":
+        return
     if not send_process_group_signal(process_group_id, signal.SIGTERM):
         return
     await asyncio_sleep(PROCESS_GROUP_TERMINATE_GRACE_SECONDS)

@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from crewplane.architecture.contracts import JsonValue
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATUS_SUCCEEDED,
@@ -200,7 +201,9 @@ def _read_node_state(source: RunHistoryRecord, node_id: str) -> NodeState | None
     if node_state_path is None:
         return None
     try:
-        payload = json.loads(node_state_path.read_text(encoding="utf-8"))
+        payload = json.loads(
+            read_contained_bytes(node_state_path.parent, node_state_path.name)
+        )
     except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     try:

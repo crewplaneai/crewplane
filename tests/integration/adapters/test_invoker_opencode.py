@@ -307,6 +307,7 @@ def test_quota_looking_successful_tool_content_does_not_retry(native_config, tmp
     assert "quota reached" in (tmp_path / "provider.log").read_text()
 
 
+@pytest.mark.usefixtures("posix_cli_plans")
 def test_cancellation_during_retry_releases_borrowed_streams(tmp_path):
     stdout, stderr = tmp_path / "stdout", tmp_path / "stderr"
     config = AgentConfig(
@@ -327,9 +328,11 @@ def test_cancellation_during_retry_releases_borrowed_streams(tmp_path):
             str(tmp_path),
         ]
         stdout.write_text(
-            stream(text_event("retry"), finish_event(tokens=native_tokens()))
+            stream(text_event("retry"), finish_event(tokens=native_tokens())),
+            encoding="utf-8",
+            newline="\n",
         )
-        stderr.write_text("diagnostic")
+        stderr.write_text("diagnostic", encoding="utf-8", newline="\n")
         result = CommandResult(0, "", "", stdout, stderr)
         assert OPENCODE.output_extractor(result, None).output_text == "retry\n"
         assert OPENCODE.usage_decoder(result).valid_report_count == 1

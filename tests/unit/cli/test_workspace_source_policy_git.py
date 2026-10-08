@@ -13,6 +13,7 @@ from tests.helpers import isolated_git as _isolated_git_support
 from tests.helpers.isolated_git import (
     run_git_text,
 )
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_source_policy import (
     git_source_context,
     workspace_source_config,
@@ -25,7 +26,7 @@ from tests.unit.cli.workspace_source_policy_git_support import (
 isolated_git = _isolated_git_support.isolated_git
 
 
-pytestmark = pytest.mark.usefixtures("isolated_git")
+pytestmark = [requires_workspace_support, pytest.mark.usefixtures("isolated_git")]
 
 
 def test_workspace_source_policy_allows_regular_policy_files_and_source_symlinks(
@@ -34,7 +35,7 @@ def test_workspace_source_policy_allows_regular_policy_files_and_source_symlinks
     create_clean_source_repo(tmp_path)
     (tmp_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
     (tmp_path / ".gitattributes").write_text("*.md diff=markdown\n", encoding="utf-8")
-    (tmp_path / "readme-link").symlink_to("README.md")
+    symlink_or_skip(tmp_path / "readme-link", "README.md")
     run_git_text(tmp_path, "add", ".")
     run_git_text(tmp_path, "commit", "-m", "record policies and source symlink")
 

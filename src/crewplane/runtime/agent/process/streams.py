@@ -139,6 +139,7 @@ async def collect_process_output(
                 await reap_failed_process(process, process_group_id, diagnostic_sink)
             except ProcessDrainError as exc:
                 cancel.add_note(str(exc))
+                cancel.__cause__ = exc
             raise
         except Exception as exc:
             await drain_async_process(process, process_group_id)

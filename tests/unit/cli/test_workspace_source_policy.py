@@ -25,6 +25,7 @@ from crewplane.core.workflow.models import (
 from crewplane.core.workspace.cache import paths_overlap
 from crewplane.core.workspace.git_policy import workspace_git_base_environment
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix, requires_workspace_support
 from tests.helpers.workspace_source_policy import (
     apply_patched_git_policy,
     git_source_context,
@@ -32,6 +33,17 @@ from tests.helpers.workspace_source_policy import (
     workspace_source_config,
     workspace_source_workflow,
 )
+
+pytestmark = requires_workspace_support
+
+
+@pytest.fixture(autouse=True)
+def posix_workspace_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy, "is_native_windows", lambda: False)
+    monkeypatch.setattr(
+        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
+        lambda: False,
+    )
 
 
 @pytest.fixture
@@ -96,6 +108,19 @@ def test_workspace_source_policy_fails_native_windows_before_git_probe(
     assert result.source_snapshot is None
     assert len(result.errors) == 1
     assert "native Windows" in result.errors[0]
+
+
+def test_windows_rejects_enabled_but_unused_workspaces(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(policy, "is_native_windows", lambda: True)
+    result = policy.collect_workspace_source_policy(
+        workspace_source_config(),
+        WorkflowPlan(name="unused", nodes=[]),
+        tmp_path,
+        tmp_path / ".crewplane",
+        False,
+    )
+    assert "settings.workspace.enabled: false" in result.errors[0]
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_workspace_source_policy_reports_git_discovery_timeout(
@@ -337,6 +362,7 @@ def test_workspace_source_policy_rejects_dangling_cache_root_symlink(
     assert any("cache root must not be a symlink" in error for error in result.errors)
 
 
+@requires_posix
 def test_executable_bit_probe_creates_empty_probe_file(tmp_path: Path) -> None:
     supported = workspace_filesystem_policy.executable_bit_supported(tmp_path)
 

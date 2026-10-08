@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
@@ -28,7 +28,7 @@ def validate_artifact_contract_uniqueness(
                 "its stage locator."
             )
         stage_parts = contract.stage_path.split("/")
-        if stage_parts[0] in RESERVED_STAGE_ROOTS:
+        if stage_parts[0].casefold() in RESERVED_STAGE_ROOTS:
             raise ValueError(
                 f"Persisted node '{plan_contract_records.node_id(node)}' uses "
                 f"reserved stage root '{stage_parts[0]}'."
@@ -80,8 +80,8 @@ def _find_overlapping_artifact(
 
 
 def _paths_overlap(left: str, right: str) -> bool:
-    left_path = Path(left)
-    right_path = Path(right)
+    left_path = PurePosixPath(left.casefold())
+    right_path = PurePosixPath(right.casefold())
     return (
         left_path == right_path
         or left_path.is_relative_to(right_path)

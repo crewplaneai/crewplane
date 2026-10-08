@@ -31,8 +31,11 @@ from crewplane.runtime.workspace.invocation import (
     workspace_state_path,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
+
+pytestmark = requires_workspace_support
 
 
 class ArtifactStore:

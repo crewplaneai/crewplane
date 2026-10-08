@@ -17,6 +17,7 @@ import crewplane.runtime.workspace.cleanup as workspace_cleanup
 from crewplane.cli.app import app
 from crewplane.cli.workspace_cleanup_evidence import WorkspaceCleanupEvidence
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     make_run_manifest,
 )
@@ -24,6 +25,8 @@ from tests.unit.cli.cleanup_support import (
     cleanup_project,
     resolve_workspace_cleanup_context,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

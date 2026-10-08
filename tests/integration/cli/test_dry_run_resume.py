@@ -13,6 +13,7 @@ import crewplane.cli.app as cli
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.architecture.errors import AdapterContractError
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_resume_support
 from tests.helpers.resume import make_node_state, write_node_state, write_result
 from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.integration.cli.dry_run_helpers import (
@@ -29,6 +30,43 @@ from tests.integration.cli.repeat_force_run_support import (
     create_project,
     filesystem_snapshot,
 )
+
+
+@pytest.mark.parametrize("command", ["validate", "dry-run"])
+def test_windows_advisory_rejects_unused_workspace_without_artifacts(
+    tmp_path, monkeypatch, command
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("crewplane.core.platform.platform.system", lambda: "Windows")
+    project = create_project(tmp_path, None, 1)
+    project.config["settings"]["workspace"]["enabled"] = True
+    project.write()
+    before = filesystem_snapshot(tmp_path)
+    result = (
+        project.run("--dry-run")
+        if command == "dry-run"
+        else CliRunner().invoke(cli.app, ["validate"])
+    )
+    assert result.exit_code == 1
+    assert "settings.workspace.enabled: false" in result.output
+    assert filesystem_snapshot(tmp_path) == before
+
+
+def test_generated_locator_collision_fails_during_artifact_free_preview(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, None, 2)
+    for node, name in zip(project.workflow["nodes"], ("con", "safe-con"), strict=True):
+        node["id"] = name
+        node["needs"] = []
+    project.prompts = {"con": "one", "safe-con": "two"}
+    project.write()
+    before = filesystem_snapshot(tmp_path)
+    result = project.run("--dry-run")
+    assert result.exit_code == 1
+    assert "overlapping" in result.output
+    assert filesystem_snapshot(tmp_path) == before
 
 
 @pytest.mark.parametrize("command", ["dry-run", "validate"])
@@ -181,6 +219,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
     def temporary_directory_root(self, tmp_path: Path) -> None:
         self.tmp_path = tmp_path
 
+    @requires_resume_support
     def test_terminal_history_reader_receives_canonical_artifact_options(
         self,
     ) -> None:
@@ -232,6 +271,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
         assert preview.static_file_payloads
         self.assertIn(b"prior result", preview.static_file_payloads.values())
 
+    @requires_resume_support
     def test_provider_prompt_reads_terminal_history(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         tmp_path = Path(tmp_dir)
@@ -315,6 +355,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
         self.assertNotIn("Resume advisory: would_skip", output_text)
         self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
+    @requires_resume_support
     def test_dry_run_advises_resume_for_valid_failed_frontier(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         tmp_path = Path(tmp_dir)
@@ -347,6 +388,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
         )
         self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
+    @requires_resume_support
     def test_dry_run_reports_resume_unavailable_for_non_filesystem_backend(
         self,
     ) -> None:

@@ -179,7 +179,9 @@ def test_stall_public_contract_publishes_before_policy_error(
     assert progress.continued_after_stop is continued
 
 
-@pytest.mark.parametrize("signature_state", ["valid", "missing", "mismatch"])
+@pytest.mark.parametrize(
+    "signature_state", ["valid", "missing", "mismatch", "source_mismatch"]
+)
 def test_seed_preserves_identity_provenance_and_publication_requirements(
     context: ReviewLoopRunContext, signature_state: str
 ) -> None:
@@ -188,6 +190,8 @@ def test_seed_preserves_identity_provenance_and_publication_requirements(
         artifact = replace(artifact, output_signature=None)
     elif signature_state == "mismatch":
         artifact = replace(artifact, content="Unpublished replacement.")
+    elif signature_state == "source_mismatch":
+        artifact.output_file.write_bytes(b"Unpublished replacement.")
     audit_dir = context.node_dir / "audit-round-2"
     audit_dir.mkdir()
     if signature_state != "valid":

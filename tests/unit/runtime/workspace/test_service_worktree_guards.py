@@ -9,6 +9,7 @@ from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import policy as worktree_policy
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -18,6 +19,8 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def supports_distinct_names(

@@ -7,6 +7,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from crewplane.architecture.safe_files import (
+    is_safe_relative_path,
+    is_windows_device_name,
+)
+
 MAX_ARTIFACT_PATH_COMPONENT_CHARS = 180
 REVIEW_AUDIT_DIRECTORY_PREFIX = "review-audit-round-"
 _STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
@@ -37,14 +42,9 @@ class ArtifactContract(BaseModel):
     def _validate_relative_locator(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        path = Path(value)
-        if (
-            not value.strip()
-            or path.is_absolute()
-            or any(part in {"", ".", ".."} for part in path.parts)
-        ):
+        if not is_safe_relative_path(value):
             raise ValueError("Artifact locators must be nonblank safe relative paths.")
-        return path.as_posix()
+        return value
 
 
 @dataclass(frozen=True)
@@ -143,6 +143,8 @@ def safe_artifact_name(name: str) -> str:
 
 
 def bounded_artifact_filename(name: str, safe_prefix: str, suffix: str) -> str:
+    if is_windows_device_name(f"{safe_prefix}{suffix}"):
+        safe_prefix = f"safe-{safe_prefix}"
     if len(f"{safe_prefix}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         return f"{safe_prefix}{suffix}"
     return bounded_artifact_name(safe_prefix, f"--{artifact_name_hash(name)}{suffix}")
@@ -151,6 +153,8 @@ def bounded_artifact_filename(name: str, safe_prefix: str, suffix: str) -> str:
 def bounded_artifact_name(safe_prefix: str, suffix: str) -> str:
     if len(suffix) >= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         raise ValueError("Generated suffix exceeds path component budget.")
+    if is_windows_device_name(f"{safe_prefix}{suffix}"):
+        safe_prefix = f"safe-{safe_prefix}"
     available = MAX_ARTIFACT_PATH_COMPONENT_CHARS - len(suffix)
     prefix = safe_prefix[:available].rstrip("-._")
     if not prefix:
@@ -165,9 +169,15 @@ def safe_stage_name(name: str) -> str:
     slug = _STAGE_PATTERN.sub("-", stripped)
     if slug in {".", ".."}:
         return "task"
-    if not slug.strip("-._"):
-        return slug
-    return slug or "task"
+    return windows_safe_generated_name(slug or "task", name)
+
+
+def windows_safe_generated_name(slug: str, original: str) -> str:
+    if slug.endswith((".", " ")):
+        slug = f"{slug.rstrip('. ') or 'task'}--{artifact_name_hash(original)}"
+    if is_windows_device_name(slug):
+        slug = f"safe-{slug}"
+    return slug
 
 
 def artifact_name_hash(value: str) -> str:

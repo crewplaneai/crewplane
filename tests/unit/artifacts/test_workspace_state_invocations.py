@@ -14,8 +14,11 @@ from crewplane.artifacts.workspace.state.invocations import (
     workspace_state_payloads_for_status,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan
 from tests.helpers.resume_validation import source_record
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("exact_match_count", [0, 1, 2])

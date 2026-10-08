@@ -3,6 +3,7 @@ from __future__ import annotations
 from crewplane.artifacts.workspace.source_validation import (
     workspace_invocation_source_matches,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan
 from tests.helpers.resume_validation import (
     attach_git_workspace_source,
@@ -10,6 +11,8 @@ from tests.helpers.resume_validation import (
     source_record,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_invocation_source_rejects_bool_round_num(tmp_path) -> None:

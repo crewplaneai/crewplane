@@ -5,11 +5,14 @@ import pytest
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.artifacts.workspace_state_contracts_support import (
     OID_C,
     OID_D,
     valid_worktree_payload,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_contract_preserves_workspace_error_order() -> None:

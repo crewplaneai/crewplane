@@ -19,10 +19,13 @@ from crewplane.runtime.execution.workspace_files import (
     resolve_project_initial_workspace_file,
     resolve_workspace_file,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.integration.runtime.execution.fragment_assembler_support import (
     FragmentArtifactStore,
     make_fragment_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_assemble_prompt_reads_project_initial_workspace_file_locator(

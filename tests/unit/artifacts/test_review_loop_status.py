@@ -12,6 +12,7 @@ from crewplane.artifacts.results.review_loop_status import (
     resolve_review_loop_status,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import symlink_or_skip
 from tests.unit.artifacts.review_loop_status_support import (
     INVALID_STATUS_CASES,
     StatusMutator,
@@ -122,7 +123,7 @@ def test_rejects_symlinked_status_artifact(tmp_path: Path) -> None:
     status_dir.mkdir()
     status_path = status_dir / "review-loop-status.json"
     try:
-        status_path.symlink_to(outside_status)
+        symlink_or_skip(status_path, outside_status)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

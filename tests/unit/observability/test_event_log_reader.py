@@ -18,6 +18,7 @@ from crewplane.observability.events import (
     read_event_log,
 )
 from crewplane.observability.run_summary.spend import provider_token_aggregates
+from tests.helpers.platforms import symlink_or_skip
 
 
 def invocation_record(report_count: object = 2) -> dict[str, object]:
@@ -320,7 +321,7 @@ def test_event_reader_returns_empty_for_missing_or_symlinked_logs(
     link_path = tmp_path / "link.ndjson"
     source_path.write_text(json.dumps(invocation_record()), encoding="utf-8")
     try:
-        link_path.symlink_to(source_path)
+        symlink_or_skip(link_path, source_path)
     except OSError:
         pytest.skip("symlinks are unavailable")
 

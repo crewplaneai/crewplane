@@ -28,6 +28,8 @@ from crewplane.runtime.execution.common import (
 from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.signature_support import build_agent_signature
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

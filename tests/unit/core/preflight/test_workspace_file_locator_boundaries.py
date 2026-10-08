@@ -12,12 +12,15 @@ from crewplane.core.workflow.models import (
 from crewplane.core.workspace import (
     git_reads as workspace_git_file_reads,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
     workspace_source_snapshot,
     workspace_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_enabled_allowlisted_absolute_file_tokens_remain_static(

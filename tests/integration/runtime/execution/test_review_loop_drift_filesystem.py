@@ -22,6 +22,7 @@ from crewplane.runtime.execution.review_loop.drift import (
 from crewplane.runtime.execution.review_loop.drift import (
     snapshots as review_loop_drift_snapshots,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 from tests.integration.runtime.execution.review_loop_drift_support import (
     make_drift_request,
 )
@@ -155,12 +156,12 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
     review_state.mkdir()
     original_mode = stat.S_IMODE(review_state.stat().st_mode)
     prior_state = review_state / "prior.state.json"
-    prior_state.write_text('{"round": 0}\n', encoding="utf-8")
+    prior_state.write_text('{"round": 0}\n', encoding="utf-8", newline="\n")
     untouched_script = review_state / "untouched.sh"
-    untouched_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    untouched_script.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     untouched_script.chmod(0o754)
     untouched_link = review_state / "untouched-link"
-    untouched_link.symlink_to(untouched_script.name)
+    symlink_or_skip(untouched_link, untouched_script.name)
 
     class DirectoryMetadataMutatingInvoker:
         def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
@@ -177,7 +178,7 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
             invocation_context=None,  # noqa: ARG002 - Required by protocol.
         ) -> None:
             review_state.chmod(original_mode ^ stat.S_IWGRP)
-            output_file.write_text("provider output\n", encoding="utf-8")
+            output_file.write_text("provider output\n", encoding="utf-8", newline="\n")
 
     request.invoker = DirectoryMetadataMutatingInvoker()
 
@@ -191,6 +192,7 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
     assert untouched_link.readlink() == Path(untouched_script.name)
 
 
+@requires_posix
 def test_directory_restore_restores_group_before_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -247,7 +249,7 @@ def test_drift_snapshots_record_unsafe_entries_without_reading_targets(
     symlink = root / "linked.txt"
     hardlink = root / "hardlinked.txt"
     try:
-        symlink.symlink_to(outside)
+        symlink_or_skip(symlink, outside)
         os.link(outside, hardlink)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"link creation is unavailable: {exc}")
@@ -264,7 +266,7 @@ def test_drift_snapshots_reject_a_symlinked_root(tmp_path: Path) -> None:
     outside.mkdir()
     linked_root = tmp_path / "linked-root"
     try:
-        linked_root.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(linked_root, outside, target_is_directory=True)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

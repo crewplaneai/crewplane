@@ -20,6 +20,7 @@ from crewplane.runtime.workspace.branch_export import (
 from crewplane.runtime.workspace.worktree import lineage
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     history_record_for_output,
@@ -33,6 +34,8 @@ from tests.helpers.workspace_service import (
     git_commit_exists,
     run_git_text,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_fulfill_branch_exports_ignores_inherited_git_transport_restrictions(

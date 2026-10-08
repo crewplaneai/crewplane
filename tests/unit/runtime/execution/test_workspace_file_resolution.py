@@ -11,7 +11,10 @@ from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.workspace_files import read_dynamic_locator_blob
 from crewplane.runtime.workspace.worktree import WorktreeSourceRef
 from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("mode", ["120000", "160000", "040000", "100664"])

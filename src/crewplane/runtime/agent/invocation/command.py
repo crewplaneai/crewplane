@@ -33,6 +33,7 @@ from ..process.runner import (
 )
 from ..process.stream_capture import ProcessOutputCapture
 from ..process.streams import drain_process_pipes, format_timeout_seconds
+from ..process.windows_launch import WindowsLaunch
 from ..workspace_environment import record_workspace_child_environment_applied
 from .telemetry import emit_invocation_diagnostic
 
@@ -44,6 +45,8 @@ class _CommandLifecycle:
     process_group_id: int | None = None
     output_capture: ProcessOutputCapture | None = None
     log_handle: BinaryIO | None = None
+    windows_launch: WindowsLaunch | None = None
+    cleanup_confirmed: bool = False
 
     @property
     def diagnostic_sink(self) -> InvocationDiagnosticSink | None:
@@ -115,6 +118,7 @@ async def run_command_once(
         drain_error = await _handle_failed_command(lifecycle, exc)
         if drain_error is not None:
             exc.add_note(str(drain_error))
+            exc.__cause__ = drain_error
         raise
     except Exception as exc:
         drain_error = await _handle_failed_command(lifecycle, exc)
@@ -125,14 +129,37 @@ async def run_command_once(
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
         active_exception = sys.exception()
-        close_log_handle(lifecycle.log_handle)
-        try:
-            _emit_process_exit(
-                invocation_context,
-                lifecycle.process,
-                lifecycle.process_group_id,
+        if lifecycle.windows_launch is not None and not lifecycle.cleanup_confirmed:
+            cleanup_error = lifecycle.windows_launch.cleanup_error(
+                "Windows provider cleanup was interrupted before confirmation."
             )
+            if active_exception is not None:
+                active_exception.__cause__ = cleanup_error
+        try:
+            try:
+                close_log_handle(lifecycle.log_handle)
+            finally:
+                if lifecycle.windows_launch is not None:
+                    lifecycle.windows_launch.close()
+            if lifecycle.cleanup_confirmed and (
+                lifecycle.windows_launch is None or lifecycle.windows_launch.assigned
+            ):
+                _emit_process_exit(
+                    invocation_context,
+                    lifecycle.process,
+                    lifecycle.process_group_id,
+                )
         except Exception as exc:
+            if lifecycle.windows_launch is not None:
+                if lifecycle.output_capture is not None:
+                    lifecycle.output_capture.cleanup()
+                error = lifecycle.windows_launch.cleanup_error(
+                    f"Provider cleanup reporting failed: {exc}"
+                )
+                if isinstance(active_exception, asyncio.CancelledError):
+                    active_exception.__cause__ = error
+                else:
+                    raise error from exc
             if active_exception is None:
                 if lifecycle.output_capture is not None:
                     lifecycle.output_capture.cleanup()
@@ -157,19 +184,23 @@ async def _execute_command(
     request: _CommandExecutionRequest,
 ) -> None:
     start_new_session = supports_posix_process_groups()
-    process = await asyncio.create_subprocess_exec(
-        *request.cmd,
-        stdin=(
-            asyncio.subprocess.PIPE
+    if sys.platform == "win32":
+        lifecycle.windows_launch = WindowsLaunch()
+        process = await lifecycle.windows_launch.start(
+            request.cmd, request.cwd, _child_process_env(request.child_environment)
+        )
+    else:
+        process = await asyncio.create_subprocess_exec(
+            *request.cmd,
+            stdin=asyncio.subprocess.PIPE
             if request.stdin_data
-            else asyncio.subprocess.DEVNULL
-        ),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=request.cwd,
-        env=_child_process_env(request.child_environment),
-        start_new_session=start_new_session,
-    )
+            else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=request.cwd,
+            env=_child_process_env(request.child_environment),
+            start_new_session=start_new_session,
+        )
     lifecycle.process = process
     lifecycle.process_group_id = process.pid if start_new_session else None
     record_workspace_child_environment_applied(
@@ -186,14 +217,24 @@ async def _execute_command(
         append=request.append_log,
         header_bytes=request.log_header,
     )
-    lifecycle.output_capture = await write_stdin_and_collect_output(
-        process,
-        request.stdin_data,
-        lifecycle.log_handle,
-        lifecycle.diagnostic_sink,
-        lifecycle.process_group_id,
-        request.idle_timeout_seconds,
-    )
+    if lifecycle.windows_launch is not None:
+        lifecycle.windows_launch.release()
+        lifecycle.output_capture = await lifecycle.windows_launch.collect(
+            request.stdin_data,
+            lifecycle.log_handle,
+            lifecycle.diagnostic_sink,
+            request.idle_timeout_seconds,
+        )
+    else:
+        lifecycle.output_capture = await write_stdin_and_collect_output(
+            process,
+            request.stdin_data,
+            lifecycle.log_handle,
+            lifecycle.diagnostic_sink,
+            lifecycle.process_group_id,
+            request.idle_timeout_seconds,
+        )
+    lifecycle.cleanup_confirmed = True
     _record_process_drain_success(
         lifecycle.invocation_context,
         process,
@@ -220,6 +261,12 @@ async def _handle_failed_command(
 async def _cleanup_failed_command(
     lifecycle: _CommandLifecycle,
 ) -> ProcessDrainError | None:
+    if lifecycle.windows_launch is not None:
+        lifecycle.process = lifecycle.windows_launch.process
+        try:
+            await lifecycle.windows_launch.drain()
+        except ProcessDrainError as exc:
+            return exc
     if lifecycle.process is not None:
         try:
             await reap_failed_process(
@@ -238,6 +285,7 @@ async def _cleanup_failed_command(
             return exc
     if lifecycle.output_capture is not None:
         lifecycle.output_capture.cleanup()
+    lifecycle.cleanup_confirmed = True
     return None
 
 

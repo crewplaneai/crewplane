@@ -9,6 +9,9 @@ from crewplane.adapters.ui.tmux import TmuxUIAdapter
 from crewplane.core.config import Config
 from crewplane.observability.types import WorkflowTopology
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_tmux_support
+
+pytestmark = requires_tmux_support
 
 
 class TmuxUIAdapterTests(unittest.TestCase):

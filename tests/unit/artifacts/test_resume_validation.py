@@ -20,6 +20,7 @@ from crewplane.artifacts.workspace.node_state import (
 from crewplane.core.execution_state import ArtifactDescriptor
 from crewplane.core.preflight.models import WorkspaceBranchExportRecord
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import extended_file_test_root
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -360,13 +361,14 @@ def test_validate_frontier_rejects_generated_file_for_different_node(
 def test_validate_frontier_accepts_generated_file_for_bounded_node_directory(
     tmp_path,
 ) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     source = source_record(tmp_path)
     node_id = "build." + ("x" * 150)
     node_dir = build_generated_file_result_dir_name(node_id)
     output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
     generated_path = source.results_dir / "generated-files" / node_dir / "alpha/app.txt"
     generated_path.parent.mkdir(parents=True)
-    generated_path.write_text("generated", encoding="utf-8")
+    generated_path.write_text("generated", encoding="utf-8", newline="\n")
     generated_descriptor = ArtifactDescriptor(
         kind="generated_file",
         relative_path=generated_path.relative_to(source.results_dir).as_posix(),

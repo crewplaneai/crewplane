@@ -349,7 +349,7 @@ def test_filesystem_discovery_and_final_links_exclude_only_reserved_roots(
     nested = workspace / "nested" / relative
     for path in (excluded, nested):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("generated")
+        path.write_text("generated", encoding="utf-8", newline="\n")
 
     candidates = baseline.candidate_files()
 
@@ -357,11 +357,11 @@ def test_filesystem_discovery_and_final_links_exclude_only_reserved_roots(
     result_text, files = _finalize_with_snapshot(
         workspace,
         baseline,
-        f"## Generated Files\n- `{relative}`\n- `nested/{relative}`\n",
+        f"## Generated Files\n- `{relative.as_posix()}`\n- `nested/{relative.as_posix()}`\n",
     )
     assert len(files) == 1
     assert files[0].read_text() == "generated"
-    assert f"[alpha/nested/{relative}]" in result_text
+    assert f"[alpha/nested/{relative.as_posix()}]" in result_text
 
 
 def test_explicit_generated_files_section_orders_valid_candidates(

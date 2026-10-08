@@ -20,6 +20,8 @@ from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 from crewplane.runtime.agent.process import stream_capture
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)
@@ -212,7 +214,7 @@ def test_plan_output_is_owned_during_runtime_setup(
         build_cli_invocation_plan(config, None, "prompt", tmp_path / "out"),
         structured_output_file=owned,
     )
-    owned.write_text("allocated")
+    owned.write_text("allocated", encoding="utf-8", newline="\n")
 
     def fail_setup(*args, **kwargs):
         assert args or kwargs
@@ -284,7 +286,7 @@ def test_extracted_file_lifetime_across_attempt_and_outer_cleanup(
             if outcome in {"retry", "cancel"} and attempts == 1
             else "café 🌍"
         )
-        extracted_path.write_text(text, encoding="utf-8")
+        extracted_path.write_text(text, encoding="utf-8", newline="\n")
         return CommandResult(0, "", "")
 
     def extract(result, structured_file):
@@ -332,7 +334,7 @@ def test_extracted_file_lifetime_across_attempt_and_outer_cleanup(
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(invocation)
     elif outcome == "publication_failure":
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises((IsADirectoryError, PermissionError)):
             asyncio.run(invocation)
     else:
         asyncio.run(invocation)

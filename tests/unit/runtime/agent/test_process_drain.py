@@ -14,6 +14,7 @@ from crewplane.runtime.agent.process.drain import (
     drain_popen_process,
     process_group_is_alive,
 )
+from tests.helpers.platforms import requires_posix
 
 
 class _StubbornAsyncProcess:
@@ -112,6 +113,7 @@ def test_popen_process_drain_handles_process_disappearing_during_term(
     assert evidence.leader_stopped is True
 
 
+@requires_posix
 def test_popen_process_drain_targets_live_posix_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -134,6 +136,7 @@ def test_popen_process_drain_targets_live_posix_group(
     assert process.kill_calls == 0
 
 
+@requires_posix
 def test_popen_process_drain_falls_back_to_leader_after_group_rejection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -181,6 +184,7 @@ def test_popen_process_drain_falls_back_to_leader_after_group_rejection(
     ]
 
 
+@requires_posix
 def test_process_group_permission_error_is_treated_as_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -193,6 +197,7 @@ def test_process_group_permission_error_is_treated_as_live(
     assert process_group_is_alive(123) is True
 
 
+@requires_posix
 def test_async_process_drain_reports_permission_denied_group_as_unresolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -241,6 +246,7 @@ def test_async_process_drain_reports_permission_denied_process_as_unresolved(
     asyncio.run(run())
 
 
+@requires_posix
 def test_popen_process_drain_reports_permission_denied_signaller_as_unresolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -286,6 +292,7 @@ def test_popen_process_drain_reports_permission_denied_process_as_unresolved(
     assert exc_info.value.evidence.leader_stopped is False
 
 
+@requires_posix
 def test_successful_process_group_probe_is_treated_as_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -297,6 +304,7 @@ def test_successful_process_group_probe_is_treated_as_live(
     assert process_group_is_alive(123) is True
 
 
+@requires_posix
 def test_missing_process_group_is_treated_as_drained(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

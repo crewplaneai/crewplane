@@ -1,6 +1,7 @@
 import asyncio
 import errno
 import json
+import os
 import sys
 
 import pytest
@@ -12,6 +13,8 @@ from crewplane.version import SCHEMA_VERSION
 
 @pytest.fixture
 def native_config(tmp_path):
+    if os.name != "posix":
+        pytest.skip("The DeepSeek double requires POSIX env and a shebang launcher")
     harness = tmp_path / "dsh-double"
     harness.write_text(
         f"#!{sys.executable}\n"

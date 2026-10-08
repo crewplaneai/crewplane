@@ -21,6 +21,17 @@ from crewplane.core.file_text import (
         (b" " * 65_536 + b"\xe2", 65_537, True),
         (b" " * 131_072 + b"x", 131_073, True),
     ],
+    ids=[
+        "empty",
+        "whitespace",
+        "unicode-space",
+        "unicode",
+        "invalid-utf8",
+        "chunk-unicode",
+        "chunk-space",
+        "chunk-invalid",
+        "multichunk",
+    ],
 )
 def test_utf8_file_scans_preserve_decoding_across_chunks(
     tmp_path: Path, payload: bytes, count: int, visible: bool

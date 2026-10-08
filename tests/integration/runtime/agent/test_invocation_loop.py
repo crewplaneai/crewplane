@@ -18,6 +18,8 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

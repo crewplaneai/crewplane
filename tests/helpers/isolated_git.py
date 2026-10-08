@@ -117,10 +117,10 @@ def configure_isolated_git_environment(
     global_config.write_text("", encoding="utf-8")
 
     controlled_environment = {
-        "HOME": home.as_posix(),
-        "XDG_CONFIG_HOME": xdg_config_home.as_posix(),
+        "HOME": home.as_posix().removeprefix("//?/"),
+        "XDG_CONFIG_HOME": xdg_config_home.as_posix().removeprefix("//?/"),
         "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": global_config.as_posix(),
+        "GIT_CONFIG_GLOBAL": global_config.as_posix().removeprefix("//?/"),
         "GIT_ATTR_NOSYSTEM": "1",
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_PROTOCOL_FROM_USER": "0",
@@ -139,7 +139,7 @@ def configure_isolated_git_environment(
         monkeypatch.setenv(key, value)
 
     rendered_config = tuple(
-        (key, value.format(hooks_dir=hooks_dir.as_posix()))
+        (key, value.format(hooks_dir=hooks_dir.as_posix().removeprefix("//?/")))
         for key, value in _GIT_CONFIG
     )
     monkeypatch.setenv("GIT_CONFIG_COUNT", str(len(rendered_config)))

@@ -17,6 +17,9 @@ from crewplane.observability.run_summary.workspace_readers import (
     workspace_source_summary,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_plan_summary_reads_descriptor_sections(tmp_path: Path) -> None:

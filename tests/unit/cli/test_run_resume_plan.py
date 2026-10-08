@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from rich.console import Console
@@ -49,6 +50,55 @@ from tests.helpers.resume_validation import (
     write_lineage_bundle_for_payload,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled", "succeeded"])
+def test_windows_unusable_history_starts_fresh(tmp_path, monkeypatch, status) -> None:
+    monkeypatch.setattr(resume_module, "is_native_windows", lambda: True)
+    observe = Mock(side_effect=AssertionError("Windows must not inspect checkpoints"))
+    monkeypatch.setattr(resume_module, "project_fingerprint", observe)
+    state_dir = tmp_path / ".crewplane"
+    manifest = make_run_manifest("old", "workflow--old", status=status)
+    write_run_manifest(state_dir, manifest)
+    before = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*"))
+    result = build_resume_plan(
+        Config(version=SCHEMA_VERSION, agents={}),
+        _workflow_source(tmp_path),
+        _provider_workspace_preview(),
+        tmp_path,
+        state_dir,
+        False,
+    )
+    assert result.decision.kind == "execute_full"
+    assert result.frontier is None
+    observe.assert_not_called()
+    assert sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*")) == before
+
+
+def test_windows_checks_older_success_before_fresh_execution(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(resume_module, "is_native_windows", lambda: True)
+    plan = make_plan()
+    state_dir = tmp_path / ".crewplane"
+    records = []
+    for run_id in ("new", "old"):
+        manifest = make_run_manifest(run_id, f"workflow--{run_id}", status="succeeded")
+        record = _history_record(manifest, state_dir)
+        records.append(record)
+        if run_id == "old":
+            for node in plan.nodes:
+                descriptor = write_result(
+                    record.results_dir, node.artifact_contract.output_path, "valid"
+                )
+                write_node_state(
+                    record.run_dir, make_node_state(manifest, node.id, [descriptor])
+                )
+    result = resume_module.artifact_valid_history_plan(
+        WORKFLOW_IDENTITY, tuple(records), plan, state_dir
+    )
+    assert result.decision.kind == "skip"
+    assert result.decision.successful_run == records[1]
 
 
 def test_force_resume_plan_does_not_scan_unsafe_history(

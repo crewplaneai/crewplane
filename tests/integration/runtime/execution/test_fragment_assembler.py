@@ -17,6 +17,7 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import (
     make_node_state,
     make_run_manifest,
@@ -128,7 +129,7 @@ def test_assemble_prompt_rejects_symlinked_static_bundle(
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
     try:
-        static_path.symlink_to(outside)
+        symlink_or_skip(static_path, outside)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     store = FragmentArtifactStore(tmp_path)

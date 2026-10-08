@@ -15,6 +15,7 @@ from crewplane.runtime.execution.provider_call.provider_output import (
     read_bound_invocation_output,
 )
 from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "symlink", "hardlink"])
@@ -28,7 +29,12 @@ def test_binding_rejects_unavailable_or_shared_output(
         target = tmp_path / "target"
         target.write_bytes(b"keep")
         if kind == "symlink":
-            source.symlink_to(target)
+            try:
+                symlink_or_skip(source, target)
+            except OSError as error:
+                if getattr(error, "winerror", None) == 1314:
+                    pytest.skip("Windows fixture requires symlink creation privilege")
+                raise
         else:
             source.hardlink_to(target)
     with pytest.raises(
@@ -37,11 +43,24 @@ def test_binding_rejects_unavailable_or_shared_output(
         bind_invocation_output(source)
 
 
-def test_bound_output_rejects_invalid_utf8(tmp_path: Path) -> None:
+def test_bound_output_renders_invalid_utf8_without_changing_bytes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "output"
+    payload = b"candidate\r\n\xff\x1a"
+    source.write_bytes(payload)
+    signature = bind_invocation_output(source)
+    assert read_bound_invocation_output(source, signature) == "candidate\r\n\ufffd\x1a"
+    assert source.read_bytes() == payload
+    assert bind_invocation_output(source) == signature
+
+
+def test_bound_output_checks_invalid_utf8_bytes_before_decoding(tmp_path: Path) -> None:
     source = tmp_path / "output"
     source.write_bytes(b"\xff")
     signature = bind_invocation_output(source)
-    with pytest.raises(RuntimeError, match="not valid UTF-8"):
+    source.write_bytes(b"\xfe")
+    with pytest.raises(RuntimeError, match="does not match its bound bytes"):
         read_bound_invocation_output(source, signature)
 
 
@@ -74,6 +93,7 @@ def test_bound_output_rejects_later_content_changes(
 
 
 @pytest.mark.parametrize("change", ["unlink", "replace", "append"])
+@requires_posix
 def test_binding_detects_output_changed_during_read(
     tmp_path: Path, change: str
 ) -> None:
@@ -114,7 +134,12 @@ def test_publication_rejects_unsafe_destination_directories(
     if kind == "file":
         destination_dir.write_bytes(b"keep")
     elif kind == "symlink":
-        destination_dir.symlink_to(tmp_path, target_is_directory=True)
+        try:
+            symlink_or_skip(destination_dir, tmp_path, target_is_directory=True)
+        except OSError as error:
+            if getattr(error, "winerror", None) == 1314:
+                pytest.skip("Windows fixture requires symlink creation privilege")
+            raise
     registry = RuntimePublicationRegistry()
     try:
         with pytest.raises(

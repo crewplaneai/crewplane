@@ -28,6 +28,7 @@ from crewplane.runtime.workspace.setup import (
 )
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -41,6 +42,8 @@ from tests.unit.runtime.workspace.service_provider_setup_invocation_support impo
     plan_with_available_setup_profile,
     plan_with_setup,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_provider_invocation_runs_selected_worktree_setup_before_provider(

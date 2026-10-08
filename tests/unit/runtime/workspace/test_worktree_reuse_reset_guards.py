@@ -14,6 +14,7 @@ from crewplane.runtime.workspace.worktree.cache import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -25,6 +26,8 @@ from tests.helpers.workspace_worktree_reuse import (
     two_node_lineage_plan,
     workspace_request,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_same_worktree_reuse_rejects_retargeted_git_file_before_reset(

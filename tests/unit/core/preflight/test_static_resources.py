@@ -29,6 +29,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.terminal_results import (
     FINDINGS_SOURCE_TOKEN,
     RESULT_SOURCE_TOKEN,
@@ -296,9 +297,9 @@ def test_input_node_rejects_result_without_valid_run_manifest(
 def test_input_node_rejects_symlinked_execution_result(tmp_path: Path) -> None:
     result_path = write_result_source(tmp_path)
     external_path = tmp_path / "external-result.md"
-    external_path.write_text("external", encoding="utf-8")
+    external_path.write_text("external", encoding="utf-8", newline="\n")
     result_path.unlink()
-    result_path.symlink_to(external_path)
+    symlink_or_skip(result_path, external_path)
 
     preview = _compile_input_source(tmp_path, RESULT_SOURCE_TOKEN)
 

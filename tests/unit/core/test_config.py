@@ -17,6 +17,7 @@ from crewplane.core.config import (
 )
 from crewplane.core.token_budget import TokenBudgetOverride, resolve_token_budget
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -329,6 +330,7 @@ class ConfigTests(unittest.TestCase):
                 }
             )
 
+    @requires_workspace_support
     def test_workspace_settings_reports_unresolved_cache_root_user(self) -> None:
         with self.assertRaisesRegex(ValidationError, "could not expand user home"):
             Settings(

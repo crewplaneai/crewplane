@@ -14,6 +14,7 @@ from crewplane.architecture.safe_files import (
     replace_contained_file,
     resolved_path_is_contained,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 def test_resolved_containment_accepts_missing_paths_and_rejects_escapes(
@@ -23,7 +24,7 @@ def test_resolved_containment_accepts_missing_paths_and_rejects_escapes(
     root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (root / "link").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(root / "link", outside, target_is_directory=True)
 
     assert resolved_path_is_contained(root, root / "missing" / "run.json")
     assert not resolved_path_is_contained(root, outside / "run.json")
@@ -43,7 +44,7 @@ def test_relative_symlink_inspection_checks_existing_descendants(
         target = tmp_path / "target"
         if entry_kind == "symlink":
             target.mkdir()
-        parent.symlink_to(target, target_is_directory=True)
+        symlink_or_skip(parent, target, target_is_directory=True)
 
     assert relative_path_has_symlink(tmp_path, Path("nested/run.json")) is (
         entry_kind in {"symlink", "dangling_symlink"}
@@ -60,7 +61,7 @@ def test_path_absence_requires_a_missing_entry(tmp_path: Path, entry_kind: str) 
     elif entry_kind == "directory":
         path.mkdir()
     elif entry_kind == "dangling_symlink":
-        path.symlink_to(tmp_path / "missing")
+        symlink_or_skip(path, tmp_path / "missing")
 
     assert path_is_absent(path) is (entry_kind == "missing")
 
@@ -95,11 +96,13 @@ def test_single_link_regular_file_classifies_unfollowed_metadata(
     elif entry_kind == "symlink":
         target = tmp_path / "target"
         target.write_bytes(b"content")
-        path.symlink_to(target)
+        symlink_or_skip(path, target)
     elif entry_kind == "directory":
         path.mkdir()
-    else:
+    elif hasattr(os, "mkfifo"):
         os.mkfifo(path)
+    else:
+        pytest.skip("FIFO classification requires POSIX special files")
 
     assert is_single_link_regular_file(path.lstat()) is (entry_kind == "file")
 
@@ -142,7 +145,7 @@ def test_replace_contained_file_rejects_a_symlinked_destination_parent(
     outside = tmp_path / "outside"
     outside.mkdir()
     try:
-        (root / "nested").symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(root / "nested", outside, target_is_directory=True)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     source = tmp_path / "private-output.md"
@@ -154,6 +157,7 @@ def test_replace_contained_file_rejects_a_symlinked_destination_parent(
     assert not (outside / "output.md").exists()
 
 
+@requires_posix
 def test_replace_contained_file_does_not_clobber_a_racing_destination(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -200,15 +204,16 @@ def test_replace_contained_file_rejects_a_hardlinked_source(tmp_path: Path) -> N
     root = tmp_path / "root"
     root.mkdir()
     source = root / "private-output.md"
-    source.write_text("private", encoding="utf-8")
+    source.write_text("private", encoding="utf-8", newline="\n")
     os.link(source, root / "peer-link.md")
 
-    with pytest.raises(ValueError, match="single-link"):
+    with pytest.raises(ValueError, match="single-link|1 link"):
         replace_contained_file(root, "output.md", source)
 
     assert not (root / "output.md").exists()
 
 
+@requires_posix
 def test_replace_contained_file_rolls_back_its_link_after_verification_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -216,7 +221,7 @@ def test_replace_contained_file_rolls_back_its_link_after_verification_failure(
     root = tmp_path / "root"
     root.mkdir()
     source = root / "private-output.md"
-    source.write_text("private", encoding="utf-8")
+    source.write_text("private", encoding="utf-8", newline="\n")
 
     original_unlink = Path.unlink
 
@@ -234,6 +239,7 @@ def test_replace_contained_file_rolls_back_its_link_after_verification_failure(
     assert not (root / "output.md").exists()
 
 
+@requires_posix
 def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -257,6 +263,7 @@ def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
     assert calls == 3
 
 
+@requires_posix
 def test_ensure_single_link_regular_file_fails_after_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -300,9 +307,7 @@ def test_contained_directory_rejects_raw_unsafe_paths_before_creation(
     assert safe_files.contained_regular_file(root, relative_path) is None
 
 
-@pytest.mark.parametrize(
-    "relative_path", ["", ".", " ", " nested /file", r"nested\file", "nested/file"]
-)
+@pytest.mark.parametrize("relative_path", ["", ".", "nested/file", " nested/file"])
 def test_contained_directory_preserves_root_aliases_and_safe_raw_paths(
     tmp_path: Path, relative_path: str
 ) -> None:

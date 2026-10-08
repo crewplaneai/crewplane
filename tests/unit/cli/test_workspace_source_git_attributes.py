@@ -12,6 +12,7 @@ from tests.helpers.isolated_git import (
     run_git,
     run_git_text,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_source_policy import (
     workspace_source_config,
     workspace_source_workflow,
@@ -23,7 +24,7 @@ from tests.unit.cli.workspace_source_policy_git_support import (
 isolated_git = _isolated_git_support.isolated_git
 
 
-pytestmark = pytest.mark.usefixtures("isolated_git")
+pytestmark = [requires_workspace_support, pytest.mark.usefixtures("isolated_git")]
 
 
 @pytest.mark.parametrize(

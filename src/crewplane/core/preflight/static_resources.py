@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.platform import is_native_windows
 from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 
 if TYPE_CHECKING:
@@ -113,6 +114,15 @@ def resolve_static_file(
         return _file_diagnostic(raw_path, "Template file path is empty.")
 
     candidate = Path(raw).expanduser()
+    if is_native_windows() and (
+        bool(candidate.drive or candidate.root)
+        and not candidate.is_absolute()
+        or ":" in raw[len(candidate.drive) :]
+    ):
+        return _file_diagnostic(
+            raw,
+            "Use a relative path or a fully qualified native path without alternate data streams.",
+        )
     if not candidate.is_absolute():
         candidate = source_root / candidate
     normalized = candidate.resolve(strict=False)

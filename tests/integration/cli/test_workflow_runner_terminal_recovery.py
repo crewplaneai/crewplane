@@ -14,6 +14,7 @@ from crewplane.artifacts.locks import (
     acquire_same_context_lock,
 )
 from crewplane.artifacts.manager import OutputManager
+from tests.helpers.platforms import requires_lock_recovery
 from tests.helpers.resume_locks import FakeProcessInspector
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.terminal_recovery_support import (
@@ -32,6 +33,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     def temporary_directory_root(self, tmp_path: Path) -> None:
         self.tmp_path = tmp_path
 
+    @requires_lock_recovery
     async def test_terminal_manifest_publication_failure_recovers_exact_outcome(
         self,
     ) -> None:
@@ -100,6 +102,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 replacement.release()
 
+    @requires_lock_recovery
     async def test_required_observer_stop_failure_retains_run_lock(self) -> None:
         with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)

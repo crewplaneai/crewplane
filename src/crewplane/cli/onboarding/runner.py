@@ -327,6 +327,11 @@ class OnboardingRunner:
             self.console,
             tuple((detection.provider, detection.found) for detection in detections),
         )
+        for detection in detections:
+            if detection.diagnostic is not None:
+                self.console.print(
+                    f"{detection.provider}: {detection.diagnostic}", markup=False
+                )
         return detections
 
     def choose_providers(

@@ -23,12 +23,15 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.core.workspace.policy import WorktreeContract
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.core.preflight.workspace_preflight_signatures_support import (
     compile_signature_workflow,
     compile_source_with_source_snapshot,
     project_root_workflow,
     workspace_signature_config,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_branch_export_fields_do_not_change_workflow_signature(

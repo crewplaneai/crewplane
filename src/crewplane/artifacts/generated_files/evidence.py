@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
 
@@ -36,7 +37,7 @@ def _read_generated_file_entries(
     if metadata is None:
         return None
     try:
-        payload: object = json.loads(metadata.read_text(encoding="utf-8"))
+        payload: object = json.loads(read_contained_bytes(root, metadata.name))
     except (OSError, ValueError):
         return None
     if not isinstance(payload, dict) or (

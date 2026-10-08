@@ -19,7 +19,9 @@ def write_checkpoint_project(
     workflow.parent.mkdir(parents=True, exist_ok=True)
     nodes = []
     if predecessor:
-        (root / "requirements.md").write_text("Requirements")
+        (root / "requirements.md").write_text(
+            "Requirements", encoding="utf-8", newline="\n"
+        )
         nodes.append(
             {
                 "id": "requirements",
@@ -56,7 +58,9 @@ def write_checkpoint_project(
     workflow.write_text(
         "---\n"
         + yaml.safe_dump(payload, sort_keys=False)
-        + "---\n\n## review.iterate\n\nImplement and review.\n\n## after\n\nUse {{review.iterate.output}}.\n"
+        + "---\n\n## review.iterate\n\nImplement and review.\n\n## after\n\nUse {{review.iterate.output}}.\n",
+        encoding="utf-8",
+        newline="\n",
     )
     write_review_loop_fixtures(fixtures)
     write_executor_fixture(fixtures, "after", "Consumed selected candidate.\n")

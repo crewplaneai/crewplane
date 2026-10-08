@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -13,7 +14,7 @@ def test_temporary_project_cwd_resolves_alias_and_restores_cwd(
     real_temp_dir = tmp_path / "real"
     real_temp_dir.mkdir()
     alias_temp_dir = tmp_path / "alias"
-    alias_temp_dir.symlink_to(real_temp_dir, target_is_directory=True)
+    symlink_or_skip(alias_temp_dir, real_temp_dir, target_is_directory=True)
     monkeypatch.setattr(tempfile, "tempdir", alias_temp_dir.as_posix())
     original_cwd = Path.cwd()
 

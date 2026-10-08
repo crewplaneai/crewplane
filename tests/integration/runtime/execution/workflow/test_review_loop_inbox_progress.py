@@ -21,6 +21,7 @@ from crewplane.runtime.execution.common import (
 )
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import extended_file_test_root
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -33,7 +34,7 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)
     def temporary_directory_root(self, tmp_path: Path) -> None:
-        self.tmp_path = tmp_path
+        self.tmp_path = extended_file_test_root(tmp_path)
 
     async def test_multi_reviewer_inbox_groups_unresolved_findings(
         self,

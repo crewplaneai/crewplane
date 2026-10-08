@@ -7,9 +7,12 @@ from crewplane.artifacts.workspace.state.source_fields import (
     invocation_source_payload,
     source_field_mismatches,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.artifacts.workspace_state_contracts_support import (
     valid_worktree_payload,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_projection_omits_unavailable_bundle_fields_and_recursive_sources() -> None:

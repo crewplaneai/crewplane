@@ -13,6 +13,7 @@ import crewplane.runtime.workspace.service.worktree as workspace_service_worktre
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.invocation import invocation_slug
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -21,6 +22,8 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_snapshot_workspace_failure_removes_disposable_checkout(

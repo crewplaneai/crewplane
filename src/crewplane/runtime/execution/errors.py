@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
 
@@ -13,7 +14,7 @@ class WorkflowExecutionError(RuntimeError):
 
 
 def is_expected_execution_failure(exc: BaseException) -> bool:
-    return isinstance(
+    return unconfirmed_process_cleanup(exc) is None and isinstance(
         exc,
         (NodeExecutionError, InvocationFailureError, WorkspaceSetupError),
     )

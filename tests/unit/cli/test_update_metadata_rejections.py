@@ -11,6 +11,7 @@ import pytest
 from crewplane.cli.update import runner
 from crewplane.cli.update.detection import resolve_update_plan
 from crewplane.cli.update.types import UpdateError
+from tests.helpers.platforms import symlink_or_skip
 from tests.unit.cli.update_helpers import FailedCommands, update_context
 
 
@@ -183,7 +184,7 @@ def test_owner_probe_with_symlink_loop_fails_closed(tmp_path: Path) -> None:
     context = update_context(tmp_path, commands)
     probe = ("uv", "tool", "dir")
     loop = tmp_path / "loop"
-    loop.symlink_to(loop)
+    symlink_or_skip(loop, loop)
     commands.responses[probe] = str(loop)
 
     with pytest.raises(UpdateError, match="different Crewplane tool environment"):

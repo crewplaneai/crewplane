@@ -24,6 +24,7 @@ from crewplane.runtime.workspace.worktree import (
 )
 from crewplane.runtime.workspace.worktree.ref_cleanup import delete_run_workspace_refs
 from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -35,6 +36,8 @@ from tests.unit.runtime.workspace.ref_publication_support import (
     ref_oid,
     remove_published_workspace,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

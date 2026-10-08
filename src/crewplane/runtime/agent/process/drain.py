@@ -7,6 +7,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 PROCESS_GROUP_TERM_GRACE_SECONDS = 0.25
 PROCESS_GROUP_KILL_GRACE_SECONDS = 1.0
@@ -36,7 +37,7 @@ class ProcessDrainError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class _DrainPhase:
-    signal_number: signal.Signals
+    action: Literal["terminate", "kill"]
     grace_seconds: float
 
 
@@ -99,8 +100,8 @@ def drain_popen_process(
 
 def _drain_phases() -> tuple[_DrainPhase, ...]:
     return (
-        _DrainPhase(signal.SIGTERM, PROCESS_GROUP_TERM_GRACE_SECONDS),
-        _DrainPhase(signal.SIGKILL, PROCESS_GROUP_KILL_GRACE_SECONDS),
+        _DrainPhase("terminate", PROCESS_GROUP_TERM_GRACE_SECONDS),
+        _DrainPhase("kill", PROCESS_GROUP_KILL_GRACE_SECONDS),
     )
 
 
@@ -112,7 +113,7 @@ async def _run_async_drain_phase(
     leader_was_missing = _signal_async_process(
         process,
         process_group_id,
-        phase.signal_number,
+        phase.action,
     )
     await _wait_for_async_drain(
         process,
@@ -131,7 +132,7 @@ def _run_popen_drain_phase(
     _signal_popen_process(
         process,
         process_group_id,
-        phase.signal_number,
+        phase.action,
         group_signaller,
     )
     _wait_for_popen_drain(
@@ -206,13 +207,13 @@ def _wait_for_popen_drain(
 def _signal_async_process(
     process: asyncio.subprocess.Process,
     process_group_id: int | None,
-    signal_number: signal.Signals,
+    action: Literal["terminate", "kill"],
 ) -> bool:
-    group_targeted, group_missing = _signal_group(process_group_id, signal_number)
+    group_targeted, group_missing = _signal_group(process_group_id, action)
     if group_targeted:
         return group_missing
     try:
-        if signal_number == signal.SIGTERM:
+        if action == "terminate":
             process.terminate()
         else:
             process.kill()
@@ -226,37 +227,42 @@ def _signal_async_process(
 def _signal_popen_process(
     process: subprocess.Popen[str],
     process_group_id: int | None,
-    signal_number: signal.Signals,
+    action: Literal["terminate", "kill"],
     group_signaller: Callable[[int, signal.Signals], bool] | None,
 ) -> None:
-    if _signal_popen_group(process_group_id, signal_number, group_signaller):
+    if _signal_popen_group(process_group_id, action, group_signaller):
         return
-    _signal_popen_leader(process, signal_number)
+    _signal_popen_leader(process, action)
 
 
 def _signal_popen_group(
     process_group_id: int | None,
-    signal_number: signal.Signals,
+    action: Literal["terminate", "kill"],
     group_signaller: Callable[[int, signal.Signals], bool] | None,
 ) -> bool:
+    if os.name != "posix":
+        return False
     if process_group_id is None or group_signaller is None:
         group_targeted, _group_missing = _signal_group(
             process_group_id,
-            signal_number,
+            action,
         )
         return group_targeted
     try:
-        return group_signaller(process_group_id, signal_number)
+        return group_signaller(
+            process_group_id,
+            signal.SIGTERM if action == "terminate" else signal.SIGKILL,
+        )
     except PermissionError:
         return True
 
 
 def _signal_popen_leader(
     process: subprocess.Popen[str],
-    signal_number: signal.Signals,
+    action: Literal["terminate", "kill"],
 ) -> None:
     try:
-        if signal_number == signal.SIGTERM:
+        if action == "terminate":
             process.terminate()
         else:
             process.kill()
@@ -266,10 +272,11 @@ def _signal_popen_leader(
 
 def _signal_group(
     process_group_id: int | None,
-    signal_number: signal.Signals,
+    action: Literal["terminate", "kill"],
 ) -> tuple[bool, bool]:
     if process_group_id is None or os.name != "posix":
         return False, False
+    signal_number = signal.SIGTERM if action == "terminate" else signal.SIGKILL
     try:
         os.killpg(process_group_id, signal_number)
     except ProcessLookupError:
@@ -277,3 +284,23 @@ def _signal_group(
     except PermissionError:
         return True, False
     return True, False
+
+
+def unconfirmed_process_cleanup(
+    error: BaseException | None,
+) -> ProcessDrainError | None:
+    pending = [error] if error is not None else []
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ProcessDrainError):
+            return current
+        if isinstance(current, BaseExceptionGroup):
+            pending.extend(current.exceptions)
+        for related in (current.__cause__, current.__context__):
+            if related is not None:
+                pending.append(related)
+    return None

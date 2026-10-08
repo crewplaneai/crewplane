@@ -7,6 +7,8 @@ from crewplane.adapters.invokers.cli_invoker.providers.pi import PI
 from crewplane.architecture.contracts import CommandResult
 from crewplane.core.config import AgentConfig
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def request(**values) -> CliInvocationRequest:
     return CliInvocationRequest(
@@ -123,7 +125,7 @@ def test_pi_does_not_publish_stderr_as_an_answer(text) -> None:
 
 def test_pi_strict_extractor_borrows_file_backed_stdout(tmp_path) -> None:
     stdout = tmp_path / "stdout"
-    stdout.write_text("answer λ\n")
+    stdout.write_text("answer λ\n", encoding="utf-8", newline="\n")
     assert PI.output_extractor is not None
     output = PI.output_extractor(CommandResult(0, "tail", "noise", stdout), None)
     assert output.output_extraction_status == "success"

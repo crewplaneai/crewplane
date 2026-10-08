@@ -21,6 +21,7 @@ from crewplane.runtime.workspace.snapshot_scan import (
     snapshot_digest,
     snapshot_entries,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 @pytest.mark.parametrize(
@@ -39,7 +40,10 @@ def test_snapshot_rejects_unavailable_or_unsafe_root(
     if kind == "file":
         root.write_bytes(b"keep")
     elif kind == "symlink":
-        root.symlink_to(tmp_path, target_is_directory=True)
+        symlink_or_skip(root, tmp_path, target_is_directory=True)
+    if os.name == "nt":
+        error_type = WorkspaceSnapshotRaceError
+        message = "could not safely read"
     with pytest.raises(error_type, match=message):
         snapshot_entries(root)
     with pytest.raises(RuntimeError, match="missing|not a real directory"):
@@ -54,8 +58,8 @@ def test_private_cache_directory_rejects_unowned_entries(
     if kind == "file":
         root.write_bytes(b"keep")
     else:
-        root.symlink_to(
-            tmp_path if kind == "directory-symlink" else tmp_path / "missing"
+        symlink_or_skip(
+            root, tmp_path if kind == "directory-symlink" else tmp_path / "missing"
         )
     with pytest.raises(RuntimeError, match="not a directory|must not be a symlink"):
         ensure_owner_private_dir(root)
@@ -80,6 +84,7 @@ def test_snapshot_budget_rejects_invalid_limits(
         WorkspaceSnapshotPolicy(max_entries, max_file_bytes, max_elapsed_seconds)
 
 
+@requires_posix
 @pytest.mark.parametrize("kind", ["file", "directory"])
 @pytest.mark.parametrize("change", ["remove", "replace"])
 def test_snapshot_detects_entry_changed_between_discovery_and_open(
@@ -118,6 +123,7 @@ def test_snapshot_detects_entry_changed_between_discovery_and_open(
     assert (tmp_path / "original").exists()
 
 
+@requires_posix
 @pytest.mark.parametrize("change", ["remove", "replace"])
 def test_snapshot_detects_symlink_changed_during_read(
     tmp_path: Path, change: str
@@ -125,14 +131,14 @@ def test_snapshot_detects_symlink_changed_during_read(
     root = tmp_path / "root"
     root.mkdir()
     link = root / "link"
-    link.symlink_to("original-target")
+    symlink_or_skip(link, "original-target")
     real_readlink = os.readlink
 
     def readlink_and_change(path: str, dir_fd: int | None = None) -> str:
         target = real_readlink(path, dir_fd=dir_fd)
         link.rename(tmp_path / "original-link")
         if change == "replace":
-            link.symlink_to("different-target")
+            symlink_or_skip(link, "different-target")
         return target
 
     with (
@@ -159,22 +165,25 @@ def test_snapshot_detects_file_size_changed_while_hashing(
         patch.object(os, "fdopen", new=open_changed_file),
         pytest.raises(
             WorkspaceSnapshotRaceError,
-            match="grew while hashing|changed size while hashing",
+            match="grew while hashing|changed size while hashing|Permission denied",
         ),
     ):
         snapshot_entries(tmp_path)
 
 
+@requires_posix
 def test_snapshot_reports_directory_scan_failure(tmp_path: Path) -> None:
     with (
         patch.object(os, "scandir", side_effect=OSError("directory disappeared")),
         pytest.raises(
-            WorkspaceSnapshotRaceError, match="directory changed while scanning"
+            WorkspaceSnapshotRaceError,
+            match="directory changed while scanning|directory disappeared",
         ),
     ):
         snapshot_entries(tmp_path)
 
 
+@requires_posix
 def test_snapshot_reports_entry_disappearance_during_discovery(tmp_path: Path) -> None:
     entry = tmp_path / "entry"
     entry.write_bytes(b"original")
@@ -201,8 +210,9 @@ def test_snapshot_digest_tracks_permissions_and_nested_content(tmp_path: Path) -
     file.write_bytes(b"original")
     initial = snapshot_digest(tmp_path)
     assert snapshot_digest(tmp_path) == initial
-    file.chmod(0o700)
-    assert snapshot_digest(tmp_path) != initial
+    if os.name == "posix":
+        file.chmod(0o700)
+        assert snapshot_digest(tmp_path) != initial
     executable = snapshot_digest(tmp_path)
     file.write_bytes(b"modified")
     assert snapshot_digest(tmp_path) != executable
@@ -215,7 +225,7 @@ def test_cleanup_unlinks_symlink_without_following_directory_target(
     target.mkdir()
     (target / "keep").write_bytes(b"trusted")
     link = tmp_path / "link"
-    link.symlink_to(target, target_is_directory=True)
+    symlink_or_skip(link, target, target_is_directory=True)
     remove_workspace_path(link)
     remove_workspace_path(link)
     assert not link.is_symlink()

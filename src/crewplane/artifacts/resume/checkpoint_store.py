@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
     contained_regular_file,
     ensure_contained_directory,
@@ -27,7 +28,9 @@ def read_review_checkpoint(root: Path, node_id: str) -> ReviewLoopCheckpoint | N
         if (root / relative).exists() or (root / relative).is_symlink():
             raise ValueError("Checkpoint marker is not a safe regular file.")
         return None
-    return REVIEW_CHECKPOINT_ADAPTER.validate_json(path.read_bytes())
+    return REVIEW_CHECKPOINT_ADAPTER.validate_json(
+        read_contained_bytes(path.parent, path.name)
+    )
 
 
 def publish_review_checkpoint(root: Path, checkpoint: ReviewLoopCheckpoint) -> Path:
@@ -43,7 +46,9 @@ def read_checkpoint_provenance(root: Path) -> list[ReviewCheckpointResumeSummary
     path = contained_regular_file(root, run_manifest_relative_path().as_posix())
     if path is None:
         return []
-    return RunManifest.model_validate_json(path.read_bytes()).resumed_review_checkpoints
+    return RunManifest.model_validate_json(
+        read_contained_bytes(path.parent, path.name)
+    ).resumed_review_checkpoints
 
 
 def record_checkpoint_provenance(
@@ -52,7 +57,9 @@ def record_checkpoint_provenance(
     path = contained_regular_file(root, run_manifest_relative_path().as_posix())
     if path is None:
         raise ValueError("Checkpoint hydration requires a running manifest.")
-    manifest = RunManifest.model_validate_json(path.read_bytes())
+    manifest = RunManifest.model_validate_json(
+        read_contained_bytes(path.parent, path.name)
+    )
     if manifest.status != "running":
         raise ValueError("Checkpoint hydration requires a running manifest.")
     payload = manifest.model_dump()

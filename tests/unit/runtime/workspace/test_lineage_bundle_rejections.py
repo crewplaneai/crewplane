@@ -21,6 +21,7 @@ from crewplane.runtime.workspace.worktree import (
 from crewplane.runtime.workspace.worktree.lineage import (
     verify_source_commit_available,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_lineage_bundles import (
     create_full_bundle_chain,
     create_prerequisite_bundle_chain,
@@ -36,6 +37,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.service_worktree_lineage_bundles_support import (
     project_source_ref,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_verify_source_commit_available_rejects_ambient_omitted_upstream(

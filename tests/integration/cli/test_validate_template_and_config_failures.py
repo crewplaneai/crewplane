@@ -1,5 +1,7 @@
 import io
+import json
 import os
+import sys
 import unittest
 from pathlib import Path
 from tempfile import mkdtemp
@@ -9,12 +11,15 @@ import typer
 
 import crewplane.cli.app as cli
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
 )
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
@@ -118,6 +123,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
 
         self.assertEqual(workspace_real_execution_values, [False])
 
+    @requires_workspace_support
     def test_validate_skips_real_workspace_relative_executable_check(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         tmp_path = Path(tmp_dir)
@@ -198,7 +204,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     "",
                     "agents:",
                     "  alpha:",
-                    '    cli_cmd: ["echo"]',
+                    f"    cli_cmd: [{json.dumps(sys.executable)}]",
                     '    default_model: "model-a"',
                     '    prompt_transport: "argv"',
                     '    prompt_transport_arg: "--prompt"',
@@ -237,7 +243,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     "",
                     "agents:",
                     "  alpha:",
-                    '    cli_cmd: ["echo"]',
+                    f"    cli_cmd: [{json.dumps(sys.executable)}]",
                     '    provider_kind: "codex"',
                     '    default_model: "model-a"',
                     '    model_arg: "--custom-model"',
@@ -281,7 +287,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     "",
                     "agents:",
                     "  alpha:",
-                    '    cli_cmd: ["echo"]',
+                    f"    cli_cmd: [{json.dumps(sys.executable)}]",
                     '    provider_kind: "codex"',
                     '    default_model: "model-a"',
                     '    model_arg: "--custom-model"',
@@ -447,7 +453,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     "",
                     "agents:",
                     "  alpha:",
-                    '    cli_cmd: ["echo"]',
+                    f"    cli_cmd: [{json.dumps(sys.executable)}]",
                     '    default_model: "model-a"',
                     "settings:",
                     "  token_budget:",
@@ -582,4 +588,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
-            self.assertIn(".crewplane/config.yml not found", output_text)
+            self.assertIn(
+                ".crewplane/config.ymlnotfound",
+                "".join(output_text.replace("\\", "/").split()),
+            )

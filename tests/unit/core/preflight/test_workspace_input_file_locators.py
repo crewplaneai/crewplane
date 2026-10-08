@@ -6,12 +6,15 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
     workspace_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_enabled_input_node_uses_static_file_content(

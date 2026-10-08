@@ -10,6 +10,8 @@ from crewplane.adapters.invokers.cli_invoker.providers.claude import (
 )
 from crewplane.core.config import AgentConfig
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 @pytest.fixture(autouse=True)
 def clear_ambient_claude_reasoning(

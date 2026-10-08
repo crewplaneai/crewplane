@@ -4,16 +4,20 @@ import io
 import json
 import os
 from pathlib import Path
+from typing import IO
 from unittest.mock import patch
 
 import pytest
 
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
-    generated_file_snapshot_rejection_summary,
     snapshot_generated_file_workspace,
 )
+from crewplane.artifacts.generated_files.snapshot_metadata import (
+    generated_file_snapshot_rejection_summary,
+)
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 def test_workspace_generated_file_snapshot_bounds_rejection_details(
@@ -73,16 +77,20 @@ def test_workspace_generated_file_snapshot_records_size_growth_during_copy(
     output = OutputManager("Workflow", base_dir=base_dir)
     workspace = base_dir / "workspace"
     (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "app.txt").write_text("x", encoding="utf-8")
+    (workspace / "src" / "app.txt").write_text("x", encoding="utf-8", newline="\n")
     stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     alpha_output = stage_dir / "alpha_round1.md"
-    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8", newline="\n")
+
+    original_fdopen = os.fdopen
 
     def expanded_source(
         descriptor: int,
         mode: str,
         closefd: bool = True,
-    ) -> io.BytesIO:
+    ) -> IO[bytes]:
+        if mode == "wb":
+            return original_fdopen(descriptor, mode, closefd=closefd)
         assert descriptor >= 0
         assert mode == "rb"
         assert not closefd
@@ -113,18 +121,21 @@ def test_workspace_generated_file_snapshot_removes_truncated_copy(
     workspace = base_dir / "workspace"
     (workspace / "src").mkdir(parents=True)
     (workspace / "src" / "app.txt").write_text(
-        "complete",
-        encoding="utf-8",
+        "complete", encoding="utf-8", newline="\n"
     )
     stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     alpha_output = stage_dir / "alpha_round1.md"
-    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8", newline="\n")
+
+    original_fdopen = os.fdopen
 
     def truncated_source(
         descriptor: int,
         mode: str,
         closefd: bool = True,
-    ) -> io.BytesIO:
+    ) -> IO[bytes]:
+        if mode == "wb":
+            return original_fdopen(descriptor, mode, closefd=closefd)
         assert descriptor >= 0
         assert mode == "rb"
         assert not closefd
@@ -172,6 +183,7 @@ def test_workspace_generated_file_snapshot_ignores_hardlinked_files(
     assert not (snapshot / "src" / "leak.txt").exists()
 
 
+@requires_posix
 def test_workspace_generated_file_snapshot_rejects_symlink_swap_during_copy(
     tmp_path: Path,
 ) -> None:
@@ -198,7 +210,7 @@ def test_workspace_generated_file_snapshot_rejects_symlink_swap_during_copy(
         if path == "app.txt" and dir_fd is not None and not swapped:
             source.unlink()
             try:
-                source.symlink_to(outside)
+                symlink_or_skip(source, outside)
             except OSError as exc:
                 pytest.skip(f"symlinks are unavailable: {exc}")
             swapped = True
@@ -234,16 +246,19 @@ def test_generated_file_snapshot_rejects_symlinked_source_parent(
     output = OutputManager("Workflow", base_dir=base_dir)
     workspace = base_dir / "workspace"
     (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "app.txt").write_text("content", encoding="utf-8")
+    (workspace / "src" / "app.txt").write_text(
+        "content", encoding="utf-8", newline="\n"
+    )
     stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     outside = base_dir / "outside"
     outside.mkdir()
-    (stage_dir / "generated-file-sources").symlink_to(
+    symlink_or_skip(
+        stage_dir / "generated-file-sources",
         outside,
         target_is_directory=True,
     )
     alpha_output = stage_dir / "alpha_round1.md"
-    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+    alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8", newline="\n")
 
     with pytest.raises(
         RuntimeError,

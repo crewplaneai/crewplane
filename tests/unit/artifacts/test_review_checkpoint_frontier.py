@@ -22,6 +22,7 @@ from crewplane.core.review_checkpoint_state import CheckpointProjectObservation
 from crewplane.runtime.execution.review_loop.candidate_identity import (
     project_fingerprint,
 )
+from tests.helpers.platforms import requires_resume_support
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     iso_datetime,
@@ -242,6 +243,7 @@ def test_history_without_failed_attempts_does_not_scan_project(
     assert selected.decision.kind == "execute_full"
 
 
+@requires_resume_support
 @pytest.mark.parametrize("history_status", ["failed", "cancelled"])
 def test_history_without_review_loops_reuses_nodes_without_scanning_project(
     tmp_path: Path, history_status: str
@@ -286,6 +288,7 @@ def test_managed_review_loop_history_does_not_scan_project(tmp_path: Path) -> No
     assert selected.decision.kind == "execute_full"
 
 
+@requires_resume_support
 def test_history_selects_checkpoint_only_run_and_success_first(tmp_path: Path) -> None:
     source, plan, _, _ = checkpoint_history(tmp_path)
     selected = artifact_valid_history_plan(
@@ -317,6 +320,7 @@ def test_history_selects_checkpoint_only_run_and_success_first(tmp_path: Path) -
     )
 
 
+@requires_resume_support
 @pytest.mark.parametrize("valid_closed", [True, False])
 def test_newer_closed_only_attempt_fences_older_partial_but_keeps_other_nodes(
     tmp_path: Path, valid_closed: bool

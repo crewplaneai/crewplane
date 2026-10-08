@@ -7,11 +7,14 @@ from pathlib import Path
 from crewplane.core.preflight import PreflightExecutionPlan
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
     workspace_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 isolated_git = isolated_git_support.isolated_git
 

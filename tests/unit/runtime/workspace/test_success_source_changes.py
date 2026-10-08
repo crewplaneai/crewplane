@@ -8,6 +8,7 @@ from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree.inspection import changed_paths
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -19,7 +20,11 @@ from tests.helpers.workspace_service import (
 )
 
 isolated_git = isolated_git_support.isolated_git
+
 pytestmark = pytest.mark.usefixtures("isolated_git")
+
+
+pytestmark = [pytestmark, requires_workspace_support]
 
 
 @pytest.mark.parametrize("target_kind", ["file", "directory", "dangling"])
@@ -33,10 +38,12 @@ def test_snapshot_symlinks_preserve_targets_and_publish_terminal_state(
     target = tmp_path / "external-target"
     if target_kind == "directory":
         target.mkdir()
-        (target / "private.txt").write_text("private", encoding="utf-8")
+        (target / "private.txt").write_text("private", encoding="utf-8", newline="\n")
     elif target_kind == "file":
-        target.write_text("private", encoding="utf-8")
-    (repo / "link").symlink_to(target, target_is_directory=target_kind == "directory")
+        target.write_text("private", encoding="utf-8", newline="\n")
+    symlink_or_skip(
+        repo / "link", target, target_is_directory=target_kind == "directory"
+    )
     run_git_text(repo, "add", "link")
     run_git_text(repo, "commit", "-m", "add source symlink")
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True)
@@ -55,12 +62,14 @@ def test_snapshot_symlinks_preserve_targets_and_publish_terminal_state(
     assert link.is_symlink()
     assert link.readlink() == target
     if target_kind == "file":
-        target.write_text("outside changed", encoding="utf-8")
+        target.write_text("outside changed", encoding="utf-8", newline="\n")
     elif target_kind == "directory":
-        (target / "private.txt").write_text("outside changed", encoding="utf-8")
+        (target / "private.txt").write_text(
+            "outside changed", encoding="utf-8", newline="\n"
+        )
     if retarget:
         link.unlink()
-        link.symlink_to(tmp_path / "new-target")
+        symlink_or_skip(link, tmp_path / "new-target")
 
     prepared.mark_succeeded()
 

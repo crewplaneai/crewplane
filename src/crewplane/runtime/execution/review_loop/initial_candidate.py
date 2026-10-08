@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from functools import partial
@@ -10,7 +9,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
+from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
@@ -24,7 +23,7 @@ from ..fragment_assembler import (
     ResolvedPrompt,
     stream_has_runtime_dynamic_workspace_locator,
 )
-from ..provider_call import publish_invocation_output
+from ..provider_call import publish_invocation_output, read_bound_invocation_output
 from ..reviews.consensus import check_consensus
 from ..workspace_files import ResolvedWorkspaceFile
 from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
@@ -245,10 +244,10 @@ def seed_executor_outputs(
 ) -> list[ExecutorRoundArtifact]:
     """Seed bound candidates in input order, preserving identity and provenance.
 
-    Require each artifact's output signature to match its content. Publish verified
-    bytes and recovery data before aliasing generated workspaces and writing the
-    candidate identity sidecar. Errors propagate without rolling back earlier
-    publications; temporary invocation files are cleaned on success and failure.
+    Require source bytes to match the bound signature and rendered content to
+    match the artifact. Publish verified bytes and recovery data before aliasing
+    generated workspaces and writing the candidate identity sidecar. Errors
+    propagate without rolling back earlier publications.
     The caller retains ownership of the publication registry and workspace mappings.
     """
     seeded_outputs: list[ExecutorRoundArtifact] = []
@@ -261,15 +260,22 @@ def seed_executor_outputs(
                 "Cannot seed an executor output without a bound runtime publication: "
                 f"{artifact.output_file.as_posix()}"
             )
-        with tempfile.TemporaryDirectory(prefix="crewplane-review-seed-") as temp_dir:
-            invocation_output = Path(temp_dir) / "provider-output.md"
-            atomic_write_text(invocation_output, artifact.content)
-            output_signature = publish_invocation_output(
-                invocation_output,
-                output_file,
-                runtime_context.runtime_publications,
-                artifact.output_signature,
+        if (
+            read_bound_invocation_output(
+                artifact.output_file, artifact.output_signature
             )
+            != artifact.content
+        ):
+            raise RuntimeError(
+                "Executor content does not match its bound output bytes: "
+                f"{artifact.output_file.as_posix()}"
+            )
+        output_signature = publish_invocation_output(
+            artifact.output_file,
+            output_file,
+            runtime_context.runtime_publications,
+            artifact.output_signature,
+        )
         runtime_context.generated_file_workspaces.alias_output_file(
             node_id,
             artifact.output_file,

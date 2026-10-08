@@ -37,6 +37,7 @@ from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import symlink_or_skip
 
 
 def _plan(context_root: Path) -> PreflightExecutionPlan:
@@ -278,12 +279,12 @@ def test_published_plan_manifest_and_cleanup_share_literal_locator(
     if evidence == "missing":
         plan_path.unlink()
     elif evidence == "malformed":
-        plan_path.write_text("{broken", encoding="utf-8")
+        plan_path.write_text("{broken", encoding="utf-8", newline="\n")
     elif evidence in {"symlink", "hardlink"}:
         original = tmp_path / "original-plan.json"
         plan_path.rename(original)
         if evidence == "symlink":
-            plan_path.symlink_to(original)
+            symlink_or_skip(plan_path, original)
         else:
             plan_path.hardlink_to(original)
 

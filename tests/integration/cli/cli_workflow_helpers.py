@@ -1,3 +1,5 @@
+import json
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -77,10 +79,10 @@ def write_basic_config(path: Path) -> None:
                 "",
                 "agents:",
                 "  alpha:",
-                '    cli_cmd: ["echo"]',
+                f"    cli_cmd: {json.dumps([sys.executable, '-c', 'import sys; print(sys.argv[-1])'])}",
                 '    default_model: "model-a"',
                 "  beta:",
-                '    cli_cmd: ["echo"]',
+                f"    cli_cmd: {json.dumps([sys.executable, '-c', 'import sys; print(sys.argv[-1])'])}",
                 '    default_model: "model-b"',
             ]
         ),
@@ -96,7 +98,7 @@ def write_basic_config_without_default_model(path: Path) -> None:
                 "",
                 "agents:",
                 "  alpha:",
-                '    cli_cmd: ["echo"]',
+                f"    cli_cmd: {json.dumps([sys.executable, '-c', 'import sys; print(sys.argv[-1])'])}",
             ]
         ),
         encoding="utf-8",
@@ -111,7 +113,7 @@ def write_basic_config_with_settings(path: Path, log_cli_output: bool) -> None:
                 "",
                 "agents:",
                 "  alpha:",
-                '    cli_cmd: ["echo"]',
+                f"    cli_cmd: {json.dumps([sys.executable, '-c', 'import sys; print(sys.argv[-1])'])}",
                 '    default_model: "model-a"',
                 "settings:",
                 "  integrations:",

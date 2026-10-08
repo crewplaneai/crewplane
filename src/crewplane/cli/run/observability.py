@@ -26,6 +26,7 @@ from crewplane.observability.events import (
 from crewplane.observability.observer import Observer
 from crewplane.observability.persistent import render_run_summary_terminal
 from crewplane.observability.types import WorkflowTopology
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from .best_effort_thread import run_best_effort_thread
 from .terminalization import (
@@ -207,9 +208,17 @@ async def await_workflow_or_stop_request(
                 raise WorkflowCancelledByUser(WORKFLOW_CANCELLED_MESSAGE) from exc
             raise WorkflowCancelledByUser(WORKFLOW_CANCELLED_MESSAGE)
         await workflow_task
-    except asyncio.CancelledError:
-        workflow_task.cancel()
-        await asyncio.gather(workflow_task, return_exceptions=True)
+    except asyncio.CancelledError as cancellation:
+        if not workflow_task.done():
+            workflow_task.cancel()
+        try:
+            await workflow_task
+        except BaseException as exc:
+            cleanup_error = unconfirmed_process_cleanup(exc)
+            if cleanup_error is not None:
+                cancellation.__cause__ = cleanup_error
+            elif exc is not cancellation and cancellation.__cause__ is None:
+                cancellation.__cause__ = exc
         raise
     finally:
         stop_task.cancel()

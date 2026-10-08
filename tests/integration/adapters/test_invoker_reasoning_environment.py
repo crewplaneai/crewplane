@@ -12,6 +12,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def test_reasoning_request_rejects_claude_environment_conflict() -> None:
     context = InvocationContext(

@@ -33,9 +33,12 @@ from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.integration.observability.runtime.observability_runtime_helpers import (
     single_node_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

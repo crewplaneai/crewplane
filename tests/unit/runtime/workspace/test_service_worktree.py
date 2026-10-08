@@ -20,6 +20,7 @@ from crewplane.runtime.workspace import (
 from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -33,6 +34,8 @@ from tests.helpers.workspace_worktree_reuse import with_node_setup
 from tests.unit.runtime.workspace.service_worktree_support import (
     workspace_run_refs,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_project_root_success_without_workspace_state_is_noop(tmp_path: Path) -> None:

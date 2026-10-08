@@ -7,6 +7,9 @@ import pytest
 from crewplane.artifacts.workspace.persisted_chain import (
     workspace_result_descriptor_from_payload,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("required", [False, True])

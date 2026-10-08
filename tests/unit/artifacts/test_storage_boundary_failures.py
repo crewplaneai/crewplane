@@ -14,6 +14,7 @@ from crewplane.artifacts.atomic import atomic_write_bytes
 from crewplane.artifacts.directory_manager import DirectoryManager
 from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.run_history import RunHistoryError, find_same_context_runs
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 from tests.helpers.resume import WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
 from tests.helpers.resume_validation import source_record
 
@@ -111,10 +112,10 @@ def test_preflight_artifact_write_does_not_follow_existing_symlink(
 ) -> None:
     output = OutputManager("flow", base_dir=tmp_path)
     peer = tmp_path / "peer.md"
-    peer.write_text("retained")
+    peer.write_text("retained", encoding="utf-8", newline="\n")
     preflight = output.stages_dir / "preflight"
     preflight.mkdir()
-    (preflight / "file.md").symlink_to(peer)
+    symlink_or_skip(preflight / "file.md", peer)
 
     with pytest.raises(ValueError, match="must not be a symlink"):
         output.write_preflight_text("file.md", "overwrite")
@@ -122,6 +123,7 @@ def test_preflight_artifact_write_does_not_follow_existing_symlink(
     assert peer.read_text() == "retained"
 
 
+@requires_posix
 @pytest.mark.parametrize("error_number", [errno.EINVAL, errno.EIO])
 def test_atomic_publication_distinguishes_unsupported_directory_sync_from_io_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_number: int
@@ -220,9 +222,7 @@ def test_compiled_artifact_locators_reject_raw_unsafe_paths_before_creation(
     assert not output.results_dir.exists()
 
 
-@pytest.mark.parametrize(
-    "relative_path", [" ", " nested /file.md", r"nested\file.md", "nested/file.md"]
-)
+@pytest.mark.parametrize("relative_path", [" nested/file.md", "nested/file.md"])
 def test_artifact_publication_preserves_raw_safe_path_spelling(
     tmp_path: Path, relative_path: str
 ) -> None:

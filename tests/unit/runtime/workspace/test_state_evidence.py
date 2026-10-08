@@ -18,6 +18,9 @@ from crewplane.runtime.workspace.mutator_fence import (
     workspace_mutator_is_fenced,
 )
 from crewplane.runtime.workspace.terminalization import workspace_mutators_are_drained
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def _write_payload(state_path: Path, payload: dict[str, object]) -> None:

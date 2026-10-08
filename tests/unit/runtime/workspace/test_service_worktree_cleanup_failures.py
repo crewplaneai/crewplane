@@ -23,6 +23,7 @@ from crewplane.runtime.workspace.filesystem import (
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -34,6 +35,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.service_worktree_support import (
     workspace_run_refs,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_terminal_cleanup_failure_persists_cleanup_diagnostic(

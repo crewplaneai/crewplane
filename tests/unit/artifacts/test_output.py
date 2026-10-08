@@ -29,6 +29,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import symlink_or_skip
 
 
 def _workflow_signature(label: str) -> str:
@@ -114,7 +115,7 @@ def test_artifacts_support_symlinked_base_directory_ancestor(tmp_path: Path) -> 
     real_parent.mkdir()
     alias = temp_root / "alias"
     try:
-        alias.symlink_to(real_parent, target_is_directory=True)
+        symlink_or_skip(alias, real_parent, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -156,7 +157,7 @@ def test_compiled_stage_directory_rejects_symlink_escape(tmp_path: Path) -> None
     outside.mkdir()
     stage_link = output.stages_dir / "build.node"
     try:
-        stage_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(stage_link, outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -196,7 +197,7 @@ def test_compiled_result_path_rejects_symlinked_results_root(tmp_path: Path) -> 
     outside.mkdir()
     results_root = base_dir / "execution-results"
     try:
-        results_root.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(results_root, outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -214,7 +215,7 @@ def test_compiled_result_path_rejects_symlinked_target(tmp_path: Path) -> None:
     result_path = output.results_dir / build_result_filename("build.node")
     result_path.parent.mkdir(parents=True)
     try:
-        result_path.symlink_to(outside)
+        symlink_or_skip(result_path, outside)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -297,7 +298,7 @@ def test_run_log_paths_create_only_safe_live_directories(
     if symlink:
         outside = tmp_path / "outside"
         outside.mkdir()
-        (output.stages_dir / "logs").symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(output.stages_dir / "logs", outside, target_is_directory=True)
         for accessor in (output.get_run_event_log_path, output.get_run_summary_path):
             with pytest.raises(ValueError, match="real directory"):
                 accessor()
@@ -352,8 +353,8 @@ def test_preflight_and_workspace_exports_reject_symlinked_directories(
     preflight_link = output.stages_dir / "preflight"
     export_link = output.stages_dir / "workspace-exports"
     try:
-        preflight_link.symlink_to(outside, target_is_directory=True)
-        export_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(preflight_link, outside, target_is_directory=True)
+        symlink_or_skip(export_link, outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

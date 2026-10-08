@@ -218,7 +218,7 @@ class ProgressRestorer:
         return None if items is None else [self.candidate(item) for item in items]
 
     def candidate(self, item: CheckpointCandidate) -> ExecutorRoundArtifact:
-        """Read verified UTF-8 content into a new artifact with its saved identity.
+        """Render verified bytes into a new artifact with its saved identity.
 
         Reuse the indexed provider and signature without modifying the file or
         descriptor. Preserve producer coordinates and configured audit numbering.
@@ -226,7 +226,6 @@ class ProgressRestorer:
         Raises:
             KeyError: The output descriptor or task provider is not indexed.
             ValueError: The file is missing, unsafe, or differs from its signature.
-            UnicodeDecodeError: Verified content is not UTF-8.
             OSError: Inspecting or reading the file fails.
         """
         descriptor = self.files[item.output_path]
@@ -234,7 +233,9 @@ class ProgressRestorer:
         return ExecutorRoundArtifact(
             provider=self.providers[item.task_id],
             task_id=item.task_id,
-            content=read_checkpoint_file(self.root, descriptor).decode("utf-8"),
+            content=read_checkpoint_file(self.root, descriptor).decode(
+                "utf-8", errors="replace"
+            ),
             output_file=self.root / item.output_path,
             audit_round_num=item.audit if self.audit_rounds > 1 else None,
             round_num=item.local_round,

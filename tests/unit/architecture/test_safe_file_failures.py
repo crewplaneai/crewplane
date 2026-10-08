@@ -12,8 +12,10 @@ from crewplane.architecture.safe_files import (
     ensure_contained_directory,
     replace_contained_file,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
+@requires_posix
 @pytest.mark.parametrize("create", [False, True])
 @pytest.mark.parametrize("location", ["root", "component"])
 @pytest.mark.parametrize("error_type", [PermissionError, OSError])
@@ -60,12 +62,15 @@ def test_directory_paths_reject_files_and_symlinks(
     if blocked == root:
         root.rmdir()
     if kind == "file":
-        blocked.write_text("keep", encoding="utf-8")
+        blocked.write_text("keep", encoding="utf-8", newline="\n")
     else:
-        blocked.symlink_to(target, target_is_directory=True)
+        symlink_or_skip(blocked, target, target_is_directory=True)
 
     operation = ensure_contained_directory if create else contained_directory
-    with pytest.raises(ValueError, match="real directory"):
+    with pytest.raises(
+        ValueError,
+        match="real directory|Unexpected file type|Reparse points are forbidden",
+    ):
         operation(root, "nested/child")
 
     assert list(target.iterdir()) == []
@@ -76,6 +81,7 @@ def test_missing_directory_root_is_an_absent_lookup(tmp_path: Path) -> None:
     assert not (tmp_path / "missing").exists()
 
 
+@requires_posix
 @pytest.mark.parametrize("operation", ["resolve", "stat"])
 @pytest.mark.parametrize("error_type", [PermissionError, OSError])
 def test_regular_file_lookup_handles_filesystem_failures(
@@ -104,6 +110,7 @@ def test_regular_file_lookup_handles_filesystem_failures(
     assert source.read_bytes() == b"retained"
 
 
+@requires_posix
 @pytest.mark.parametrize(
     "race", ["replace-entry", "remove-entry", "extra-link", "rename-parent"]
 )

@@ -22,6 +22,8 @@ from crewplane.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

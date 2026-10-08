@@ -20,6 +20,7 @@ from crewplane.runtime.workspace.worktree import (
     temporary_refs as worktree_temporary_refs,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     write_result_bundle,
@@ -34,6 +35,8 @@ from tests.unit.runtime.workspace.branch_export_support import (
     export_record_path,
 )
 from tests.unit.runtime.workspace.ref_publication_support import ref_oid
+
+pytestmark = requires_workspace_support
 
 
 def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanup_fails(

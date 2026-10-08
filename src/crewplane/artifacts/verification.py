@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import ArtifactDescriptor, NodeState
 
@@ -27,7 +28,7 @@ def read_verified_node_artifact(
     artifact_path = contained_regular_file(results_dir, descriptor.relative_path)
     if artifact_path is None:
         raise ValueError(f"Node '{request.node_id}' {kind} artifact is unavailable.")
-    payload = _read_payload(artifact_path, request.node_id, kind)
+    payload = _read_payload(artifact_path, request.node_id, kind, descriptor.size_bytes)
     try:
         return VerifiedNodeArtifact(
             path=artifact_path,
@@ -67,7 +68,11 @@ def _load_successful_node_state(stages_dir: Path, node_id: str) -> NodeState:
     if state_path is None:
         raise ValueError(f"Node '{node_id}' has no valid successful state descriptor.")
     try:
-        state = NodeState.model_validate_json(state_path.read_text(encoding="utf-8"))
+        state = NodeState.model_validate_json(
+            read_contained_bytes(
+                stages_dir, node_state_relative_path(node_id).as_posix()
+            )
+        )
     except (OSError, ValueError) as exc:
         raise ValueError(
             f"Node '{node_id}' has no valid successful state descriptor."
@@ -88,8 +93,8 @@ def _descriptor_for_artifact(
     return descriptor
 
 
-def _read_payload(path: Path, node_id: str, kind: str) -> bytes:
+def _read_payload(path: Path, node_id: str, kind: str, size_bytes: int) -> bytes:
     try:
-        return path.read_bytes()
-    except OSError as exc:
+        return read_contained_bytes(path.parent, path.name, size_bytes)
+    except (OSError, ValueError) as exc:
         raise ValueError(f"Node '{node_id}' {kind} artifact is unavailable.") from exc

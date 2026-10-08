@@ -16,6 +16,7 @@ from crewplane.runtime.execution.review_loop.policy import (
     resolve_remediation_depth,
     split_sequential_review_loop_providers,
 )
+from tests.helpers.platforms import symlink_or_skip
 
 from .review_loop_rounds_support import provider
 
@@ -98,7 +99,7 @@ def test_audit_round_dir_rejects_symlinked_round_directory(tmp_path: Path) -> No
     outside.mkdir()
     round_dir = tmp_path / "review-audit-round-2"
     try:
-        round_dir.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(round_dir, outside, target_is_directory=True)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

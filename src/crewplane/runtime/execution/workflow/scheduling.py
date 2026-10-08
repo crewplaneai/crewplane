@@ -12,6 +12,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from ..common import (
     ExecutionTelemetry,
@@ -173,7 +174,7 @@ async def _consume_completed_nodes(session: WorkflowExecutionSession) -> None:
         try:
             await _finalize_completed_node(node_id, session.state, session.telemetry)
         except Exception as exc:
-            if unexpected_error is None:
+            if unexpected_error is None or unconfirmed_process_cleanup(exc) is not None:
                 unexpected_error = exc
     if unexpected_error is not None:
         raise unexpected_error
@@ -265,7 +266,12 @@ def _raise_if_workflow_failed(
         dependencies_by_node=dependencies_by_node,
         statuses=statuses,
     )
-    raise WorkflowExecutionError(f"Workflow '{workflow_name}' failed:\n{details}")
+    error = WorkflowExecutionError(f"Workflow '{workflow_name}' failed:\n{details}")
+    if node_errors:
+        raise error from ExceptionGroup(
+            "Workflow node failures", list(node_errors.values())
+        )
+    raise error
 
 
 async def run_scheduling_loop(

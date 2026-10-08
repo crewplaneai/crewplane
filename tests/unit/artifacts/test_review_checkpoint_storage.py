@@ -14,6 +14,7 @@ from crewplane.artifacts.resume.checkpoint_store import (
     read_review_checkpoint,
 )
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.review_checkpoints import checkpoint_payload
 
 
@@ -56,15 +57,15 @@ def test_unsafe_or_changed_dependencies_do_not_replace_marker(
     before = marker.read_bytes()
     dependency = tmp_path / record.files[0].relative_path
     if damage == "changed":
-        dependency.write_text("different")
+        dependency.write_text("different", encoding="utf-8", newline="\n")
     elif damage == "hardlink":
         os.link(dependency, tmp_path / "alias")
     else:
         dependency.unlink()
         if damage == "symlink":
             target = tmp_path / "outside"
-            target.write_text("candidate")
-            dependency.symlink_to(target)
+            target.write_text("candidate", encoding="utf-8", newline="\n")
+            symlink_or_skip(dependency, target)
         elif damage == "directory":
             dependency.mkdir()
     with pytest.raises(ValueError):

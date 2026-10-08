@@ -5,6 +5,8 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from tests.helpers.platforms import symlink_or_skip
+
 StatusMutator = Callable[[dict[str, object], Path], None]
 
 
@@ -160,7 +162,7 @@ def symlink_escape(payload: dict[str, object], stage_dir: Path) -> None:
     outside = stage_dir.parent / "outside.md"
     outside.write_text("outside", encoding="utf-8")
     link = stage_dir / "escape.md"
-    link.symlink_to(outside)
+    symlink_or_skip(link, outside)
     entries = payload["canonical_executor_outputs"]
     assert isinstance(entries, list)
     entries[0]["path"] = "escape.md"

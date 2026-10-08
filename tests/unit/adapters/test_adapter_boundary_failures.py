@@ -18,6 +18,9 @@ from crewplane.architecture.errors import AdapterLoadError
 from crewplane.architecture.loader import instantiate_adapter, load_adapter_class
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 @pytest.mark.parametrize(
@@ -53,6 +56,7 @@ def test_invoker_factory_rejects_a_raw_configuration_mapping(adapter: object) ->
         adapter.create_invoker({})
 
 
+@requires_posix
 @pytest.mark.parametrize("kind", ["directory", "non-executable"])
 def test_cli_plan_rejects_unlaunchable_absolute_executable(
     tmp_path: Path, kind: str
@@ -61,7 +65,7 @@ def test_cli_plan_rejects_unlaunchable_absolute_executable(
     if kind == "directory":
         executable.mkdir()
     else:
-        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
         executable.chmod(0o600)
     agent = AgentConfig(cli_cmd=[str(executable)], provider_kind="generic")
 

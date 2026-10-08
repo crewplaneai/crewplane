@@ -55,7 +55,7 @@ class WorkspaceSnapshotPolicy:
 
 
 @dataclass
-class _WorkspaceSnapshotBudget:
+class WorkspaceSnapshotBudget:
     policy: WorkspaceSnapshotPolicy
     started_at: float
     entry_count: int = 0
@@ -74,12 +74,18 @@ def snapshot_entries(
     policy: WorkspaceSnapshotPolicy | None = None,
 ) -> dict[str, str]:
     resolved_policy = policy or WorkspaceSnapshotPolicy()
-    budget = _WorkspaceSnapshotBudget(
+    budget = WorkspaceSnapshotBudget(
         policy=resolved_policy,
         started_at=resolved_policy.clock(),
     )
+    if os.name == "nt":
+        from .snapshot_scan_io import scan_windows_directory
+
+        entries: dict[str, str] = {}
+        scan_windows_directory(root, "", entries, budget)
+        return dict(sorted(entries.items()))
     root_stat = _require_snapshot_directory(root)
-    entries: dict[str, str] = {}
+    entries = {}
     root_descriptor = _open_snapshot_directory(root, root_stat, ".")
     try:
         _scan_snapshot_directory(budget, root_descriptor, "", entries)
@@ -88,7 +94,7 @@ def snapshot_entries(
     return dict(sorted(entries.items()))
 
 
-def _snapshot_entry_digest(
+def snapshot_entry_digest(
     relative: str,
     entry_stat: os.stat_result,
     kind: str,
@@ -102,7 +108,7 @@ def _snapshot_entry_digest(
 
 
 def _scan_snapshot_directory(
-    budget: _WorkspaceSnapshotBudget,
+    budget: WorkspaceSnapshotBudget,
     directory_descriptor: int,
     relative_parent: str,
     entries: dict[str, str],
@@ -113,7 +119,7 @@ def _scan_snapshot_directory(
     for name, relative, entry_stat in sorted(discovered):
         mode = entry_stat.st_mode
         if stat.S_ISLNK(mode):
-            entries[relative] = _snapshot_entry_digest(
+            entries[relative] = snapshot_entry_digest(
                 relative,
                 entry_stat,
                 "symlink",
@@ -134,7 +140,7 @@ def _scan_snapshot_directory(
             )
             try:
                 opened_stat = os.fstat(child_descriptor)
-                entries[relative] = _snapshot_entry_digest(
+                entries[relative] = snapshot_entry_digest(
                     relative,
                     opened_stat,
                     "dir",
@@ -150,7 +156,7 @@ def _scan_snapshot_directory(
                 os.close(child_descriptor)
             continue
         if not stat.S_ISREG(mode):
-            raise _unsupported_snapshot_entry(relative, mode)
+            raise unsupported_snapshot_entry(relative, mode)
         entries[relative] = _snapshot_regular_file_digest(
             budget,
             directory_descriptor,
@@ -161,11 +167,11 @@ def _scan_snapshot_directory(
 
 
 def _discover_snapshot_entries(
-    budget: _WorkspaceSnapshotBudget,
+    budget: WorkspaceSnapshotBudget,
     directory_descriptor: int,
     relative_parent: str,
 ) -> list[tuple[str, str, os.stat_result]]:
-    _check_snapshot_budget(budget)
+    check_snapshot_budget(budget)
     discovered: list[tuple[str, str, os.stat_result]] = []
     try:
         with os.scandir(directory_descriptor) as iterator:
@@ -175,7 +181,7 @@ def _discover_snapshot_entries(
                 )
                 if relative in budget.policy.excluded_roots:
                     continue
-                _count_snapshot_entry(budget, relative)
+                count_snapshot_entry(budget, relative)
                 discovered.append(
                     (
                         entry.name,
@@ -198,7 +204,7 @@ def _discover_snapshot_entries(
 
 
 def _snapshot_regular_file_digest(
-    budget: _WorkspaceSnapshotBudget,
+    budget: WorkspaceSnapshotBudget,
     directory_descriptor: int,
     name: str,
     relative: str,
@@ -225,25 +231,7 @@ def _snapshot_regular_file_digest(
             raise WorkspaceSnapshotRaceError(
                 f"Workspace snapshot entry changed type or identity: {relative}"
             )
-        _reserve_snapshot_file_bytes(budget, opened_stat.st_size, relative)
-        digest = hashlib.sha256()
-        mode = stat.S_IMODE(opened_stat.st_mode)
-        digest.update(f"file\0{relative}\0{mode:o}\0".encode())
-        bytes_read = 0
-        with os.fdopen(descriptor, "rb", closefd=False) as handle:
-            for chunk in iter(lambda: handle.read(FILE_HASH_CHUNK_BYTES), b""):
-                _check_snapshot_budget(budget)
-                bytes_read += len(chunk)
-                if bytes_read > opened_stat.st_size:
-                    raise WorkspaceSnapshotRaceError(
-                        f"Workspace snapshot file grew while hashing: {relative}"
-                    )
-                digest.update(chunk)
-        if bytes_read != opened_stat.st_size:
-            raise WorkspaceSnapshotRaceError(
-                f"Workspace snapshot file changed size while hashing: {relative}"
-            )
-        return digest.hexdigest()
+        return hash_open_snapshot_file(budget, descriptor, relative, opened_stat)
     finally:
         os.close(descriptor)
 
@@ -292,7 +280,7 @@ def _read_snapshot_symlink_at(
         raise WorkspaceSnapshotRaceError(
             f"Workspace snapshot symlink changed: {relative}"
         ) from exc
-    if not stat.S_ISLNK(current_stat.st_mode) or not _same_snapshot_entry(
+    if not stat.S_ISLNK(current_stat.st_mode) or not same_snapshot_entry(
         entry_stat,
         current_stat,
     ):
@@ -344,7 +332,7 @@ def _open_snapshot_directory_target(
             f"Workspace snapshot directory changed before open: {relative}"
         ) from exc
     opened_stat = os.fstat(descriptor)
-    if not stat.S_ISDIR(opened_stat.st_mode) or not _same_snapshot_entry(
+    if not stat.S_ISDIR(opened_stat.st_mode) or not same_snapshot_entry(
         entry_stat,
         opened_stat,
     ):
@@ -355,14 +343,14 @@ def _open_snapshot_directory_target(
     return descriptor
 
 
-def _same_snapshot_entry(
+def same_snapshot_entry(
     first: os.stat_result,
     second: os.stat_result,
 ) -> bool:
     return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
 
 
-def _unsupported_snapshot_entry(
+def unsupported_snapshot_entry(
     relative: str,
     mode: int,
 ) -> WorkspaceSnapshotEntryError:
@@ -372,11 +360,11 @@ def _unsupported_snapshot_entry(
     )
 
 
-def _count_snapshot_entry(
-    budget: _WorkspaceSnapshotBudget,
+def count_snapshot_entry(
+    budget: WorkspaceSnapshotBudget,
     relative: str,
 ) -> None:
-    _check_snapshot_budget(budget)
+    check_snapshot_budget(budget)
     budget.entry_count += 1
     if budget.entry_count > budget.policy.max_entries:
         raise WorkspaceSnapshotLimitError(
@@ -386,7 +374,7 @@ def _count_snapshot_entry(
 
 
 def _reserve_snapshot_file_bytes(
-    budget: _WorkspaceSnapshotBudget,
+    budget: WorkspaceSnapshotBudget,
     size_bytes: int,
     relative: str,
 ) -> None:
@@ -398,7 +386,7 @@ def _reserve_snapshot_file_bytes(
         )
 
 
-def _check_snapshot_budget(budget: _WorkspaceSnapshotBudget) -> None:
+def check_snapshot_budget(budget: WorkspaceSnapshotBudget) -> None:
     if budget.policy.cancel_requested is not None and budget.policy.cancel_requested():
         raise WorkspaceSnapshotCancelled("Workspace snapshot was cancelled.")
     elapsed = budget.policy.clock() - budget.started_at
@@ -407,3 +395,30 @@ def _check_snapshot_budget(budget: _WorkspaceSnapshotBudget) -> None:
             "Workspace snapshot elapsed-time limit exceeded "
             f"({budget.policy.max_elapsed_seconds:g}s)."
         )
+
+
+def hash_open_snapshot_file(
+    budget: WorkspaceSnapshotBudget,
+    descriptor: int,
+    relative: str,
+    opened_stat: os.stat_result,
+) -> str:
+    _reserve_snapshot_file_bytes(budget, opened_stat.st_size, relative)
+    digest = hashlib.sha256()
+    mode = stat.S_IMODE(opened_stat.st_mode)
+    digest.update(f"file\0{relative}\0{mode:o}\0".encode())
+    bytes_read = 0
+    with os.fdopen(descriptor, "rb", closefd=False) as handle:
+        for chunk in iter(lambda: handle.read(FILE_HASH_CHUNK_BYTES), b""):
+            check_snapshot_budget(budget)
+            bytes_read += len(chunk)
+            if bytes_read > opened_stat.st_size:
+                raise WorkspaceSnapshotRaceError(
+                    f"Workspace snapshot file grew while hashing: {relative}"
+                )
+            digest.update(chunk)
+    if bytes_read != opened_stat.st_size:
+        raise WorkspaceSnapshotRaceError(
+            f"Workspace snapshot file changed size while hashing: {relative}"
+        )
+    return digest.hexdigest()
