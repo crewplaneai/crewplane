@@ -132,12 +132,16 @@ def test_static_file_policy_rechecks_symlink_destination_after_existence_check(
     assert result.resource is None
     assert result.payload is None
     assert len(result.diagnostics) == 1
-    expected = (
-        "after symlink resolution"
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.code == "FILE-POLICY"
+    assert diagnostic.phase == "file_policy"
+    assert diagnostic.path == "context.md"
+    assert diagnostic.metadata == {"resolved_path": target.resolve().as_posix()}
+    assert diagnostic.message == (
+        "Template access denied after symlink resolution: context.md"
         if destination == "external"
-        else "runtime-owned path"
+        else "Template access denied for Crewplane runtime-owned path: context.md"
     )
-    assert expected in result.diagnostics[0].message
 
 
 @pytest.mark.parametrize(

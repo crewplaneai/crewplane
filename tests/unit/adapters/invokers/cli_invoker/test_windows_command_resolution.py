@@ -1,5 +1,6 @@
 import base64
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -27,19 +28,35 @@ def touch(root: Path, *names: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "extensions, expected",
+    "extensions, expected, kind, shell",
     [
-        (".EXE;.CMD", "agent.exe"),
-        (".CMD;.EXE", "agent.cmd"),
-        (".PS1;.EXE", "agent.ps1"),
+        (".EXE;.CMD", "agent.exe", "native", None),
+        (".COM;.EXE", "agent.com", "native", None),
+        (".CMD;.EXE", "agent.cmd", "batch", "cmd.exe"),
+        (".BAT;.EXE", "agent.bat", "batch", "cmd.exe"),
+        (".PS1;.EXE", "agent.ps1", "powershell", "pwsh.exe"),
     ],
 )
-def test_pathext_order_and_required_shells(tmp_path, extensions, expected) -> None:
-    touch(tmp_path, "agent.exe", "agent.cmd", "agent.ps1", "cmd.exe", "pwsh.exe")
+def test_pathext_order_and_required_shells(
+    tmp_path, extensions, expected, kind, shell
+) -> None:
+    touch(
+        tmp_path,
+        "agent.exe",
+        "agent.com",
+        "agent.cmd",
+        "agent.bat",
+        "agent.ps1",
+        "cmd.exe",
+        "pwsh.exe",
+        "powershell.exe",
+    )
     result = resolve_command(
         "agent", tmp_path, {"PATH": str(tmp_path), "PATHEXT": extensions}
     )
-    assert Path(result.executable).name == expected
+    assert result == ResolvedCommand(
+        str(tmp_path / expected), kind, None if shell is None else str(tmp_path / shell)
+    )
 
 
 def test_path_directory_order_precedes_extension_order(tmp_path) -> None:
@@ -49,8 +66,45 @@ def test_path_directory_order_precedes_extension_order(tmp_path) -> None:
     result = resolve_command(
         "agent", tmp_path, {"PATH": f"{first};{second}", "PATHEXT": ".EXE"}
     )
-    assert Path(result.executable) == first / "agent.ps1"
-    assert Path(result.shell).name == "powershell.exe"
+    assert result == ResolvedCommand(
+        str(first / "agent.ps1"), "powershell", str(first / "powershell.exe")
+    )
+
+
+def test_windows_relative_quoted_path_and_case_insensitive_environment(
+    tmp_path,
+) -> None:
+    first, second = tmp_path / "first space", tmp_path / "second"
+    touch(tmp_path, "agent.exe")
+    touch(first, "agent.cmd", "agent.py")
+    touch(second, "agent.exe", "cmd.exe")
+    (first / "agent.exe").mkdir()
+    environment = {"Path": ';"first space";second', "PathExt": ".PY;.EXE;.CMD;.cmd"}
+    lookup = Mock()
+
+    result = resolve_command("agent", tmp_path, environment, lookup)
+
+    assert result == ResolvedCommand(
+        str(first / "agent.cmd"), "batch", str(second / "cmd.exe")
+    )
+    assert environment == {
+        "Path": ';"first space";second',
+        "PathExt": ".PY;.EXE;.CMD;.cmd",
+    }
+    lookup.assert_not_called()
+
+
+def test_windows_defaults_use_process_cwd_and_environment(
+    tmp_path, monkeypatch
+) -> None:
+    touch(tmp_path, "agent.cmd", "cmd.exe")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("PATHEXT", raising=False)
+
+    assert resolve_command("agent") == ResolvedCommand(
+        str(tmp_path / "agent.cmd"), "batch", str(tmp_path / "cmd.exe")
+    )
 
 
 def test_explicit_and_relative_paths_select_requested_launcher(tmp_path) -> None:
@@ -61,13 +115,42 @@ def test_explicit_and_relative_paths_select_requested_launcher(tmp_path) -> None
     assert resolve_command(str(location / "agent.exe"), tmp_path, env).kind == "native"
 
 
+def test_windows_explicit_suffix_is_case_insensitive_and_bypasses_pathext(
+    tmp_path,
+) -> None:
+    touch(tmp_path, "agent.EXE")
+
+    assert resolve_command("./agent.EXE", tmp_path, {"PATHEXT": ".CMD"}) == (
+        ResolvedCommand(str(tmp_path / "agent.EXE"))
+    )
+
+
 @pytest.mark.parametrize("name", ["missing", "agent.cmd", "agent.ps1", "agent.py"])
 def test_missing_commands_unsupported_launchers_and_missing_shells_fail(
     tmp_path, name
 ) -> None:
     touch(tmp_path, "agent.cmd", "agent.ps1", "agent.py")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as caught:
         resolve_command(name, tmp_path, {"PATH": str(tmp_path)})
+    if name == "agent.ps1":
+        assert str(caught.value) == (
+            f"PowerShell is required for '{tmp_path / name}'; install pwsh or configure another launcher."
+        )
+        assert isinstance(caught.value.__cause__, ValueError)
+        assert str(caught.value.__cause__) == (
+            "Windows CLI or required shell 'powershell.exe' not found using invocation cwd, PATH and PATHEXT."
+        )
+    elif name == "agent.py":
+        assert str(caught.value) == (
+            f"Unsupported Windows launcher '{tmp_path / name}'. Configure an .exe, .com, .cmd, .bat, or .ps1 command."
+        )
+        assert caught.value.__cause__ is None
+    else:
+        missing = "cmd.exe" if name == "agent.cmd" else name
+        assert str(caught.value) == (
+            f"Windows CLI or required shell '{missing}' not found using invocation cwd, PATH and PATHEXT."
+        )
+        assert caught.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
