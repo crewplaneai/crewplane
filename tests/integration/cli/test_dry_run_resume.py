@@ -13,7 +13,7 @@ import crewplane.cli.app as cli
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.architecture.errors import AdapterContractError
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.platforms import requires_resume_support
+from tests.helpers.platforms import requires_resume_support, windows_support_policy
 from tests.helpers.resume import make_node_state, write_node_state, write_result
 from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.integration.cli.dry_run_helpers import (
@@ -37,7 +37,9 @@ def test_windows_advisory_rejects_unused_workspace_without_artifacts(
     tmp_path, monkeypatch, command
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("crewplane.core.platform.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
     project = create_project(tmp_path, None, 1)
     project.config["settings"]["workspace"]["enabled"] = True
     project.write()

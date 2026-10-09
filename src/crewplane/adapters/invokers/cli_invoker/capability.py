@@ -16,6 +16,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig
 
+from . import command_strategy
 from .failures.classifier import classify_generic_failure
 from .quota.classifier import classify_generic_quota
 
@@ -26,6 +27,7 @@ class CliInvocationRequest:
 
     config: AgentConfig
     model: str | None
+    command_strategy: command_strategy.CommandStrategy = field(kw_only=True)
     requested_reasoning: str | None = None
     working_directory: Path | None = None
     environment: Mapping[str, str] = field(default_factory=os.environ.copy)

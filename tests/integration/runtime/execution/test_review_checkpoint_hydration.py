@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from crewplane.artifacts.generated_files import catalog
+from crewplane.artifacts.generated_files import io as generated_io
 from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )
@@ -82,18 +84,20 @@ def test_partial_generated_capture_continues_and_resumes(
         content = "## Generated Files\n" + "\n".join(
             f"- `{path.name}`" for path in generated
         )
-        original_copy = catalog.copy_generated_file_snapshot_candidate
+        operations = generated_io.generated_file_operations()
 
         def reject_copy(
             candidate: GeneratedFileSnapshotCandidate, target: Path, source: Path
         ) -> tuple[int, str]:
             if candidate.relative_label == generated[-1].name:
                 raise OSError("individual generated-file copy rejected")
-            return original_copy(candidate, target, source)
+            return operations.copy_snapshot(candidate, target, source)
 
         if rejection == "copy_failed":
             monkeypatch.setattr(
-                catalog, "copy_generated_file_snapshot_candidate", reject_copy
+                generated_io,
+                "generated_file_operations",
+                lambda: replace(operations, copy_snapshot=reject_copy),
             )
         output, runtime = checkpoint_run(tmp_path)
         publish = output.write_review_checkpoint

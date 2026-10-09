@@ -20,7 +20,6 @@ from crewplane.bootstrap import (
     build_runtime_config_snapshot,
 )
 from crewplane.core.config import Config
-from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight import (
     PreflightExecutionPlan,
 )
@@ -325,9 +324,8 @@ async def execute_workflow_run(
         terminal_complete = not running_manifest_written or (
             terminalization is not None and terminalization.committed
         )
-        cleanup_complete = (
-            not is_native_windows()
-            or unconfirmed_process_cleanup(sys.exception()) is None
+        same_context_lock.release(
+            terminal_complete=terminal_complete,
+            cleanup_unconfirmed=unconfirmed_process_cleanup(sys.exception())
+            is not None,
         )
-        if terminal_complete and cleanup_complete:
-            same_context_lock.release()

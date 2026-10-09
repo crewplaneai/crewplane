@@ -12,8 +12,8 @@ from threading import Lock
 from typing import Literal
 
 from crewplane.architecture.contracts import JsonObject, JsonValue
-from crewplane.architecture.safe_file_reads import read_contained_bytes
 
+from . import fingerprint_key_io
 from .diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
@@ -93,6 +93,7 @@ class FingerprintKeyProvider:
     ) -> None:
         self.key_path = state_dir / "preflight" / "fingerprint.key"
         self.cache = cache if cache is not None else FingerprintKeyCache()
+        self.io = fingerprint_key_io.fingerprint_key_operations()
 
     def load_key(self, policy: FingerprintKeyPolicy) -> FingerprintKeyResult:
         if self.key_path.exists() or self.key_path.is_symlink():
@@ -115,13 +116,8 @@ class FingerprintKeyProvider:
                 persisted=True,
                 diagnostics=tuple(diagnostics),
             )
-        if os.name != "nt":
-            return FingerprintKeyResult(key=self.key_path.read_bytes(), persisted=True)
-        try:
-            key = read_contained_bytes(
-                self.key_path.parent, self.key_path.name, FINGERPRINT_KEY_SIZE
-            )
-        except (OSError, ValueError) as exc:
+        result = self.io.read_key(self.key_path, FINGERPRINT_KEY_SIZE)
+        if result.error is not None:
             return FingerprintKeyResult(
                 key=b"",
                 persisted=True,
@@ -130,11 +126,11 @@ class FingerprintKeyProvider:
                         code=PreflightDiagnosticCode.FINGERPRINT_KEY,
                         phase=PreflightDiagnosticPhase.ENV_POLICY,
                         path=self.key_path.as_posix(),
-                        message=f"Unable to read protected fingerprint key: {exc}",
+                        message=f"Unable to read protected fingerprint key: {result.error}",
                     ),
                 ),
             )
-        return FingerprintKeyResult(key=key, persisted=True)
+        return FingerprintKeyResult(key=result.key, persisted=True)
 
     def _validate_key_file(self) -> list[PreflightDiagnostic]:
         diagnostics: list[PreflightDiagnostic] = []
@@ -180,7 +176,7 @@ class FingerprintKeyProvider:
                     message="Fingerprint key must contain exactly 32 bytes.",
                 )
             )
-        if os.name == "posix" and metadata.st_mode & 0o077:
+        if self.io.permissions_invalid(metadata):
             diagnostics.append(
                 PreflightDiagnostic(
                     code=PreflightDiagnosticCode.FINGERPRINT_KEY,
@@ -193,7 +189,7 @@ class FingerprintKeyProvider:
 
     def _publish_new_key(self) -> FingerprintKeyResult:
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
-        self._fsync_parent()
+        self.io.sync_parent(self.key_path.parent)
         key_bytes = secrets.token_bytes(FINGERPRINT_KEY_SIZE)
         file_descriptor, temp_path_label = tempfile.mkstemp(
             dir=self.key_path.parent,
@@ -206,7 +202,7 @@ class FingerprintKeyProvider:
                 handle.write(key_bytes)
                 handle.flush()
                 os.fsync(handle.fileno())
-            self._fsync_parent()
+            self.io.sync_parent(self.key_path.parent)
             try:
                 os.link(temp_path, self.key_path)
             except FileExistsError:
@@ -214,24 +210,12 @@ class FingerprintKeyProvider:
             finally:
                 with suppress(OSError):
                     temp_path.unlink()
-                self._fsync_parent()
+                self.io.sync_parent(self.key_path.parent)
         except Exception:
             with suppress(OSError):
                 temp_path.unlink()
             raise
         return self._read_existing_key()
-
-    def _fsync_parent(self) -> None:
-        if os.name != "posix":
-            return
-        try:
-            descriptor = os.open(self.key_path.parent, os.O_RDONLY)
-        except OSError:
-            return
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
 
 
 def fingerprint_payload(key: bytes, payload: JsonObject) -> str:

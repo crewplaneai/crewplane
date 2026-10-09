@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass
-from functools import cache
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -14,39 +12,18 @@ from crewplane.architecture.contracts import (
     JsonObject,
     ProviderKind,
 )
-from crewplane.core.config import AgentConfig, Config
-from crewplane.core.platform import is_native_windows
-from crewplane.core.preflight.execution_nodes import resolve_provider_model
+from crewplane.core.config import Config
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 
-from .cli_invoker import build_cli_invocation_plan, build_cli_log_presentation
+from .cli_invoker import (
+    build_cli_invocation_plan,
+    build_cli_log_presentation,
+    command_strategy,
+)
 from .cli_invoker.capabilities import get_cli_provider_capability
 from .cli_invoker.capability import CliInvocationRequest
-from .cli_invoker.command_resolution import contains_path_separator, resolve_command
-from .cli_invoker.env_command import EnvCommandContext, parse_env_command_context
-from .cli_invoker.windows_launchers import prepare_windows_launcher
-
-_PLATFORM_ENV_EXECUTABLES = (Path("/bin/env"), Path("/usr/bin/env"))
-
-
-@dataclass(frozen=True, slots=True)
-class _ExecutableRequirement:
-    """Executable lookup parameters for one required CLI command."""
-
-    executable: str
-    base_dir: Path
-    search_path: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _RequestValidationTarget:
-    """Configured workflow provider requiring request validation."""
-
-    location: str
-    agent_config: AgentConfig
-    requested_reasoning: str | None
-    model: str | None
+from .cli_invoker.command_types import CommandAvailability, request_validation_targets
 
 
 def collect_cli_availability_errors(
@@ -55,30 +32,13 @@ def collect_cli_availability_errors(
     which_fn: Callable[[str], str | None] | None = None,
     project_root: Path | None = None,
 ) -> list[str]:
-    """Collect missing executable errors for configured CLI providers."""
-
-    executable_lookup = cache(shutil.which if which_fn is None else which_fn)
-    executable_base_dir = Path.cwd() if project_root is None else project_root
-    if is_native_windows():
-        return _windows_command_errors(workflow, config, executable_base_dir)
-    missing_cli_locations: dict[tuple[str, str], list[str]] = {}
-    for node in workflow.nodes:
-        for provider in node.providers:
-            agent_config = config.agents.get(provider.provider)
-            if agent_config is None:
-                continue
-            for requirement in _required_cli_executables(
-                agent_config.cli_cmd,
-                executable_base_dir,
-                executable_lookup,
-            ):
-                if _cli_executable_available(requirement, executable_lookup):
-                    continue
-                location = f"workflow '{workflow.name}' -> node '{node.id}'"
-                missing_cli_locations.setdefault(
-                    (provider.provider, requirement.executable), []
-                ).append(f"{location} (CLI: {requirement.executable})")
-    return _format_missing_cli_errors(missing_cli_locations)
+    """Collect read-only command diagnostics using this entry point's strategy."""
+    return command_strategy.command_strategy().collect_availability_errors(
+        workflow,
+        config,
+        shutil.which if which_fn is None else which_fn,
+        Path.cwd() if project_root is None else project_root,
+    )
 
 
 def collect_cli_request_errors(
@@ -89,11 +49,13 @@ def collect_cli_request_errors(
 ) -> list[str]:
     """Collect request validation errors for configured workflow providers."""
 
+    strategy = command_strategy.command_strategy()
     errors: list[str] = []
-    for target in _request_validation_targets(workflow, config):
+    for target in request_validation_targets(workflow, config):
         try:
             request = CliInvocationRequest(
                 config=target.agent_config,
+                command_strategy=strategy,
                 model=target.model,
                 requested_reasoning=target.requested_reasoning,
                 working_directory=working_directory,
@@ -102,76 +64,21 @@ def collect_cli_request_errors(
             get_cli_provider_capability(
                 target.agent_config.provider_kind
             ).validate_request(request)
-            if is_native_windows():
-                resolved = resolve_command(
-                    target.agent_config.cli_cmd[0], working_directory, environment
-                )
-                prepare_windows_launcher(
-                    resolved,
-                    [*target.agent_config.cli_cmd[1:], *target.agent_config.extra_args],
-                )
+            strategy.validate_request(request)
         except ValueError as exc:
             errors.append(f"{target.location}: {exc}")
     return errors
 
 
-def cli_command_available(
+def inspect_cli_command(
     cli_command: list[str],
     project_root: Path,
     which_fn: Callable[[str], str | None],
-) -> bool:
-    """Check a configured command and supported wrapper without starting either."""
-    if is_native_windows():
-        return cli_command_diagnostic(cli_command, project_root) is None
-    executable_lookup = cache(which_fn)
-    requirements = _required_cli_executables(
-        cli_command, project_root, executable_lookup
+) -> CommandAvailability:
+    """Return adapter-owned availability and onboarding diagnostics."""
+    return command_strategy.command_strategy().availability(
+        cli_command, project_root, which_fn
     )
-    return all(
-        _cli_executable_available(requirement, executable_lookup)
-        for requirement in requirements
-    )
-
-
-def cli_command_diagnostic(cli_command: list[str], project_root: Path) -> str | None:
-    try:
-        resolved = resolve_command(cli_command[0], project_root)
-        if is_native_windows():
-            prepare_windows_launcher(resolved, cli_command[1:])
-    except (OSError, ValueError) as exc:
-        return str(exc)
-    return None
-
-
-def _windows_command_errors(
-    workflow: WorkflowPlan, config: Config, project_root: Path
-) -> list[str]:
-    errors = []
-    for target in _request_validation_targets(workflow, config):
-        diagnostic = cli_command_diagnostic(target.agent_config.cli_cmd, project_root)
-        if diagnostic is not None:
-            errors.append(f"{target.location}: {diagnostic}")
-    return errors
-
-
-def _request_validation_targets(
-    workflow: WorkflowPlan,
-    config: Config,
-) -> Iterator[_RequestValidationTarget]:
-    for node in workflow.nodes:
-        for provider in node.providers:
-            agent_config = config.agents.get(provider.provider)
-            if agent_config is None:
-                continue
-            yield _RequestValidationTarget(
-                location=(
-                    f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
-                    f"'{provider.provider}'"
-                ),
-                agent_config=agent_config,
-                requested_reasoning=provider.reasoning,
-                model=resolve_provider_model(provider, agent_config),
-            )
 
 
 def collect_cli_model_arg_warnings(config: Config) -> list[str]:
@@ -184,145 +91,6 @@ def collect_cli_model_arg_warnings(config: Config) -> list[str]:
         if agent.provider_kind != ProviderKind.GENERIC
         and "model_arg" in agent.model_fields_set
     ]
-
-
-def _format_missing_cli_errors(
-    missing_cli_locations: dict[tuple[str, str], list[str]],
-) -> list[str]:
-    errors: list[str] = []
-    for (provider_name, cli_executable), locations in sorted(
-        missing_cli_locations.items()
-    ):
-        unique_locations = sorted(set(locations))
-        availability_message = (
-            "not found or not executable"
-            if Path(cli_executable).is_absolute()
-            or contains_path_separator(cli_executable)
-            else "not found in PATH"
-        )
-        errors.append(
-            f"CLI '{cli_executable}' {availability_message} for provider "
-            f"'{provider_name}', referenced in: {', '.join(unique_locations)}"
-        )
-    return errors
-
-
-def _required_cli_executables(
-    cli_command: list[str],
-    executable_base_dir: Path,
-    executable_lookup: Callable[[str], str | None],
-) -> tuple[_ExecutableRequirement, ...]:
-    wrapper = _ExecutableRequirement(
-        executable=cli_command[0],
-        base_dir=executable_base_dir,
-    )
-    if not _is_platform_env_wrapper(wrapper, executable_lookup):
-        return (wrapper,)
-
-    wrapped = _env_wrapped_executable_requirement(cli_command, executable_base_dir)
-    if wrapped is None or wrapped == wrapper:
-        return (wrapper,)
-    return wrapper, wrapped
-
-
-def _is_platform_env_wrapper(
-    requirement: _ExecutableRequirement,
-    executable_lookup: Callable[[str], str | None],
-) -> bool:
-    if is_native_windows():
-        return False
-    wrapper_path = Path(requirement.executable)
-    if wrapper_path.name != "env":
-        return False
-    resolved_wrapper = (
-        str(requirement.base_dir / wrapper_path)
-        if not wrapper_path.is_absolute()
-        and contains_path_separator(requirement.executable)
-        else executable_lookup(requirement.executable)
-    )
-    return _is_platform_env_executable(resolved_wrapper)
-
-
-def _env_wrapped_executable_requirement(
-    cli_command: list[str],
-    executable_base_dir: Path,
-) -> _ExecutableRequirement | None:
-    try:
-        command_context = parse_env_command_context(
-            cli_command,
-            inherited_value=os.environ.get("PATH"),
-            tracked_environment_name="PATH",
-        )
-    except ValueError:
-        return None
-    if command_context.command_executable is None:
-        return None
-    return _ExecutableRequirement(
-        executable=command_context.command_executable,
-        base_dir=_env_command_base_dir(command_context, executable_base_dir),
-        search_path=_env_command_search_path(command_context),
-    )
-
-
-def _is_platform_env_executable(resolved_executable: str | None) -> bool:
-    if resolved_executable is None:
-        return False
-    executable_path = Path(resolved_executable).resolve(strict=False)
-    return any(
-        executable_path == platform_path.resolve(strict=False)
-        for platform_path in _PLATFORM_ENV_EXECUTABLES
-    )
-
-
-def _env_command_base_dir(
-    command_context: EnvCommandContext,
-    executable_base_dir: Path,
-) -> Path:
-    configured_directory = command_context.command_working_directory
-    if configured_directory is None:
-        return executable_base_dir
-    working_directory = Path(configured_directory)
-    if working_directory.is_absolute():
-        return working_directory
-    return executable_base_dir / working_directory
-
-
-def _env_command_search_path(command_context: EnvCommandContext) -> str | None:
-    if command_context.command_search_path is not None:
-        return command_context.command_search_path
-    tracked_search_path = command_context.tracked_environment_value
-    if (
-        command_context.tracked_environment_changed
-        or command_context.command_working_directory is not None
-    ):
-        return os.defpath if tracked_search_path is None else tracked_search_path
-    if tracked_search_path is not None and _has_relative_search_path_entry(
-        tracked_search_path
-    ):
-        return tracked_search_path
-    return None
-
-
-def _has_relative_search_path_entry(search_path: str) -> bool:
-    return any(not Path(entry).is_absolute() for entry in search_path.split(os.pathsep))
-
-
-def _cli_executable_available(
-    requirement: _ExecutableRequirement,
-    executable_lookup: Callable[[str], str | None],
-) -> bool:
-    try:
-        resolve_command(
-            requirement.executable,
-            requirement.base_dir,
-            None
-            if requirement.search_path is None
-            else {"PATH": requirement.search_path},
-            executable_lookup if requirement.search_path is None else None,
-        )
-    except (OSError, ValueError):
-        return False
-    return True
 
 
 class CliInvokerAdapter:

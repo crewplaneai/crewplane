@@ -25,7 +25,12 @@ from crewplane.core.workflow.models import (
 from crewplane.core.workspace.cache import paths_overlap
 from crewplane.core.workspace.git_policy import workspace_git_base_environment
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.platforms import requires_posix, requires_workspace_support
+from tests.helpers.platforms import (
+    posix_support_policy,
+    requires_posix,
+    requires_workspace_support,
+    windows_support_policy,
+)
 from tests.helpers.workspace_source_policy import (
     apply_patched_git_policy,
     git_source_context,
@@ -39,10 +44,9 @@ pytestmark = requires_workspace_support
 
 @pytest.fixture(autouse=True)
 def posix_workspace_policy(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(policy, "is_native_windows", lambda: False)
     monkeypatch.setattr(
-        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
-        lambda: False,
+        "crewplane.core.platform.support_policy",
+        posix_support_policy,
     )
 
 
@@ -90,7 +94,9 @@ def test_workspace_source_policy_fails_native_windows_before_git_probe(
         del args, kwargs
         pytest.fail("native Windows must fail first")
 
-    monkeypatch.setattr(policy, "is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
     monkeypatch.setattr(
         policy,
         "discover_git_context",
@@ -111,7 +117,9 @@ def test_workspace_source_policy_fails_native_windows_before_git_probe(
 
 
 def test_windows_rejects_enabled_but_unused_workspaces(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(policy, "is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
     result = policy.collect_workspace_source_policy(
         workspace_source_config(),
         WorkflowPlan(name="unused", nodes=[]),

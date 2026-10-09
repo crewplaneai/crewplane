@@ -2,32 +2,53 @@
 
 import os
 from contextlib import contextmanager, suppress
-from types import SimpleNamespace
 
 import pytest
 
-from crewplane.architecture import safe_files, safe_files_windows, windows_file_handles
-from crewplane.artifacts import atomic
+from crewplane.architecture import (
+    safe_file_operations,
+    safe_files,
+    safe_files_windows,
+    windows_file_handles,
+)
+from crewplane.artifacts import atomic, atomic_windows
 from crewplane.artifacts.generated_files import catalog, snapshot_io, snapshot_metadata
+from crewplane.artifacts.generated_files import io as generated_io
 from crewplane.artifacts.generated_files.snapshot_policy import (
     GeneratedFileSnapshotCandidate,
 )
-from crewplane.runtime.execution.provider_call import provider_output
+from crewplane.runtime.execution.provider_call import (
+    provider_output,
+    provider_output_io,
+    provider_output_windows,
+)
 from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
+from tests.helpers.generated_file_io import local_windows_generated_operations
 from tests.helpers.platforms import symlink_or_skip
-from tests.helpers.windows_file_handles import LocalHandle
+from tests.helpers.windows_file_handles import (
+    LocalHandle,
+    local_windows_file_operations,
+)
 
 pytestmark = pytest.mark.usefixtures("windows_dispatch")
 
 
 @pytest.fixture
 def windows_dispatch(monkeypatch):
-    windows_os = SimpleNamespace(**(vars(os) | {"name": "nt"}))
-    monkeypatch.setattr(provider_output, "os", windows_os)
-    monkeypatch.setattr(catalog, "os", windows_os)
-    monkeypatch.setattr(safe_files, "os", windows_os)
-    monkeypatch.setattr(atomic, "os", windows_os)
-    monkeypatch.setattr(snapshot_io, "os", windows_os)
+    monkeypatch.setattr(
+        provider_output_io,
+        "provider_output_operations",
+        lambda: provider_output_io.ProviderOutputOperations(
+            provider_output_windows.open_output, provider_output_windows.stage_output
+        ),
+    )
+    monkeypatch.setattr(
+        safe_file_operations, "safe_file_operations", local_windows_file_operations
+    )
+    monkeypatch.setattr(atomic, "atomic_writer", lambda: atomic_windows.publish_bytes)
+    monkeypatch.setattr(
+        generated_io, "generated_file_operations", local_windows_generated_operations
+    )
 
     @contextmanager
     def open_source(path):
@@ -51,7 +72,7 @@ def windows_dispatch(monkeypatch):
         windows_file_handles, "descriptor_identity", descriptor_identity, raising=False
     )
     monkeypatch.setattr(safe_files_windows, "open_handle", open_handle)
-    monkeypatch.setattr(provider_output, "open_regular_file", open_source)
+    monkeypatch.setattr(provider_output_windows, "open_regular_file", open_source)
     monkeypatch.setattr(catalog, "read_contained_bytes", read_bytes)
 
 
@@ -400,7 +421,7 @@ def test_snapshot_copy_failure_cleans_owned_entry_through_redirected_parent(
 
     monkeypatch.setattr(snapshot_io.os, "fdopen", fdopen)
     with pytest.raises(RuntimeError, match="copy interrupted"):
-        snapshot_io.copy_generated_file_snapshot_candidate(
+        generated_io.generated_file_operations().copy_snapshot(
             candidate, parent / "generated", workspace
         )
     assert external_file.read_bytes() == b"external bytes"

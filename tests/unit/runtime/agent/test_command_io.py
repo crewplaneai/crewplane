@@ -15,6 +15,7 @@ from crewplane.architecture.contracts import (
     InvocationWorkspaceContext,
 )
 from crewplane.runtime.agent.invocation import command, command_lifecycle
+from crewplane.runtime.agent.process import posix_session, runner, session, streams
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
@@ -23,6 +24,7 @@ from crewplane.runtime.agent.process.stream_capture import (
     ProcessOutputCapture,
     ProcessStreamCapture,
 )
+from tests.helpers.process_sessions import windows_session_stub
 
 
 @pytest.mark.parametrize("operation", ["write", "flush"])
@@ -63,14 +65,14 @@ def test_command_io_keeps_loop_responsive_and_finishes_before_exit_reporting(
     )
     original_cancellation = asyncio.CancelledError("collection cancelled")
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
+        session, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
     )
     monkeypatch.setattr(
         command.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(
-        command,
+        runner,
         "write_stdin_and_collect_output",
         AsyncMock(
             return_value=capture,
@@ -82,11 +84,11 @@ def test_command_io_keeps_loop_responsive_and_finishes_before_exit_reporting(
         ),
     )
     monkeypatch.setattr(
-        command,
+        runner,
         "reap_failed_process",
         AsyncMock(side_effect=drain_error if stage == "unresolved" else None),
     )
-    monkeypatch.setattr(command, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
 
     async def check():
         started = asyncio.Event()
@@ -222,18 +224,18 @@ def command_case(tmp_path, monkeypatch):
     )
     process = SimpleNamespace(pid=42, returncode=0)
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
+        session, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(
         command.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
     )
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
     monkeypatch.setattr(
-        command, "write_stdin_and_collect_output", AsyncMock(return_value=capture)
+        runner, "write_stdin_and_collect_output", AsyncMock(return_value=capture)
     )
-    monkeypatch.setattr(command, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(command, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
+    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
     monkeypatch.setattr(command, "confirm_workspace_process_drain", Mock())
     monkeypatch.setattr(command, "record_unresolved_workspace_process_drain", Mock())
     try:
@@ -254,7 +256,7 @@ def test_threaded_io_failure_preserves_error_or_cancellation(
     failure = OSError("storage failed")
     original_cancel = asyncio.CancelledError("collection cancelled")
     if stage in {"failed", "original_cancel"}:
-        command.write_stdin_and_collect_output.side_effect = (
+        runner.write_stdin_and_collect_output.side_effect = (
             RuntimeError("collection failed") if stage == "failed" else original_cancel
         )
 
@@ -359,7 +361,7 @@ def test_filesystem_cleanup_keeps_loop_responsive_and_defers_cancellation(
             None,
         ]
     if stage == "capture_unresolved":
-        command.reap_failed_process.side_effect = drain_error
+        runner.reap_failed_process.side_effect = drain_error
 
     def close_job():
         assert threading.get_ident() == main_thread
@@ -375,9 +377,11 @@ def test_filesystem_cleanup_keeps_loop_responsive_and_defers_cancellation(
             close=close_job,
             cleanup_error=Mock(return_value=drain_error),
         )
-        monkeypatch.setattr(command, "WindowsLaunch", Mock(return_value=launch))
         monkeypatch.setattr(
-            command, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+            session, "process_session", Mock(return_value=windows_session_stub(launch))
+        )
+        monkeypatch.setattr(
+            session, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
         )
 
     def receipt(event):

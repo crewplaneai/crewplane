@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.text import Text
 
 from crewplane.artifacts.locks import ResumeLockError
+from crewplane.core import platform
 from crewplane.core.config import Config
 from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight.source import PreflightWorkflowSource
@@ -330,7 +331,7 @@ def run(
             "[yellow]Confirm that the original Crewplane run and every provider "
             "descendant have stopped before removing only the lock path above. "
             "Keep the lock when cleanup cannot be established.[/]"
-            if is_native_windows()
+            if not platform.support_policy().stale_lock_recovery
             else "[yellow]Stop any matching crewplane run before retrying. "
             "If no run is active, remove .crewplane/locks and retry.[/]"
         )

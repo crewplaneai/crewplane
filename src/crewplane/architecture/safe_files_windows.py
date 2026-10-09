@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
@@ -298,3 +298,18 @@ def replace_contained_file(root: Path, parts: tuple[str, ...], source: Path) -> 
                 delete_matching_file(target, identity)
             raise
     return target
+
+
+def ensure_contained_directory(root: Path, parts: tuple[str, ...]) -> Path:
+    result = contained_directory(root, parts, create=True)
+    assert result is not None
+    return result
+
+
+def signature_timestamp(metadata: os.stat_result) -> int:
+    # Windows stat and fstat expose different legacy ctime semantics.
+    return int(getattr(metadata, "st_birthtime_ns"))  # noqa: B009 - Windows-only stat field.
+
+
+def open_contained_file(root: Path, relative_path: str) -> AbstractContextManager[int]:
+    return open_regular_file(root.joinpath(*relative_path.split("/")))

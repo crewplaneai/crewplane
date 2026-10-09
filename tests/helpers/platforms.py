@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.core.platform import is_native_windows
+from crewplane.core.platform import SupportPolicy, is_native_windows
 
 requires_posix = pytest.mark.skipif(
     os.name != "posix",
@@ -49,3 +49,11 @@ def extended_file_test_root(path: Path) -> Path:
         return path
     absolute = str(path.resolve())
     return Path(absolute if absolute.startswith("\\\\?\\") else "\\\\?\\" + absolute)
+
+
+def windows_support_policy() -> SupportPolicy:
+    return SupportPolicy(False, False, False, False, False)
+
+
+def posix_support_policy() -> SupportPolicy:
+    return SupportPolicy(True, True, True, True, True)

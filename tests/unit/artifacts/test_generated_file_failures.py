@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.artifacts.generated_files import io as generated_io
 from crewplane.artifacts.generated_files.catalog import (
     build_generated_file_links_section,
     generated_file_links_for_content,
@@ -19,9 +20,6 @@ from crewplane.artifacts.generated_files.paths import (
     GENERATED_FILE_SNAPSHOT_METADATA_NAME,
     GENERATED_FILE_SOURCE_METADATA_NAME,
     is_reserved_workspace_path,
-)
-from crewplane.artifacts.generated_files.snapshot_io import (
-    copy_generated_file_snapshot_candidate,
 )
 from crewplane.artifacts.generated_files.snapshot_metadata import (
     generated_file_snapshot_rejection_summary,
@@ -312,7 +310,9 @@ def test_snapshot_copy_revalidates_selected_files_and_cleans_failed_targets(
     target = tmp_path / "copy.md"
 
     with pytest.raises(RuntimeError, match="source"):
-        copy_generated_file_snapshot_candidate(candidate, target, workspace)
+        generated_io.generated_file_operations().copy_snapshot(
+            candidate, target, workspace
+        )
 
     assert not target.exists()
     if change == "replacement":

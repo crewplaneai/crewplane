@@ -1,11 +1,9 @@
 import hashlib
-import os
 import sys
-from types import SimpleNamespace
 
 import pytest
 
-from crewplane.core import file_hashing, state_paths
+from crewplane.core import file_hashing, file_hashing_io, state_paths
 from crewplane.core.preflight.static_resources import resolve_static_file
 
 
@@ -58,16 +56,20 @@ def test_windows_hash_uses_bounded_opened_bytes(tmp_path, monkeypatch):
     path = tmp_path / "source"
     payload = b"LF\nCRLF\r\n\x1a\xff" * 200000
     path.write_bytes(payload)
-    monkeypatch.setattr(file_hashing, "os", SimpleNamespace(name="nt", fstat=os.fstat))
+    monkeypatch.setattr(
+        file_hashing_io,
+        "file_hashing_operations",
+        file_hashing_io.windows_file_hashing_operations,
+    )
     expected = (len(payload), hashlib.sha256(payload).hexdigest())
     assert file_hashing.file_size_and_sha256(path) == expected
     assert file_hashing.sha256_file(path) == expected[1]
-    original = file_hashing.bounded_file_chunks
+    original = file_hashing_io.bounded_file_chunks
 
     def change_after_read(descriptor):
         yield from original(descriptor)
         path.write_bytes(b"replaced")
 
-    monkeypatch.setattr(file_hashing, "bounded_file_chunks", change_after_read)
+    monkeypatch.setattr(file_hashing_io, "bounded_file_chunks", change_after_read)
     with pytest.raises((OSError, ValueError)):
         file_hashing.sha256_file(path)

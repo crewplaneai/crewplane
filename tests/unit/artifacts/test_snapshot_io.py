@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.artifacts.generated_files import io as generated_io
 from crewplane.artifacts.generated_files import snapshot_io
 from crewplane.artifacts.generated_files.snapshot_policy import (
     GeneratedFileSnapshotCandidate,
@@ -68,7 +69,9 @@ def test_source_validation_preserves_error_precedence_and_closes_descriptor(
     monkeypatch.setattr(snapshot_io.os, "open", track_open)
 
     with pytest.raises(RuntimeError) as error:
-        snapshot_io.copy_generated_file_snapshot_candidate(candidate, target, tmp_path)
+        generated_io.generated_file_operations().copy_snapshot(
+            candidate, target, tmp_path
+        )
 
     assert str(error.value) == f"Generated-file snapshot source {message}: source.txt"
     assert not target.exists()

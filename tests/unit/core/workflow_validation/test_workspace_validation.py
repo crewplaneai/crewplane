@@ -18,13 +18,14 @@ from crewplane.core.workflow.validation.workspace import (
     logical_workspace_selections,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import posix_support_policy, windows_support_policy
 
 
 @pytest.fixture(autouse=True)
 def posix_workspace_policy(monkeypatch) -> None:
     monkeypatch.setattr(
-        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
-        lambda: False,
+        "crewplane.core.platform.support_policy",
+        posix_support_policy,
     )
 
 
@@ -34,8 +35,8 @@ def test_windows_requires_disabled_workspace_feature(
     monkeypatch, kind, workspace_enabled
 ) -> None:
     monkeypatch.setattr(
-        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
-        lambda: True,
+        "crewplane.core.platform.support_policy",
+        windows_support_policy,
     )
     workflow = WorkflowPlan(
         name="windows",
@@ -135,8 +136,8 @@ def test_workflow_without_worktrees_uses_project_root_execution(
     monkeypatch, platform, workspace_enabled
 ) -> None:
     monkeypatch.setattr(
-        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
-        lambda: platform == "Windows",
+        "crewplane.core.platform.support_policy",
+        windows_support_policy if platform == "Windows" else posix_support_policy,
     )
     workflow = WorkflowPlan(
         name="enabled defaults",

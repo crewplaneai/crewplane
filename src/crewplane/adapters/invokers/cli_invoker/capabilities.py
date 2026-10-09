@@ -11,10 +11,9 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.contracts.provider_log import build_provider_log_header
 from crewplane.core.config import AgentConfig
-from crewplane.core.platform import is_native_windows
 
+from . import command_strategy
 from .capability import CliInvocationRequest, CliProviderCapability
-from .command_resolution import resolve_command
 from .providers import (
     claude,
     codex,
@@ -26,7 +25,6 @@ from .providers import (
     opencode,
     pi,
 )
-from .windows_launchers import prepare_windows_launcher
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.CLAUDE: claude.CLAUDE,
@@ -60,9 +58,11 @@ def build_cli_invocation_plan(
     working_directory: Path | None = None,
 ) -> InvocationPlan:
     """Validate before allocation, then transfer ownership of a complete plan."""
+    strategy = command_strategy.command_strategy()
     capability = get_cli_provider_capability(config.provider_kind)
     request = CliInvocationRequest(
         config=config,
+        command_strategy=strategy,
         model=model,
         requested_reasoning=(
             invocation_context.requested_reasoning
@@ -74,12 +74,7 @@ def build_cli_invocation_plan(
     capability.validate_request(request)
     command = capability.build_command(request, prompt)
     try:
-        launch_command = command.cmd
-        if is_native_windows():
-            resolved = resolve_command(
-                command.cmd[0], working_directory, request.environment
-            )
-            launch_command = prepare_windows_launcher(resolved, command.cmd[1:])
+        launch_command = strategy.prepare_arguments(command.cmd, request)
         return InvocationPlan(
             cmd=launch_command,
             stdin_data=command.stdin_data,

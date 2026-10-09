@@ -23,7 +23,9 @@ def launch(monkeypatch):
     job = Mock()
     job.active_process_count.return_value = 0
     monkeypatch.setattr(windows_launch, "WindowsJob", Mock(return_value=job))
-    return windows_launch.WindowsLaunch()
+    launch = windows_launch.WindowsLaunch()
+    launch.job = job
+    return launch
 
 
 @pytest.fixture

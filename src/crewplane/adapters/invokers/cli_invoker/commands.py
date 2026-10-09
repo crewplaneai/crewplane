@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from crewplane.core.platform import is_native_windows
-
 from .capability import CliCommand, CliInvocationRequest
-from .command_resolution import resolve_command, resolved_cli_executable
 
 
 def build_standard_command(
@@ -15,12 +12,7 @@ def build_standard_command(
 ) -> CliCommand:
     config = request.config
     cmd = config.get_command()
-    if is_native_windows():
-        cmd[0] = resolve_command(
-            cmd[0], request.working_directory, request.environment
-        ).executable
-    else:
-        cmd[0] = resolved_cli_executable(cmd[0])
+    cmd[0] = request.command_strategy.prepare_executable(cmd[0], request)
     if model_arg is not None and request.model is not None:
         cmd.extend([model_arg, request.model])
     cmd.extend(reasoning_args)

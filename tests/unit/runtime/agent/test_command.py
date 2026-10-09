@@ -8,6 +8,7 @@ import pytest
 
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.runtime.agent.invocation import command
+from crewplane.runtime.agent.process import posix_session, runner, session, streams
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
@@ -16,6 +17,7 @@ from crewplane.runtime.agent.process.stream_capture import (
     ProcessOutputCapture,
     ProcessStreamCapture,
 )
+from tests.helpers.process_sessions import windows_session_stub
 
 
 @pytest.mark.parametrize("execution_failure", [None, "error", "cancel"])
@@ -72,14 +74,16 @@ def test_windows_finalization_preserves_order_ownership_and_error_precedence(
             if reporting_failure == "exit":
                 raise OSError("exit receipt failed")
 
-    monkeypatch.setattr(command, "WindowsLaunch", Mock(return_value=launch))
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+        session, "process_session", Mock(return_value=windows_session_stub(launch))
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(
+        session, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+    )
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
-    monkeypatch.setattr(command, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(command, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
+    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
     context = InvocationContext(
         "node", "task", "provider", "executor", process_event_sink=record_event
     )
@@ -187,9 +191,9 @@ def test_posix_finalization_preserves_close_policy_and_error_precedence(
                 raise OSError("exit receipt failed")
 
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
+        session, "sys", SimpleNamespace(platform="linux", exception=sys.exception)
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(
         command.asyncio,
         "create_subprocess_exec",
@@ -197,12 +201,12 @@ def test_posix_finalization_preserves_close_policy_and_error_precedence(
     )
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
     monkeypatch.setattr(
-        command,
+        runner,
         "write_stdin_and_collect_output",
         AsyncMock(return_value=capture, side_effect=failure),
     )
-    monkeypatch.setattr(command, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(command, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
+    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
     context = InvocationContext(
         "node", "task", "provider", "executor", process_event_sink=receipt
     )

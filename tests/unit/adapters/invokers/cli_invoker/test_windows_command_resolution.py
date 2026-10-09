@@ -4,21 +4,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.command_resolution import (
-    ResolvedCommand,
-    resolve_command,
-)
+from crewplane.adapters.invokers.cli_invoker.command_types import ResolvedCommand
+from crewplane.adapters.invokers.cli_invoker.command_windows import resolve_command
 from crewplane.adapters.invokers.cli_invoker.windows_launchers import (
     prepare_windows_launcher,
 )
-
-
-@pytest.fixture(autouse=True)
-def windows(monkeypatch):
-    monkeypatch.setattr(
-        "crewplane.adapters.invokers.cli_invoker.command_resolution.is_native_windows",
-        lambda: True,
-    )
 
 
 def touch(root: Path, *names: str) -> None:

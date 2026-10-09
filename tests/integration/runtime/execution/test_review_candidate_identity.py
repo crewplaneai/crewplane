@@ -23,7 +23,7 @@ from crewplane.runtime.execution.review_loop.validation import (
     build_executor_output_fingerprint,
 )
 from crewplane.runtime.workspace.invocation import invocation_slug, workspace_state_path
-from crewplane.runtime.workspace.snapshot_scan import (
+from crewplane.runtime.workspace.snapshot_scan_common import (
     WorkspaceSnapshotLimitError,
     WorkspaceSnapshotPolicy,
     WorkspaceSnapshotRaceError,

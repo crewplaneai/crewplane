@@ -4,16 +4,17 @@ import os
 from contextlib import contextmanager
 from dataclasses import replace
 from hashlib import sha256
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from crewplane.architecture import safe_files_windows, windows_file_handles
+from crewplane.artifacts.generated_files import io as generated_io
 from crewplane.artifacts.generated_files import snapshot_io
 from crewplane.artifacts.generated_files.snapshot_policy import (
     GeneratedFileSnapshotCandidate,
 )
+from tests.helpers.generated_file_io import local_windows_generated_operations
 from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.windows_file_handles import LocalHandle
 
@@ -21,7 +22,7 @@ from tests.helpers.windows_file_handles import LocalHandle
 @pytest.fixture(autouse=True)
 def windows_dispatch(monkeypatch):
     monkeypatch.setattr(
-        snapshot_io, "os", SimpleNamespace(**(vars(os) | {"name": "nt"}))
+        generated_io, "generated_file_operations", local_windows_generated_operations
     )
 
     def descriptor_identity(descriptor, path):
@@ -65,7 +66,9 @@ def test_rejected_snapshot_directory_leaves_existing_file_untouched(
     )
 
     with pytest.raises(ValueError, match="unsafe directory"):
-        snapshot_io.copy_generated_file_snapshot_candidate(candidate, target, tmp_path)
+        generated_io.generated_file_operations().copy_snapshot(
+            candidate, target, tmp_path
+        )
 
     assert target.read_bytes() == b"existing bytes"
     assert candidate.source_path.read_bytes() == b"source bytes"
@@ -110,7 +113,9 @@ def test_failed_snapshot_copy_cleans_up_before_directory_protection_ends(
     monkeypatch.setattr(safe_files_windows, "open_writable_file", interrupted_target)
 
     with pytest.raises(OSError, match="copy interrupted"):
-        snapshot_io.copy_generated_file_snapshot_candidate(candidate, target, tmp_path)
+        generated_io.generated_file_operations().copy_snapshot(
+            candidate, target, tmp_path
+        )
 
     assert external_file.read_bytes() == b"external bytes"
     assert not (retired_directory / candidate.relative_path).exists()
@@ -202,7 +207,7 @@ def test_snapshot_copy_preserves_result_and_resource_cleanup_order(
     monkeypatch.setattr(snapshot_io.os, "fdopen", fdopen)
 
     if failure == "success":
-        result = snapshot_io.copy_generated_file_snapshot_candidate(
+        result = generated_io.generated_file_operations().copy_snapshot(
             candidate, target, tmp_path
         )
         assert result == (len(b"source bytes"), sha256(b"source bytes").hexdigest())
@@ -218,7 +223,7 @@ def test_snapshot_copy_preserves_result_and_resource_cleanup_order(
             "source-exit": (ValueError, "source exit failed"),
         }[failure]
         with pytest.raises(error_type) as error:
-            snapshot_io.copy_generated_file_snapshot_candidate(
+            generated_io.generated_file_operations().copy_snapshot(
                 candidate, target, tmp_path
             )
         assert str(error.value) == message
@@ -273,7 +278,9 @@ def test_source_rejection_preserves_existing_destination_and_exception_cause(
     monkeypatch.setattr(safe_files_windows, "open_regular_file", open_source)
 
     with pytest.raises(RuntimeError) as error:
-        snapshot_io.copy_generated_file_snapshot_candidate(candidate, target, tmp_path)
+        generated_io.generated_file_operations().copy_snapshot(
+            candidate, target, tmp_path
+        )
 
     assert str(error.value) == (
         "Generated-file snapshot source changed before copying: source.txt"
