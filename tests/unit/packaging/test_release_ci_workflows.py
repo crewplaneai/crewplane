@@ -293,7 +293,7 @@ def test_windows_required_jobs_execute_suite_and_both_installed_wheels() -> None
     assert set(job["strategy"]["matrix"]["python-version"]) == {"3.13", "3.14"}
     commands = [step.get("run", "") for step in job["steps"]]
     prefix = "uv run --locked --python ${{ matrix.python-version }} --extra dev"
-    assert f"{prefix} python -m pytest -q" in commands
+    assert f"{prefix} python -m pytest -q --durations=20" in commands
     for installer in ("pip", "uv"):
         assert (
             f"{prefix} python tests/helpers/installed_wheel_smoke.py --installer {installer}"

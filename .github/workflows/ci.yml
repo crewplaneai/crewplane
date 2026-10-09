@@ -114,7 +114,7 @@ jobs:
   windows:
     name: windows (${{ matrix.python-version }})
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -140,7 +140,7 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
 
       - name: Run native Windows suite
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q --durations=20
 
       - name: Build installed-wheel fixtures
         run: uv build

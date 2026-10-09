@@ -148,8 +148,9 @@ def test_allowed_output_parent_replacement_is_fatal(tmp_path: Path) -> None:
         asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
 
+@pytest.mark.parametrize("linked_descendant", [False, True])
 def test_fatal_node_directory_drift_restores_unchanged_descendants(
-    tmp_path: Path,
+    tmp_path: Path, linked_descendant: bool
 ) -> None:
     request, _output, node_dir = make_drift_request(tmp_path)
     review_state = node_dir / "review-state"
@@ -160,8 +161,10 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
     untouched_script = review_state / "untouched.sh"
     untouched_script.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     untouched_script.chmod(0o754)
+    original_script_mode = stat.S_IMODE(untouched_script.stat().st_mode)
     untouched_link = review_state / "untouched-link"
-    symlink_or_skip(untouched_link, untouched_script.name)
+    if linked_descendant:
+        symlink_or_skip(untouched_link, untouched_script.name)
 
     class DirectoryMetadataMutatingInvoker:
         def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
@@ -177,7 +180,8 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
             log_file=None,  # noqa: ARG002 - Required by protocol.
             invocation_context=None,  # noqa: ARG002 - Required by protocol.
         ) -> None:
-            review_state.chmod(original_mode ^ stat.S_IWGRP)
+            review_state.chmod(0o555)
+            assert stat.S_IMODE(review_state.stat().st_mode) != original_mode
             output_file.write_text("provider output\n", encoding="utf-8", newline="\n")
 
     request.invoker = DirectoryMetadataMutatingInvoker()
@@ -187,9 +191,10 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
 
     assert stat.S_IMODE(review_state.stat().st_mode) == original_mode
     assert prior_state.read_text(encoding="utf-8") == '{"round": 0}\n'
-    assert stat.S_IMODE(untouched_script.stat().st_mode) == 0o754
-    assert untouched_link.is_symlink()
-    assert untouched_link.readlink() == Path(untouched_script.name)
+    assert stat.S_IMODE(untouched_script.stat().st_mode) == original_script_mode
+    if linked_descendant:
+        assert untouched_link.is_symlink()
+        assert untouched_link.readlink() == Path(untouched_script.name)
 
 
 @requires_posix
