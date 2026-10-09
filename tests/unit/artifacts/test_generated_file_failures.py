@@ -433,19 +433,41 @@ def test_snapshot_revalidates_directory_created_by_competing_writer(
     original_mkdir = Path.mkdir
     raced = False
 
-    def competing_mkdir(
-        path: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
-    ) -> None:
+    def create_competing_entry(path: Path) -> None:
         nonlocal raced
         if path == shared and not raced:
             raced = True
             if raced_kind == "directory":
                 original_mkdir(path)
+            elif is_native_windows():
+                from tests.helpers.windows_junctions import set_junction
+
+                original_mkdir(path)
+                set_junction(path, outside)
             else:
                 symlink_or_skip(path, outside, target_is_directory=True)
-        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
 
-    monkeypatch.setattr(Path, "mkdir", competing_mkdir)
+    if is_native_windows():
+        from crewplane.architecture.windows_file_handles import FileHandle
+
+        original_open = FileHandle.open_child
+
+        def competing_open(
+            parent, name, access=0x80, share=1, disposition=1, directory=None
+        ):
+            create_competing_entry(parent.path / name)
+            return original_open(parent, name, access, share, disposition, directory)
+
+        monkeypatch.setattr(FileHandle, "open_child", competing_open)
+    else:
+
+        def competing_mkdir(
+            path: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+        ) -> None:
+            create_competing_entry(path)
+            original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+        monkeypatch.setattr(Path, "mkdir", competing_mkdir)
     snapshot = shared / "candidate"
     if raced_kind == "symlink":
         with pytest.raises(RuntimeError, match="not a directory"):

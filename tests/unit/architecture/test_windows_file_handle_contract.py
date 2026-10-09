@@ -33,8 +33,14 @@ def native(monkeypatch, tmp_path):
             buffer.value = value
         return len(value) + (0 if size else 1)
 
+    def long_path(path, buffer, size):
+        if size:
+            buffer.value = path
+        return len(path) + (0 if size else 1)
+
     api.GetFileInformationByHandle.side_effect = information
     api.GetFinalPathNameByHandleW.side_effect = final_path
+    api.GetLongPathNameW.side_effect = long_path
     monkeypatch.setattr(handles, "kernel32", Mock(return_value=api))
     monkeypatch.setattr(
         ctypes, "WinError", lambda code: OSError(code, "native failure"), raising=False
@@ -188,6 +194,54 @@ def test_handle_accepts_equivalent_extended_paths(
         handle.close()
 
 
+@pytest.mark.parametrize(
+    "expected",
+    [
+        r"C:\Users\RUNNER~1\source",
+        r"\\?\C:\Users\RUNNER~1\source",
+        r"\\server\share\RUNNER~1\source",
+        r"\\?\UNC\server\share\RUNNER~1\source",
+    ],
+)
+def test_handle_accepts_short_path_aliases(native, monkeypatch, tmp_path, expected):
+    api, _info = native
+    normalized = expected.replace("RUNNER~1", "runneradmin")
+    resolved = normalized.replace("\\\\?\\UNC\\", "\\\\").removeprefix("\\\\?\\")
+
+    def long_path(path, buffer, size):
+        assert path.startswith("\\\\?\\")
+        assert "RUNNER~1" in path
+        if size:
+            buffer.value = normalized
+        return len(normalized) + (0 if size else 1)
+
+    api.GetLongPathNameW.side_effect = long_path
+    monkeypatch.setattr(handles.os.path, "abspath", Mock(return_value=expected))
+    monkeypatch.setattr(handles.FileHandle, "final_path", Mock(return_value=resolved))
+    handle = handles.FileHandle(42, tmp_path / "source")
+    try:
+        assert handle.validate(False).identity == (10, 12)
+        assert api.GetLongPathNameW.call_count == 2
+    finally:
+        handle.close()
+
+
+@pytest.mark.parametrize("failure", ["size", "read", "growth"])
+def test_short_path_normalization_failures_are_explicit(native, tmp_path, failure):
+    api, _info = native
+    api.GetLongPathNameW.side_effect = {
+        "size": [0],
+        "read": [20, 0],
+        "growth": [20, 30],
+    }[failure]
+    handle = handles.FileHandle(42, tmp_path / "alias")
+    try:
+        with pytest.raises(OSError, match="native failure"):
+            handle.validate(False)
+    finally:
+        handle.close()
+
+
 @pytest.fixture
 def native_relative(native, monkeypatch):
     _kernel, info = native
@@ -251,6 +305,7 @@ def test_relative_open_anchors_one_literal_component(
 @pytest.mark.parametrize(
     "name",
     ["", ".", "..", "one/two", "one\\two", "ads:stream", "bad\0name", "x" * 32767],
+    ids=["empty", "dot", "parent", "slash", "backslash", "stream", "nul", "too-long"],
 )
 def test_relative_operations_reject_non_component_names(
     native_relative, tmp_path, name

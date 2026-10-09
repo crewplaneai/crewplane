@@ -104,6 +104,10 @@ def contained_directory(
         if create:
             raise
         return None
+    except (NotADirectoryError, ValueError) as exc:
+        raise ValueError(
+            f"Contained directory path is not a real directory: {root.joinpath(*parts)}"
+        ) from exc
 
 
 def contained_regular_file(root: Path, parts: tuple[str, ...]) -> Path | None:

@@ -151,10 +151,11 @@ def test_replace_contained_file_rejects_a_symlinked_destination_parent(
     source = tmp_path / "private-output.md"
     source.write_text("private", encoding="utf-8")
 
-    with pytest.raises(OSError):
+    with pytest.raises((OSError, ValueError)):
         replace_contained_file(root, "nested/output.md", source)
 
     assert not (outside / "output.md").exists()
+    assert source.read_text(encoding="utf-8") == "private"
 
 
 @requires_posix

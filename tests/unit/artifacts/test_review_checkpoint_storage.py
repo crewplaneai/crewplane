@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -75,15 +74,33 @@ def test_unsafe_or_changed_dependencies_do_not_replace_marker(
 
 @pytest.mark.parametrize("after_replace", [False, True])
 def test_publication_failure_validates_surviving_marker(
-    tmp_path: Path, after_replace: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, after_replace: bool
 ) -> None:
     old = stored_checkpoint(tmp_path)
     new = old.model_copy(update={"project_observation": None})
-    target = "_fsync_directory" if after_replace else "_fsync_file"
-    with (
-        patch.object(atomic, target, side_effect=OSError("disk failure")),
-        pytest.raises(OSError),
-    ):
+    if after_replace:
+        from crewplane.architecture import safe_files_windows
+
+        owner, name = (
+            (safe_files_windows, "rename_contained_file")
+            if os.name == "nt"
+            else (Path, "replace")
+        )
+        publish = getattr(owner, name)
+
+        def fail_after_publication(*args, **kwargs):
+            publish(*args, **kwargs)
+            raise OSError("disk failure after publication")
+
+        monkeypatch.setattr(owner, name, fail_after_publication)
+    else:
+
+        def fail_sync(descriptor):
+            assert descriptor >= 0
+            raise OSError("disk failure before publication")
+
+        monkeypatch.setattr(atomic.os, "fsync", fail_sync)
+    with pytest.raises(OSError, match="disk failure"):
         publish_review_checkpoint(tmp_path, new)
     assert read_review_checkpoint(tmp_path, "a") == (new if after_replace else old)
 

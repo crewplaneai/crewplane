@@ -173,7 +173,11 @@ def test_snapshot_copy_preserves_result_and_resource_cleanup_order(
                 source = candidate.source_path
                 initial = source.stat()
                 source.write_bytes(b"x" * candidate.size_bytes)
-                os.utime(source, ns=(initial.st_atime_ns, initial.st_mtime_ns + 1))
+                os.utime(
+                    source,
+                    ns=(initial.st_atime_ns, initial.st_mtime_ns + 1_000_000_000),
+                )
+                assert source.stat().st_mtime_ns != initial.st_mtime_ns
             return result
 
     @contextmanager

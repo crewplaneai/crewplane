@@ -1,7 +1,10 @@
+import ctypes
 import hashlib
+import ntpath
 import os
 import subprocess
 import sys
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
@@ -24,6 +27,7 @@ from crewplane.runtime.execution.provider_call.provider_output import (
     bind_invocation_output,
     read_bound_invocation_output,
 )
+from tests.helpers.platforms import extended_file_test_root
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "win32", reason="Requires native Windows handle and NTFS semantics"
@@ -34,6 +38,32 @@ def test_native_creates_directories_without_recreating_drive_root(tmp_path) -> N
     directory = ensure_contained_directory(tmp_path, "new/nested")
     assert directory.is_dir()
     assert ensure_contained_directory(tmp_path, "new/nested") == directory
+
+
+@pytest.mark.parametrize("extended", [False, True])
+def test_native_short_path_aliases_preserve_protected_reads(tmp_path, extended):
+    directory = tmp_path / "directory with a long name"
+    directory.mkdir()
+    source = directory / "source.txt"
+    source.write_bytes(b"exact\r\n\xff\x1a")
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    api.GetShortPathNameW.restype = wintypes.DWORD
+    needed = api.GetShortPathNameW(str(directory), None, 0)
+    assert needed
+    buffer = ctypes.create_unicode_buffer(needed)
+    assert 0 < api.GetShortPathNameW(str(directory), buffer, len(buffer)) < needed
+    if ntpath.normcase(buffer.value) == ntpath.normcase(str(directory)):
+        pytest.skip("The filesystem does not provide an 8.3 alias")
+    alias = Path("\\\\?\\" + buffer.value if extended else buffer.value)
+
+    with protected_directory(alias) as short, protected_directory(directory) as long:
+        assert short.information().identity == long.information().identity
+    assert read_contained_bytes(alias, source.name) == source.read_bytes()
+    signature = bind_invocation_output(alias / source.name)
+    assert read_bound_invocation_output(alias / source.name, signature) == (
+        source.read_bytes().decode("utf-8", errors="replace")
+    )
 
 
 def test_native_rewritten_sources_keep_consistent_descriptor_and_path_signatures(
@@ -164,6 +194,7 @@ def test_native_sharing_failure_keeps_old_metadata_and_removes_temporary(
 
 
 def test_native_copy_bytes_and_long_paths(tmp_path) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     relative = "/".join(["long-component-" + "x" * 45] * 5)
     try:
         directory = ensure_contained_directory(tmp_path, relative)

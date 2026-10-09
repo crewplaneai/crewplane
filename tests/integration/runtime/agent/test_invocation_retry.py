@@ -1,11 +1,10 @@
-import os
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import mkdtemp
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
 from crewplane.adapters.invokers.cli_invoker.providers.codex import (
@@ -29,7 +28,7 @@ from crewplane.runtime.agent.invocation.retry import (
 class FixedQuotaRetryDateTime(datetime):
     @classmethod
     def now(cls, tz=None):
-        fixed = datetime(2026, 6, 7, 6, 43, 13, tzinfo=UTC)
+        fixed = cls(2026, 6, 7, 6, 43, 13, tzinfo=UTC)
         if tz is None:
             return fixed.replace(tzinfo=None)
         return fixed.astimezone(tz)
@@ -37,19 +36,12 @@ class FixedQuotaRetryDateTime(datetime):
 
 @contextmanager
 def local_timezone(name: str) -> Iterator[None]:
-    previous = os.environ.get("TZ")
-    os.environ["TZ"] = name
-    if hasattr(time, "tzset"):
-        time.tzset()
-    try:
+    class LocalDateTime(FixedQuotaRetryDateTime):
+        def astimezone(self, tz=None):
+            return super().astimezone(ZoneInfo(name) if tz is None else tz)
+
+    with patch("crewplane.runtime.agent.invocation.retry.datetime", LocalDateTime):
         yield
-    finally:
-        if previous is None:
-            os.environ.pop("TZ", None)
-        else:
-            os.environ["TZ"] = previous
-        if hasattr(time, "tzset"):
-            time.tzset()
 
 
 def test_evaluate_failure_retry_schedules_retry_notice() -> None:
@@ -503,13 +495,7 @@ def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream(
 
 
 def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
-    with (
-        patch(
-            "crewplane.runtime.agent.invocation.retry.datetime",
-            FixedQuotaRetryDateTime,
-        ),
-        local_timezone("America/Vancouver"),
-    ):
+    with local_timezone("America/Vancouver"):
         decision = evaluate_quota_retry(
             config=AgentConfig(
                 cli_cmd=["codex", "exec"],

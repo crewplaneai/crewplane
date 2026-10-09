@@ -134,6 +134,8 @@ def kernel32() -> ctypes.CDLL:
         wintypes.DWORD,
     ]
     api.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    api.GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    api.GetLongPathNameW.restype = wintypes.DWORD
     api.SetFileInformationByHandle.argtypes = [
         wintypes.HANDLE,
         ctypes.c_int,
@@ -331,8 +333,10 @@ class FileHandle:
             raise ValueError(
                 f"Protected source must be a regular file with {links} link(s): {self.path}"
             )
-        if ntpath.normcase(self.final_path()) != ntpath.normcase(
-            _unextended_path(os.path.abspath(self.path))
+        expected = _unextended_path(os.path.abspath(self.path))
+        resolved = ntpath.normcase(self.final_path())
+        if resolved != ntpath.normcase(expected) and resolved != ntpath.normcase(
+            _long_path(self.path)
         ):
             raise ValueError(
                 f"Protected handle resolves outside its expected path: {self.path}"
@@ -389,3 +393,19 @@ def _unextended_path(value: str) -> str:
     if value.startswith("\\\\?\\UNC\\"):
         return "\\\\" + value[8:]
     return value.removeprefix("\\\\?\\")
+
+
+def _long_path(path: Path) -> str:
+    value = _unextended_path(os.path.abspath(path))
+    extended = (
+        "\\\\?\\UNC\\" + value[2:] if value.startswith("\\\\") else "\\\\?\\" + value
+    )
+    api = kernel32()
+    needed = api.GetLongPathNameW(extended, None, 0)
+    if not needed:
+        raise path_error(path)
+    buffer = ctypes.create_unicode_buffer(needed)
+    length = api.GetLongPathNameW(extended, buffer, len(buffer))
+    if not length or length >= len(buffer):
+        raise path_error(path)
+    return _unextended_path(buffer.value)

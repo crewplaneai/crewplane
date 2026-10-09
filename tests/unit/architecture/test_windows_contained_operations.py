@@ -2,6 +2,7 @@
 
 import os
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -114,6 +115,18 @@ def test_long_path_failures_retain_actionable_note(tmp_path, handles, monkeypatc
         operations.contained_directory(tmp_path, ("long",))
     assert "long-path" in " ".join(result.value.__notes__)
     assert not opened and not calls
+
+
+@pytest.mark.parametrize("create", [False, True])
+@pytest.mark.parametrize("error_type", [ValueError, NotADirectoryError])
+def test_directory_validation_preserves_portable_error_contract(
+    tmp_path, monkeypatch, create, error_type
+):
+    error = error_type("unsafe directory")
+    monkeypatch.setattr(operations, "protected_directory", Mock(side_effect=error))
+    with pytest.raises(ValueError, match="not a real directory") as caught:
+        operations.contained_directory(tmp_path, ("nested",), create)
+    assert caught.value.__cause__ is error
 
 
 def test_local_handle_surrogate_creates_files_without_directory_descriptors(

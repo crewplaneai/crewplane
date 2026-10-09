@@ -179,7 +179,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
         output_text = stream.getvalue()
         self.assertIn("Run lock unavailable", output_text)
         self.assertIn("Cannot update a lock owned by another process", output_text)
-        self.assertIn(".crewplane/locks", output_text)
+        self.assertIn(".crewplane/locks", "".join(output_text.split()))
         self.assertNotIn("Traceback", output_text)
 
     def test_run_fails_fast_for_missing_env_template_reference(self) -> None:

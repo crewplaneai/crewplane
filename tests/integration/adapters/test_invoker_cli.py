@@ -265,7 +265,10 @@ def test_invocation_plan_preserves_missing_bare_cli_executable() -> None:
 
 
 @pytest.mark.usefixtures("posix_cli_plans")
-def test_invocation_plan_preserves_relative_path_cli_executable(tmp_path: Path) -> None:
+def test_invocation_plan_preserves_relative_path_cli_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     tmp_dir = mkdtemp(dir=tmp_path)
     tool_dir = Path(tmp_dir) / "tools"
     tool_dir.mkdir()

@@ -183,7 +183,11 @@ def test_batch_validation_preserves_error_order_and_checks_across_values(
     assert str(caught.value) == expected_error
 
 
-@pytest.mark.parametrize("argument", ["x" * 6986, "😀" * 3493, "x" * 6984 + "\\"])
+@pytest.mark.parametrize(
+    "argument",
+    ["x" * 6986, "😀" * 3493, "x" * 6984 + "\\"],
+    ids=["ascii", "surrogate-pairs", "trailing-backslash"],
+)
 def test_batch_budget_counts_quoted_utf16_units_including_executable(argument) -> None:
     values = ["agent.cmd", argument]
     original = values.copy()

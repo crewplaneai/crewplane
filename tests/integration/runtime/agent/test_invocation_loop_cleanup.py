@@ -334,8 +334,9 @@ def test_extracted_file_lifetime_across_attempt_and_outer_cleanup(
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(invocation)
     elif outcome == "publication_failure":
-        with pytest.raises((IsADirectoryError, PermissionError)):
+        with pytest.raises((IsADirectoryError, PermissionError, ValueError)):
             asyncio.run(invocation)
+        assert output_file.is_dir()
     else:
         asyncio.run(invocation)
         assert output_file.read_bytes() == "café 🌍".encode()

@@ -18,6 +18,7 @@ from crewplane.core.execution_state import (
     NodeState,
     RunManifest,
 )
+from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
@@ -29,7 +30,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.platforms import symlink_or_skip
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 def _workflow_signature(label: str) -> str:
@@ -109,6 +110,7 @@ def _running_manifest(
     )
 
 
+@requires_posix
 def test_artifacts_support_symlinked_base_directory_ancestor(tmp_path: Path) -> None:
     temp_root = tmp_path
     real_parent = temp_root / "real-parent"
@@ -128,6 +130,22 @@ def test_artifacts_support_symlinked_base_directory_ancestor(tmp_path: Path) -> 
 
     assert output.base_dir == base_dir.resolve(strict=True)
     assert (output.results_dir / build_result_filename("build.node")).is_file()
+
+
+@pytest.mark.skipif(not is_native_windows(), reason="Requires Windows junctions")
+def test_artifacts_reject_junction_in_base_directory_ancestors(tmp_path: Path) -> None:
+    from tests.helpers.windows_junctions import set_junction
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias"
+    alias.mkdir()
+    set_junction(alias, outside)
+
+    with pytest.raises(ValueError, match="not a real directory"):
+        OutputManager("Workflow", base_dir=alias / "nested" / "state")
+
+    assert list(outside.iterdir()) == []
 
 
 def test_legacy_stage_path_and_resume_methods_remain_available(tmp_path: Path) -> None:
