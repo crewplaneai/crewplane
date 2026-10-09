@@ -21,6 +21,9 @@ from crewplane.runtime.execution.consensus import (
 )
 from crewplane.version import SCHEMA_VERSION
 
+# Bound stalled tests while allowing real filesystem I/O and worker scheduling.
+REVIEW_IO_TIMEOUT_SECONDS = 30
+
 
 def make_round_runtime_context() -> CompiledRuntimeContext:
     return CompiledRuntimeContext(
