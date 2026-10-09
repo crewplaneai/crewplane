@@ -12,10 +12,8 @@ from crewplane.core.workspace.git_policy import (
     sanitized_workspace_git_environment,
     workspace_git_config_args,
 )
-from crewplane.runtime.workspace.snapshot_scan import (
-    WorkspaceSnapshotPolicy,
-    snapshot_entries,
-)
+from crewplane.runtime.workspace.snapshot_scan import snapshot_entries
+from crewplane.runtime.workspace.snapshot_scan_common import WorkspaceSnapshotPolicy
 
 GENERATED_FILE_GIT_TIMEOUT_SECONDS = 30.0
 FILE_HASH_CHUNK_BYTES = 1024 * 1024

@@ -17,20 +17,17 @@ from crewplane.architecture.contracts import (
     InvocationPlan,
     LogLevel,
 )
-from crewplane.core.platform import supports_posix_process_groups
 from crewplane.runtime.workspace.state_evidence import (
     confirm_workspace_process_drain,
     record_unresolved_workspace_process_drain,
 )
 
+from ..process import session
 from ..process.drain import ProcessDrainError
 from ..process.runner import (
     build_retry_log_header,
-    reap_failed_process,
-    write_stdin_and_collect_output,
 )
-from ..process.streams import drain_process_pipes, format_timeout_seconds
-from ..process.windows_launch import WindowsLaunch
+from ..process.streams import format_timeout_seconds
 from ..workspace_environment import record_workspace_child_environment_applied
 from .command_lifecycle import (
     CommandLifecycle,
@@ -99,7 +96,7 @@ async def run_command_once(
     Log I/O, capture cleanup, and drain persistence finish before cancellation
     propagates. Concurrent I/O failures remain attached to cancellation.
     """
-    lifecycle = CommandLifecycle(invocation_context)
+    lifecycle = CommandLifecycle(invocation_context, session.process_session())
     request = _CommandExecutionRequest(
         cmd=cmd,
         stdin_data=stdin_data,
@@ -141,49 +138,25 @@ async def _execute_command(
     lifecycle: CommandLifecycle,
     request: _CommandExecutionRequest,
 ) -> None:
-    start_new_session = supports_posix_process_groups()
-    if sys.platform == "win32":
-        lifecycle.windows_launch = WindowsLaunch()
-        process = await lifecycle.windows_launch.start(
-            request.cmd, request.cwd, _child_process_env(request.child_environment)
-        )
-    else:
-        process = await asyncio.create_subprocess_exec(
-            *request.cmd,
-            stdin=asyncio.subprocess.PIPE
-            if request.stdin_data
-            else asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=request.cwd,
-            env=_child_process_env(request.child_environment),
-            start_new_session=start_new_session,
-        )
-    lifecycle.process = process
-    lifecycle.process_group_id = process.pid if start_new_session else None
+    await lifecycle.session.start(
+        request.cmd,
+        request.cwd,
+        _child_process_env(request.child_environment),
+        request.stdin_data,
+    )
     record_workspace_child_environment_applied(
         lifecycle.invocation_context,
         request.child_environment,
     )
     lifecycle.emit_started()
     await _open_command_log(lifecycle, request)
-    if lifecycle.windows_launch is not None:
-        lifecycle.windows_launch.release()
-        lifecycle.output_capture = await lifecycle.windows_launch.collect(
-            request.stdin_data,
-            lifecycle.log_handle,
-            lifecycle.diagnostic_sink,
-            request.idle_timeout_seconds,
-        )
-    else:
-        lifecycle.output_capture = await write_stdin_and_collect_output(
-            process,
-            request.stdin_data,
-            lifecycle.log_handle,
-            lifecycle.diagnostic_sink,
-            lifecycle.process_group_id,
-            request.idle_timeout_seconds,
-        )
+    lifecycle.session.release()
+    lifecycle.output_capture = await lifecycle.session.collect(
+        request.stdin_data,
+        lifecycle.log_handle,
+        lifecycle.diagnostic_sink,
+        request.idle_timeout_seconds,
+    )
     lifecycle.cleanup_confirmed = True
     cancellation = await _persist_process_drain(lifecycle, None)
     if cancellation is not None:
@@ -261,20 +234,7 @@ async def _drain_failed_command(
     lifecycle: CommandLifecycle,
 ) -> ProcessDrainError | None:
     try:
-        if lifecycle.windows_launch is not None:
-            lifecycle.process = lifecycle.windows_launch.process
-            await lifecycle.windows_launch.drain()
-        if lifecycle.process is not None:
-            await reap_failed_process(
-                lifecycle.process,
-                lifecycle.process_group_id,
-                lifecycle.diagnostic_sink,
-            )
-            await drain_process_pipes(
-                lifecycle.process,
-                lifecycle.diagnostic_sink,
-                lifecycle.process_group_id,
-            )
+        await lifecycle.session.drain_failed(lifecycle.diagnostic_sink)
     except ProcessDrainError as exc:
         return exc
     return None

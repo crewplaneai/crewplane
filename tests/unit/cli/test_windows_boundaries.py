@@ -11,11 +11,14 @@ from crewplane.cli.update.types import UpdateError
 from crewplane.core.config import Config
 from crewplane.observability.types import WorkflowTopology
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import windows_support_policy
 
 
 @pytest.fixture(autouse=True)
 def windows(monkeypatch):
-    monkeypatch.setattr("crewplane.core.platform.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
 
 
 def test_windows_cleanup_rejects_before_context_resolution(

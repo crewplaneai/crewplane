@@ -14,12 +14,11 @@ from crewplane.runtime.workspace.filesystem import (
 from crewplane.runtime.workspace.snapshot import (
     workspace_directory_identity,
 )
-from crewplane.runtime.workspace.snapshot_scan import (
+from crewplane.runtime.workspace.snapshot_scan import snapshot_digest, snapshot_entries
+from crewplane.runtime.workspace.snapshot_scan_common import (
     WorkspaceSnapshotEntryError,
     WorkspaceSnapshotPolicy,
     WorkspaceSnapshotRaceError,
-    snapshot_digest,
-    snapshot_entries,
 )
 from tests.helpers.platforms import requires_posix, symlink_or_skip
 

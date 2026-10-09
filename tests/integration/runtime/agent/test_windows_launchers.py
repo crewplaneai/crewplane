@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.command_resolution import resolve_command
+from crewplane.adapters.invokers.cli_invoker.command_windows import resolve_command
 from crewplane.adapters.invokers.cli_invoker.windows_launchers import (
     prepare_windows_launcher,
 )

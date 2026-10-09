@@ -36,10 +36,8 @@ from crewplane.runtime.workspace.snapshot import (
     materialize_snapshot,
     snapshot_retry_reset,
 )
-from crewplane.runtime.workspace.snapshot_scan import (
-    WorkspaceSnapshotPolicy,
-    snapshot_entries,
-)
+from crewplane.runtime.workspace.snapshot_scan import snapshot_entries
+from crewplane.runtime.workspace.snapshot_scan_common import WorkspaceSnapshotPolicy
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,

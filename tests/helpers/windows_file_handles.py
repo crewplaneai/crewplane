@@ -116,3 +116,26 @@ class LocalHandle:
             os.close(self.descriptor)
             self.descriptor = None
         self.closed = True
+
+
+def local_windows_file_operations():
+    """Use Windows operations with metadata supplied by local handle doubles."""
+    from crewplane.architecture import safe_files_posix, safe_files_windows
+    from crewplane.architecture.safe_file_operations import SafeFileOperations
+
+    timestamp = (
+        safe_files_windows.signature_timestamp
+        if os.name == "nt"
+        else safe_files_posix.signature_timestamp
+    )
+    return SafeFileOperations(
+        safe_files_windows.ensure_contained_directory,
+        safe_files_windows.contained_directory,
+        safe_files_windows.contained_regular_file,
+        safe_files_windows.ensure_regular_file,
+        safe_files_windows.replace_contained_file,
+        safe_files_windows.open_regular_file,
+        safe_files_windows.open_writable_file,
+        safe_files_windows.open_contained_file,
+        timestamp,
+    )

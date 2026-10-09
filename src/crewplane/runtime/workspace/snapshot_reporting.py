@@ -7,11 +7,8 @@ from .snapshot import (
     SnapshotDriftSummary,
     snapshot_drift_summary,
 )
-from .snapshot_scan import (
-    WorkspaceSnapshotLimitError,
-    WorkspaceSnapshotPolicy,
-    snapshot_entries,
-)
+from .snapshot_scan import snapshot_entries
+from .snapshot_scan_common import WorkspaceSnapshotLimitError, WorkspaceSnapshotPolicy
 from .terminalization import workspace_diagnostic
 
 

@@ -30,6 +30,7 @@ from crewplane.observability.types import (
     RunResult,
 )
 
+from . import event_log_io
 from .accumulator import RunSummaryAccumulator
 from .builder import build_run_summary
 from .markdown import render_run_summary_markdown
@@ -190,7 +191,7 @@ class PersistentRunLogger:
             ):
                 return
             self._record_event_summary(event)
-            _append_event_log_line(
+            event_log_io.event_log_appender()(
                 event_log_path,
                 event_line,
             )
@@ -239,7 +240,7 @@ class PersistentRunLogger:
                 return
             self._record_event_summary(event)
             event_log_path = ensure_single_link_regular_file(self._event_log_path)
-            _append_event_log_line(
+            event_log_io.event_log_appender()(
                 event_log_path,
                 format_execution_event_log_line(event),
             )
@@ -249,27 +250,6 @@ class PersistentRunLogger:
         if len(self._events) == MAX_RETAINED_SUMMARY_EVENTS:
             self._dropped_event_count += 1
         self._events.append(event)
-
-
-def _append_event_log_line(path: Path, line: str) -> None:
-    if os.name == "nt":
-        from crewplane.architecture.safe_files_windows import open_writable_file
-
-        with (
-            open_writable_file(path, append=True) as descriptor,
-            os.fdopen(descriptor, "ab", closefd=False) as handle,
-        ):
-            handle.write(line.encode("utf-8"))
-        return
-    flags = (
-        os.O_WRONLY
-        | os.O_APPEND
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_BINARY", 0)
-    )
-    descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "ab") as handle:
-        handle.write(line.encode("utf-8"))
 
 
 def _event_line_is_durable(path: Path, line: str) -> bool:

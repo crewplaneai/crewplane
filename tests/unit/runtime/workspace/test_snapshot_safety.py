@@ -8,14 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from crewplane.runtime.workspace.snapshot_scan import (
+from crewplane.runtime.workspace.snapshot_scan import snapshot_digest, snapshot_entries
+from crewplane.runtime.workspace.snapshot_scan_common import (
     WorkspaceSnapshotCancelled,
     WorkspaceSnapshotEntryError,
     WorkspaceSnapshotLimitError,
     WorkspaceSnapshotPolicy,
     WorkspaceSnapshotRaceError,
-    snapshot_digest,
-    snapshot_entries,
 )
 from tests.helpers.platforms import requires_posix, symlink_or_skip
 
@@ -91,7 +90,7 @@ def test_snapshot_entries_rejects_file_type_change_before_open(
 
     with (
         patch(
-            "crewplane.runtime.workspace.snapshot_scan.os.open",
+            "crewplane.runtime.workspace.snapshot_scan_posix.os.open",
             new=replace_with_fifo,
         ),
         pytest.raises(WorkspaceSnapshotRaceError, match="changed type"),
@@ -124,7 +123,7 @@ def test_snapshot_entries_rejects_directory_swap_before_descent(
 
     with (
         patch(
-            "crewplane.runtime.workspace.snapshot_scan.os.open",
+            "crewplane.runtime.workspace.snapshot_scan_posix.os.open",
             new=replace_with_symlink,
         ),
         pytest.raises(WorkspaceSnapshotRaceError, match="changed before open"),
@@ -194,7 +193,7 @@ def test_snapshot_closes_owned_descriptors_after_success_and_failure(
     (tmp_path / "nested" / "file").write_bytes(b"1234")
     real_close = os.close
     with patch(
-        "crewplane.runtime.workspace.snapshot_scan.os.close", wraps=real_close
+        "crewplane.runtime.workspace.snapshot_scan_posix.os.close", wraps=real_close
     ) as close:
         if byte_limit:
             snapshot_entries(

@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.command_resolution import ResolvedCommand
+from crewplane.adapters.invokers.cli_invoker.command_types import ResolvedCommand
 from crewplane.adapters.invokers.cli_invoker.windows_launchers import (
     prepare_windows_launcher,
     validate_batch_arguments,

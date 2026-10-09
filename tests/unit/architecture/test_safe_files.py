@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.architecture import safe_files
+from crewplane.architecture import safe_files, safe_files_posix
 from crewplane.architecture.safe_files import (
     ensure_contained_directory,
     ensure_single_link_regular_file,
@@ -192,7 +192,7 @@ def test_replace_contained_file_does_not_clobber_a_racing_destination(
             follow_symlinks=follow_symlinks,
         )
 
-    monkeypatch.setattr(safe_files.os, "link", precreate_destination)
+    monkeypatch.setattr(safe_files_posix.os, "link", precreate_destination)
 
     with pytest.raises(FileExistsError):
         replace_contained_file(root, "output.md", source)
@@ -246,7 +246,7 @@ def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
 ) -> None:
     path = tmp_path / "result.md"
     calls = 0
-    original_open = safe_files.os.open
+    original_open = safe_files_posix.os.open
 
     def create_once_after_two_races(file_path: str, flags: int, mode: int = 0) -> int:
         nonlocal calls
@@ -256,7 +256,7 @@ def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
         return original_open(file_path, flags, mode)
 
     with monkeypatch.context() as file_creation:
-        file_creation.setattr(safe_files.os, "open", create_once_after_two_races)
+        file_creation.setattr(safe_files_posix.os, "open", create_once_after_two_races)
         safe_path = ensure_single_link_regular_file(path)
 
     assert safe_path == path
@@ -278,7 +278,7 @@ def test_ensure_single_link_regular_file_fails_after_retries(
         raise FileExistsError
 
     with monkeypatch.context() as file_creation:
-        file_creation.setattr(safe_files.os, "open", keep_file_contended)
+        file_creation.setattr(safe_files_posix.os, "open", keep_file_contended)
         with pytest.raises(ValueError, match="could not be created safely"):
             ensure_single_link_regular_file(path)
 

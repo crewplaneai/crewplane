@@ -13,7 +13,11 @@ from crewplane.architecture.windows_file_handles import (
     FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_LIST_DIRECTORY,
 )
-from crewplane.runtime.workspace import snapshot_scan, snapshot_scan_io
+from crewplane.runtime.workspace import (
+    snapshot_scan,
+    snapshot_scan_common,
+    snapshot_scan_windows,
+)
 from tests.helpers.windows_file_handles import LocalHandle
 
 
@@ -30,15 +34,15 @@ def local_handles(monkeypatch):
             handle.close()
 
     if os.name != "nt":
-        monkeypatch.setattr(snapshot_scan_io, "protected_directory", protection)
-    monkeypatch.setattr(snapshot_scan_io, "open_regular_file", open_regular_file)
+        monkeypatch.setattr(snapshot_scan_windows, "protected_directory", protection)
+    monkeypatch.setattr(snapshot_scan_windows, "open_regular_file", open_regular_file)
 
 
 def observe(root, policy=None):
-    resolved = policy or snapshot_scan.WorkspaceSnapshotPolicy()
-    budget = snapshot_scan.WorkspaceSnapshotBudget(resolved, resolved.clock())
+    resolved = policy or snapshot_scan_common.WorkspaceSnapshotPolicy()
+    budget = snapshot_scan_common.WorkspaceSnapshotBudget(resolved, resolved.clock())
     entries = {}
-    snapshot_scan_io.scan_windows_directory(root, "", entries, budget)
+    snapshot_scan_windows.scan_windows_directory(root, "", entries, budget)
     return dict(sorted(entries.items()))
 
 
@@ -80,7 +84,9 @@ def test_windows_observation_enumerates_with_required_handle_access(
     monkeypatch.setattr(safe_files_windows, "open_handle", open_handle)
     monkeypatch.setattr(LocalHandle, "entry_names", list_entries)
     monkeypatch.setattr(
-        snapshot_scan_io, "protected_directory", safe_files_windows.protected_directory
+        snapshot_scan_windows,
+        "protected_directory",
+        safe_files_windows.protected_directory,
     )
     nested = tmp_path / "nested"
     nested.mkdir()
@@ -89,7 +95,7 @@ def test_windows_observation_enumerates_with_required_handle_access(
 
     entries = observe(tmp_path)
     metadata = (nested / "café.txt").stat()
-    assert entries["nested/café.txt"] == snapshot_scan.snapshot_entry_digest(
+    assert entries["nested/café.txt"] == snapshot_scan_common.snapshot_entry_digest(
         "nested/café.txt", metadata, "file", payload
     )
     assert set(entries) == {"nested", "nested/café.txt"}
@@ -108,7 +114,7 @@ def test_windows_exclusions_are_case_insensitive(tmp_path):
     assert list(
         observe(
             tmp_path,
-            snapshot_scan.WorkspaceSnapshotPolicy(
+            snapshot_scan_common.WorkspaceSnapshotPolicy(
                 excluded_roots=frozenset({".crewplane"})
             ),
         )
@@ -118,15 +124,15 @@ def test_windows_exclusions_are_case_insensitive(tmp_path):
 @pytest.mark.parametrize(
     "policy",
     [
-        snapshot_scan.WorkspaceSnapshotPolicy(max_entries=1),
-        snapshot_scan.WorkspaceSnapshotPolicy(max_file_bytes=1),
-        snapshot_scan.WorkspaceSnapshotPolicy(cancel_requested=lambda: True),
+        snapshot_scan_common.WorkspaceSnapshotPolicy(max_entries=1),
+        snapshot_scan_common.WorkspaceSnapshotPolicy(max_file_bytes=1),
+        snapshot_scan_common.WorkspaceSnapshotPolicy(cancel_requested=lambda: True),
     ],
 )
 def test_windows_observation_limits_remain_conservative(tmp_path, policy):
     (tmp_path / "a").write_bytes(b"payload")
     (tmp_path / "b").write_bytes(b"payload")
-    with pytest.raises(snapshot_scan.WorkspaceSnapshotError):
+    with pytest.raises(snapshot_scan_common.WorkspaceSnapshotError):
         observe(tmp_path, policy)
 
 
@@ -136,8 +142,10 @@ def test_windows_observation_sharing_failure_is_unreliable(tmp_path, monkeypatch
     def unavailable(path):
         raise PermissionError(str(path))
 
-    monkeypatch.setattr(snapshot_scan_io, "open_regular_file", unavailable)
-    with pytest.raises(snapshot_scan.WorkspaceSnapshotRaceError, match="safely read"):
+    monkeypatch.setattr(snapshot_scan_windows, "open_regular_file", unavailable)
+    with pytest.raises(
+        snapshot_scan_common.WorkspaceSnapshotRaceError, match="safely read"
+    ):
         observe(tmp_path)
 
 
@@ -147,8 +155,8 @@ def test_windows_observation_sharing_failure_is_unreliable(tmp_path, monkeypatch
         None,
         PermissionError("sharing denied"),
         ValueError("unsafe file"),
-        snapshot_scan.WorkspaceSnapshotLimitError("byte limit"),
-        snapshot_scan.WorkspaceSnapshotCancelled("cancelled"),
+        snapshot_scan_common.WorkspaceSnapshotLimitError("byte limit"),
+        snapshot_scan_common.WorkspaceSnapshotCancelled("cancelled"),
     ],
     ids=["success", "sharing", "validation", "limit", "cancellation"],
 )
@@ -160,8 +168,8 @@ def test_windows_scan_preserves_order_partial_results_and_protection(
     nested.mkdir()
     (nested / "c").write_bytes(b"c")
     (nested / "b").write_bytes(b"b")
-    protection = snapshot_scan_io.protected_directory
-    file_open = snapshot_scan_io.open_regular_file
+    protection = snapshot_scan_windows.protected_directory
+    file_open = snapshot_scan_windows.open_regular_file
     entry_names = LocalHandle.entry_names
     active = []
     opened_directories = []
@@ -196,25 +204,27 @@ def test_windows_scan_preserves_order_partial_results_and_protection(
             yield descriptor
 
     monkeypatch.setattr(LocalHandle, "entry_names", reverse_entry_names)
-    monkeypatch.setattr(snapshot_scan_io, "protected_directory", tracked_protection)
-    monkeypatch.setattr(snapshot_scan_io, "open_regular_file", tracked_file_open)
-    policy = snapshot_scan.WorkspaceSnapshotPolicy()
-    budget = snapshot_scan.WorkspaceSnapshotBudget(policy, policy.clock())
+    monkeypatch.setattr(
+        snapshot_scan_windows, "protected_directory", tracked_protection
+    )
+    monkeypatch.setattr(snapshot_scan_windows, "open_regular_file", tracked_file_open)
+    policy = snapshot_scan_common.WorkspaceSnapshotPolicy()
+    budget = snapshot_scan_common.WorkspaceSnapshotBudget(policy, policy.clock())
     entries = {"existing": "kept"}
 
     if failure is None:
         assert (
-            snapshot_scan_io.scan_windows_directory(tmp_path, "", entries, budget)
+            snapshot_scan_windows.scan_windows_directory(tmp_path, "", entries, budget)
             is None
         )
         expected_paths = ["a", "a/b", "a/c", "z"]
         assert reads == ["a/b", "a/c", "z"]
         assert budget.file_bytes == 3
     else:
-        with pytest.raises(snapshot_scan.WorkspaceSnapshotError) as caught:
-            snapshot_scan_io.scan_windows_directory(tmp_path, "", entries, budget)
+        with pytest.raises(snapshot_scan_common.WorkspaceSnapshotError) as caught:
+            snapshot_scan_windows.scan_windows_directory(tmp_path, "", entries, budget)
         if isinstance(failure, (OSError, ValueError)):
-            assert type(caught.value) is snapshot_scan.WorkspaceSnapshotRaceError
+            assert type(caught.value) is snapshot_scan_common.WorkspaceSnapshotRaceError
             assert str(caught.value) == (
                 f"Workspace observation could not safely read {nested}: {failure}"
             )
@@ -230,7 +240,7 @@ def test_windows_scan_preserves_order_partial_results_and_protection(
     for relative in expected_paths:
         path = tmp_path / relative
         directory = path.is_dir()
-        assert entries[relative] == snapshot_scan.snapshot_entry_digest(
+        assert entries[relative] == snapshot_scan_common.snapshot_entry_digest(
             relative,
             path.stat(),
             "dir" if directory else "file",
@@ -251,7 +261,7 @@ def test_windows_scan_rejects_directory_replacement_before_descent(
     root.mkdir()
     nested = root / "nested"
     nested.mkdir()
-    protection = snapshot_scan_io.protected_directory
+    protection = snapshot_scan_windows.protected_directory
 
     @contextmanager
     def replace_before_protection(path, list_entries=False):
@@ -262,13 +272,13 @@ def test_windows_scan_rejects_directory_replacement_before_descent(
             yield handle
 
     monkeypatch.setattr(
-        snapshot_scan_io, "protected_directory", replace_before_protection
+        snapshot_scan_windows, "protected_directory", replace_before_protection
     )
-    policy = snapshot_scan.WorkspaceSnapshotPolicy()
-    budget = snapshot_scan.WorkspaceSnapshotBudget(policy, policy.clock())
+    policy = snapshot_scan_common.WorkspaceSnapshotPolicy()
+    budget = snapshot_scan_common.WorkspaceSnapshotBudget(policy, policy.clock())
     entries = {}
-    with pytest.raises(snapshot_scan.WorkspaceSnapshotRaceError) as caught:
-        snapshot_scan_io.scan_windows_directory(root, "", entries, budget)
+    with pytest.raises(snapshot_scan_common.WorkspaceSnapshotRaceError) as caught:
+        snapshot_scan_windows.scan_windows_directory(root, "", entries, budget)
     assert str(caught.value) == "Workspace snapshot directory changed: nested"
     assert caught.value.__cause__ is None
     assert entries == {}
@@ -284,7 +294,7 @@ def test_windows_scan_translates_directory_exit_failure_after_recording_entries(
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "file").write_bytes(b"payload")
-    protection = snapshot_scan_io.protected_directory
+    protection = snapshot_scan_windows.protected_directory
     failure = ValueError("directory changed on exit")
 
     @contextmanager
@@ -294,12 +304,14 @@ def test_windows_scan_translates_directory_exit_failure_after_recording_entries(
             if path == nested and not list_entries:
                 raise failure
 
-    monkeypatch.setattr(snapshot_scan_io, "protected_directory", fail_after_protection)
-    policy = snapshot_scan.WorkspaceSnapshotPolicy()
-    budget = snapshot_scan.WorkspaceSnapshotBudget(policy, policy.clock())
+    monkeypatch.setattr(
+        snapshot_scan_windows, "protected_directory", fail_after_protection
+    )
+    policy = snapshot_scan_common.WorkspaceSnapshotPolicy()
+    budget = snapshot_scan_common.WorkspaceSnapshotBudget(policy, policy.clock())
     entries = {}
-    with pytest.raises(snapshot_scan.WorkspaceSnapshotRaceError) as caught:
-        snapshot_scan_io.scan_windows_directory(tmp_path, "", entries, budget)
+    with pytest.raises(snapshot_scan_common.WorkspaceSnapshotRaceError) as caught:
+        snapshot_scan_windows.scan_windows_directory(tmp_path, "", entries, budget)
     assert str(caught.value) == (
         f"Workspace observation could not safely read {tmp_path}: {failure}"
     )
@@ -346,12 +358,12 @@ def test_windows_scan_rejects_unsafe_discovered_metadata(
         current = fstat(descriptor)
         return metadata if (current.st_dev, current.st_ino) == identity else current
 
-    monkeypatch.setattr(snapshot_scan_io.os, "fstat", read_metadata)
-    policy = snapshot_scan.WorkspaceSnapshotPolicy()
-    budget = snapshot_scan.WorkspaceSnapshotBudget(policy, policy.clock())
+    monkeypatch.setattr(snapshot_scan_windows.os, "fstat", read_metadata)
+    policy = snapshot_scan_common.WorkspaceSnapshotPolicy()
+    budget = snapshot_scan_common.WorkspaceSnapshotBudget(policy, policy.clock())
     entries = {}
-    with pytest.raises(snapshot_scan.WorkspaceSnapshotEntryError) as caught:
-        snapshot_scan_io.scan_windows_directory(tmp_path, "", entries, budget)
+    with pytest.raises(snapshot_scan_common.WorkspaceSnapshotEntryError) as caught:
+        snapshot_scan_windows.scan_windows_directory(tmp_path, "", entries, budget)
     assert str(caught.value) == message
     assert caught.value.__cause__ is None
     assert entries == {}

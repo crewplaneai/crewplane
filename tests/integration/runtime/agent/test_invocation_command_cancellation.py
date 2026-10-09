@@ -132,12 +132,11 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "crewplane.runtime.agent.invocation.command."
-                "write_stdin_and_collect_output",
+                "crewplane.runtime.agent.process.runner.write_stdin_and_collect_output",
                 new=block_collection,
             ),
             patch(
-                "crewplane.runtime.agent.invocation.command.reap_failed_process",
+                "crewplane.runtime.agent.process.runner.reap_failed_process",
                 new=fail_drain,
             ),
         ):
@@ -208,12 +207,11 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "crewplane.runtime.agent.invocation.command."
-                "write_stdin_and_collect_output",
+                "crewplane.runtime.agent.process.runner.write_stdin_and_collect_output",
                 new=fail_collection,
             ),
             patch(
-                "crewplane.runtime.agent.invocation.command.reap_failed_process",
+                "crewplane.runtime.agent.process.runner.reap_failed_process",
                 new=fail_drain,
             ),
             patch(

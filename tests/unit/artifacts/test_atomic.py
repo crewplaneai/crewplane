@@ -83,7 +83,7 @@ def test_atomic_write_propagates_file_fsync_integrity_failure(tmp_path) -> None:
     failure = OSError(errno.EIO, "injected data sync failure")
 
     with (
-        patch("crewplane.artifacts.atomic.os.fsync", side_effect=failure),
+        patch("crewplane.artifacts.atomic_posix.os.fsync", side_effect=failure),
         pytest.raises(OSError, match="injected data sync failure") as raised,
     ):
         atomic_write_json(path, {"status": "succeeded"})
@@ -99,7 +99,7 @@ def test_atomic_write_propagates_directory_fsync_integrity_failure(tmp_path) -> 
 
     with (
         patch(
-            "crewplane.artifacts.atomic.os.fsync",
+            "crewplane.artifacts.atomic_posix.os.fsync",
             side_effect=[None, failure],
         ),
         pytest.raises(OSError, match="injected directory sync failure") as raised,
@@ -120,7 +120,7 @@ def test_atomic_write_propagates_replacement_failure_without_losing_target(
 
     with (
         patch(
-            "crewplane.artifacts.atomic.Path.replace",
+            "crewplane.artifacts.atomic_posix.Path.replace",
             side_effect=failure,
         ),
         pytest.raises(OSError, match="injected replacement failure") as raised,
@@ -137,7 +137,7 @@ def test_atomic_write_allows_unsupported_directory_fsync(tmp_path) -> None:
     path = tmp_path / "payload.json"
 
     with patch(
-        "crewplane.artifacts.atomic.os.fsync",
+        "crewplane.artifacts.atomic_posix.os.fsync",
         side_effect=[None, OSError(errno.EINVAL, "unsupported directory sync")],
     ):
         atomic_write_json(path, {"status": "succeeded"})

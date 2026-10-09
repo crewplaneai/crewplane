@@ -220,7 +220,7 @@ def test_writer_propagates_publication_failure_and_cleans_temporary_file(
     failure = OSError("sync failed")
 
     with (
-        patch("crewplane.artifacts.atomic.os.fsync", side_effect=failure),
+        patch("crewplane.artifacts.atomic_posix.os.fsync", side_effect=failure),
         pytest.raises(OSError) as raised,
     ):
         if kind == "source":

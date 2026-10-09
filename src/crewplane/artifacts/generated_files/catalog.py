@@ -1,27 +1,20 @@
 from __future__ import annotations
 
 import os
-import shutil
-import stat
-import tempfile
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
 from crewplane.architecture.safe_file_reads import (
-    copy_regular_file,
     read_contained_bytes,
 )
 from crewplane.architecture.safe_files import (
     contained_regular_file,
-    ensure_contained_directory,
-    path_is_symlink,
 )
 
 from ..naming import build_generated_file_result_dir_name
-from . import snapshot_metadata
+from . import io, snapshot_metadata
 from .detection import (
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
@@ -32,7 +25,6 @@ from .paths import (
     generated_file_node_prefix,
     is_reserved_workspace_path,
 )
-from .snapshot_io import copy_generated_file_snapshot_candidate
 from .snapshot_policy import (
     GeneratedFileRejectionLog,
     GeneratedFileSnapshotCandidate,
@@ -164,7 +156,7 @@ def snapshot_generated_file_workspace(
         candidate_files,
         explicit_claims_only,
     )
-    _replace_generated_file_source_root(selected_snapshot_root)
+    io.generated_file_operations().reset_directory(selected_snapshot_root)
     source_metadata_signature = snapshot_metadata.write_source_metadata(
         selected_snapshot_root,
         resolved_workspace_root,
@@ -242,9 +234,11 @@ def _publish_snapshot_candidate(
     on_file_published: Callable[[Path, tuple[int, str]], None] | None,
 ) -> bool:
     target = snapshot_root.joinpath(*candidate.relative_path.parts)
-    _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
+    io.generated_file_operations().prepare_directory(
+        snapshot_root, candidate.relative_path.parent
+    )
     try:
-        target_signature = copy_generated_file_snapshot_candidate(
+        target_signature = io.generated_file_operations().copy_snapshot(
             candidate,
             target,
             resolved_workspace_root,
@@ -345,116 +339,8 @@ def _copy_workspace_generated_file(
         target = target / build_generated_file_result_dir_name(copy_namespace)
     for part in Path(relative_path).parts:
         target = target / part
-    protection: AbstractContextManager[object]
-    if os.name == "nt":
-        from crewplane.architecture.safe_files_windows import protected_directory
-
-        protection = protected_directory(target.parent, create=True)
-    else:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        protection = nullcontext(target.parent)
-    with protection:
-        _copy_generated_file_to_target(generated_file, target)
+    io.generated_file_operations().copy_result(generated_file, target)
     return target
-
-
-def _copy_generated_file_to_target(generated_file: Path, target: Path) -> None:
-    if os.name == "nt":
-        _copy_windows_generated_file(generated_file, target)
-        return
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=target.parent,
-            prefix=".generated-file-",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary_path = Path(handle.name)
-        copy_regular_file(generated_file, temporary_path)
-        shutil.copymode(generated_file, temporary_path)
-        temporary_path.replace(target)
-    except (OSError, ValueError):
-        if temporary_path is not None:
-            with suppress(OSError):
-                temporary_path.unlink()
-        raise
-
-
-def _copy_windows_generated_file(generated_file: Path, target: Path) -> None:
-    from crewplane.architecture.safe_files_windows import (
-        protected_file,
-        rename_contained_file,
-        temporary_binary_file,
-    )
-    from crewplane.architecture.windows_file_handles import descriptor_identity
-
-    with temporary_binary_file(target.parent, ".generated-file-", ".tmp") as (
-        temporary_path,
-        stream,
-    ):
-        identity = descriptor_identity(stream.fileno(), temporary_path)
-        stream.close()
-        copy_regular_file(generated_file, temporary_path)
-        with protected_file(generated_file), protected_file(temporary_path):
-            shutil.copymode(generated_file, temporary_path)
-        rename_contained_file(temporary_path, target, identity)
-
-
-def _replace_generated_file_source_root(path: Path) -> None:
-    if os.name == "nt":
-        from crewplane.architecture.safe_files_windows import reset_directory
-
-        try:
-            reset_directory(path)
-        except ValueError as exc:
-            raise RuntimeError(
-                f"Generated-file source path is not a directory: {path.as_posix()}"
-            ) from exc
-        return
-    _ensure_safe_directory(path.parent.parent)
-    _ensure_contained_directory(path.parent.parent, Path(path.parent.name))
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        path.mkdir(parents=True, exist_ok=False)
-        return
-    if not stat.S_ISDIR(mode) or path_is_symlink(path):
-        raise RuntimeError(
-            f"Generated-file source path is not a directory: {path.as_posix()}"
-        )
-    shutil.rmtree(path)
-    path.mkdir(parents=True, exist_ok=False)
-
-
-def _ensure_contained_directory(root: Path, relative_path: Path) -> Path:
-    if os.name == "nt":
-        return ensure_contained_directory(root, relative_path.as_posix())
-    current = root
-    for part in relative_path.parts:
-        if part in {"", ".", ".."}:
-            raise RuntimeError("Generated-file source path is unsafe.")
-        current = current / part
-        if current.exists() or current.is_symlink():
-            _ensure_safe_directory(current)
-            continue
-        try:
-            current.mkdir(exist_ok=False)
-        except FileExistsError:
-            _ensure_safe_directory(current)
-    return current
-
-
-def _ensure_safe_directory(path: Path) -> None:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        path.mkdir(parents=True, exist_ok=True)
-        return
-    if path_is_symlink(path) or not stat.S_ISDIR(mode):
-        raise RuntimeError(
-            f"Generated-file source path is not a directory: {path.as_posix()}"
-        )
 
 
 def _format_markdown_link_target(link_target: str) -> str:

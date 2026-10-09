@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.adapters.invokers.cli import collect_cli_request_errors
+from crewplane.adapters.invokers.cli_invoker import command_strategy
 from crewplane.adapters.invokers.cli_invoker.capabilities import (
     build_cli_invocation_plan,
 )
@@ -29,6 +30,7 @@ def request(command=None, model=None, **values) -> CliInvocationRequest:
             cli_cmd=command or ["opencode", "run"], provider_kind="opencode", **values
         ),
         model,
+        command_strategy=command_strategy.command_strategy(),
     )
 
 

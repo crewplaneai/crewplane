@@ -3,7 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
+from crewplane.adapters.invokers.cli_invoker import (
+    command_strategy,
+    get_cli_provider_capability,
+)
 from crewplane.adapters.invokers.cli_invoker.capability import CliInvocationRequest
 from crewplane.adapters.invokers.cli_invoker.providers.claude import (
     CLAUDE_REASONING_ENV,
@@ -39,7 +42,9 @@ def test_reasoning_args_are_native_and_none_is_a_noop() -> None:
     codex_builder = get_cli_provider_capability("codex").build_command
     claude_builder = get_cli_provider_capability("claude").build_command
     for requested in (None, "high"):
-        request = CliInvocationRequest(codex, None, requested)
+        request = CliInvocationRequest(
+            codex, None, requested, command_strategy=command_strategy.command_strategy()
+        )
         command = codex_builder(request, "prompt")
         assert ("--config" in command.cmd) is (requested is not None)
         if requested is not None:
@@ -48,9 +53,12 @@ def test_reasoning_args_are_native_and_none_is_a_noop() -> None:
                 == 'model_reasoning_effort="high"'
             )
         command.structured_output_file.unlink(missing_ok=True)
-    assert claude_builder(CliInvocationRequest(claude, None, "high"), "prompt").cmd[
-        -4:
-    ] == ["--effort", "high", "--output-format", "json"]
+    assert claude_builder(
+        CliInvocationRequest(
+            claude, None, "high", command_strategy=command_strategy.command_strategy()
+        ),
+        "prompt",
+    ).cmd[-4:] == ["--effort", "high", "--output-format", "json"]
 
 
 def test_reasoning_request_rejects_unsupported_provider() -> None:
@@ -315,5 +323,6 @@ def validate_reasoning_request(
             requested_reasoning,
             working_directory,
             os.environ if environment is None else environment,
+            command_strategy=command_strategy.command_strategy(),
         )
     )

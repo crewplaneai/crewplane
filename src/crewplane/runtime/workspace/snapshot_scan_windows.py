@@ -16,7 +16,7 @@ from crewplane.architecture.windows_file_handles import (
     FILE_ATTRIBUTE_REPARSE_POINT,
 )
 
-from . import snapshot_scan as scan
+from . import snapshot_scan_common as scan
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -143,3 +143,9 @@ def _file_digest(
                 f"Workspace snapshot file changed while reading: {relative}"
             )
         return result
+
+
+def scan_snapshot(root: Path, budget: scan.WorkspaceSnapshotBudget) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    scan_windows_directory(root, "", entries, budget)
+    return entries

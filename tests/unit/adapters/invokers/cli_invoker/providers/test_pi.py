@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from crewplane.adapters.invokers.cli_invoker import command_strategy
 from crewplane.adapters.invokers.cli_invoker.capability import CliInvocationRequest
 from crewplane.adapters.invokers.cli_invoker.providers.pi import PI
 from crewplane.architecture.contracts import CommandResult
@@ -12,7 +13,9 @@ pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 def request(**values) -> CliInvocationRequest:
     return CliInvocationRequest(
-        AgentConfig(cli_cmd=["pi"], provider_kind="pi", **values), None
+        AgentConfig(cli_cmd=["pi"], provider_kind="pi", **values),
+        None,
+        command_strategy=command_strategy.command_strategy(),
     )
 
 
@@ -23,7 +26,11 @@ def test_pi_preserves_native_configuration_and_literal_stdin(monkeypatch) -> Non
         provider_kind="pi",
         extra_args=["--tools", "read,bash", "--mode", "text", "--no-session"],
     )
-    invocation = CliInvocationRequest(config, "native/provider:model:thinking")
+    invocation = CliInvocationRequest(
+        config,
+        "native/provider:model:thinking",
+        command_strategy=command_strategy.command_strategy(),
+    )
     PI.validate_request(invocation)
     prompt = '--help\n"quotes" λ'
     command = PI.build_command(invocation, prompt)
@@ -80,7 +87,9 @@ def test_pi_preserves_native_configuration_and_literal_stdin(monkeypatch) -> Non
 def test_pi_rejects_conflicting_configured_arguments(arguments, location) -> None:
     values = {location: arguments if location == "extra_args" else ["pi", *arguments]}
     invocation = CliInvocationRequest(
-        AgentConfig(provider_kind="pi", **({"cli_cmd": ["pi"]} | values)), None
+        AgentConfig(provider_kind="pi", **({"cli_cmd": ["pi"]} | values)),
+        None,
+        command_strategy=command_strategy.command_strategy(),
     )
     with pytest.raises(ValueError, match="Pi"):
         PI.validate_request(invocation)
@@ -105,7 +114,9 @@ def test_pi_rejects_workflow_reasoning() -> None:
 
 def test_pi_rejects_env_without_a_command() -> None:
     invocation = CliInvocationRequest(
-        AgentConfig(cli_cmd=["env", "-i"], provider_kind="pi"), None
+        AgentConfig(cli_cmd=["env", "-i"], provider_kind="pi"),
+        None,
+        command_strategy=command_strategy.command_strategy(),
     )
     with pytest.raises(ValueError, match="executable"):
         PI.validate_request(invocation)

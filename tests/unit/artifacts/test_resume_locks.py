@@ -6,12 +6,12 @@ from unittest.mock import mock_open, patch
 
 import pytest
 
-import crewplane.artifacts.locks as resume_locks
 import crewplane.artifacts.locks.process_identity as process_identity
 from crewplane.artifacts.locks import (
     LOCK_OWNER_FILENAME,
     ResumeLockError,
     acquire_same_context_lock,
+    posix_policy,
 )
 from crewplane.artifacts.locks.process_identity import (
     ProcessIdentity,
@@ -289,8 +289,8 @@ def test_ownerless_grace_restarts_for_recreated_lock(tmp_path, monkeypatch) -> N
             encoding="utf-8",
         )
 
-    monkeypatch.setattr(resume_locks, "monotonic", fake_monotonic)
-    monkeypatch.setattr(resume_locks, "sleep", fake_sleep)
+    monkeypatch.setattr(posix_policy, "monotonic", fake_monotonic)
+    monkeypatch.setattr(posix_policy, "sleep", fake_sleep)
 
     with pytest.raises(ResumeLockError, match="live same-context"):
         acquire_same_context_lock(

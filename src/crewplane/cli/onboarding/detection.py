@@ -5,10 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.adapters.invokers.cli import (
-    cli_command_available,
-    cli_command_diagnostic,
+    inspect_cli_command,
 )
-from crewplane.core.platform import is_native_windows
 
 from .rendering_config import render_provider_ready_config
 from .rendering_providers import KNOWN_PROVIDER_NAMES
@@ -32,15 +30,12 @@ def detect_providers(
         render_provider_ready_config(default_config, KNOWN_PROVIDER_NAMES),
         "provider detection config",
     )
-    return tuple(
-        ProviderDetection(
-            provider,
-            cli_command_available(
-                config.agents[provider].cli_cmd, project_root, which_fn
-            ),
-            cli_command_diagnostic(config.agents[provider].cli_cmd, project_root)
-            if is_native_windows()
-            else None,
+    detections = []
+    for provider in KNOWN_PROVIDER_NAMES:
+        result = inspect_cli_command(
+            config.agents[provider].cli_cmd, project_root, which_fn
         )
-        for provider in KNOWN_PROVIDER_NAMES
-    )
+        detections.append(
+            ProviderDetection(provider, result.available, result.diagnostic)
+        )
+    return tuple(detections)

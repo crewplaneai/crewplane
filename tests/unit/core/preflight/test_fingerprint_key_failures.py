@@ -105,3 +105,39 @@ def test_secret_context_distinguishes_missing_and_nontext_values() -> None:
     with pytest.raises(TypeError, match="does not contain text"):
         context.get("options")
     assert context.get_config_value("options") == {"enabled": True}
+
+
+@pytest.mark.parametrize(
+    "failure", [None, OSError("sharing denied"), ValueError("source changed")]
+)
+def test_windows_key_read_preserves_bounds_and_diagnostic_translation(
+    tmp_path, monkeypatch, failure
+):
+    from unittest.mock import Mock
+
+    from crewplane.core.preflight import fingerprint_key_io
+    from crewplane.core.preflight.secrets import FingerprintKeyProvider
+
+    key_path = tmp_path / "preflight/fingerprint.key"
+    key_path.parent.mkdir()
+    key_path.write_bytes(b"k" * 32)
+    key_path.chmod(0o644)
+    read = Mock(return_value=b"k" * 32, side_effect=failure)
+    monkeypatch.setattr(
+        fingerprint_key_io,
+        "fingerprint_key_operations",
+        fingerprint_key_io.windows_fingerprint_key_operations,
+    )
+    monkeypatch.setattr(fingerprint_key_io, "read_contained_bytes", read)
+
+    result = FingerprintKeyProvider(tmp_path).load_key("read_only")
+
+    read.assert_called_once_with(key_path.parent, key_path.name, 32)
+    assert result.persisted
+    assert result.key == (b"k" * 32 if failure is None else b"")
+    assert [diagnostic.message for diagnostic in result.diagnostics] == (
+        []
+        if failure is None
+        else [f"Unable to read protected fingerprint key: {failure}"]
+    )
+    assert key_path.read_bytes() == b"k" * 32

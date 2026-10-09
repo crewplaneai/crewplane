@@ -167,9 +167,15 @@ def test_finalize_stage_removes_partial_generated_file_copy(tmp_path: Path) -> N
         Path(target).write_text("partial", encoding="utf-8")
         raise OSError("disk full")
 
-    with patch(
-        "crewplane.artifacts.generated_files.catalog.copy_regular_file",
-        new=fail_after_partial_copy,
+    with (
+        patch(
+            "crewplane.artifacts.generated_files.io_posix.copy_regular_file",
+            new=fail_after_partial_copy,
+        ),
+        patch(
+            "crewplane.artifacts.generated_files.io_windows.copy_regular_file",
+            new=fail_after_partial_copy,
+        ),
     ):
         result = output.finalize_node(
             node_artifact_request("build.node"),

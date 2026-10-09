@@ -6,7 +6,7 @@ import base64
 import subprocess
 import sys
 
-from .command_resolution import ResolvedCommand
+from .command_types import ResolvedCommand
 
 # Safe cmd budget for the quoted executable and arguments in UTF-16 code units.
 _BATCH_ARGUMENT_BUDGET_UTF16_UNITS = 7000

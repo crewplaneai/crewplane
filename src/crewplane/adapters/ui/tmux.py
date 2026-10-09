@@ -14,8 +14,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.ports import UIAdapterCapabilities
 from crewplane.architecture.ports.runtime import UIRuntimePlan
+from crewplane.core import platform
 from crewplane.core.config import Config
-from crewplane.core.platform import is_native_windows
 from crewplane.observability.tmux.compact import TmuxCompactRuntime
 from crewplane.observability.types import WorkflowTopology
 
@@ -122,7 +122,7 @@ class TmuxUIAdapter:
         runtime_options = _resolve_tmux_options(dict(options or {}))
         which_lookup = shutil.which if which_fn is None else which_fn
 
-        if is_native_windows():
+        if not platform.support_policy().tmux:
             return UIRuntimePlan(observers=(), suppress_progress_output=False)
 
         if which_lookup(runtime_options.tmux_executable) is None:
