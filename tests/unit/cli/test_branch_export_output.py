@@ -138,7 +138,7 @@ def test_print_branch_export_fulfillment_includes_failure_message(
 
     output = stream.getvalue()
     assert "status=failed_verification" in output
-    assert "failure=refuses to overwrite existing branch" in output
+    assert "failure=refuses to overwrite existing branch" in " ".join(output.split())
 
 
 def test_branch_export_record_load_failure_is_printable(tmp_path: Path) -> None:

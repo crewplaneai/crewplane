@@ -7,6 +7,9 @@ from crewplane.core.workspace.cache import (
     workspace_cache_forbidden_roots,
     workspace_cache_root_failure,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

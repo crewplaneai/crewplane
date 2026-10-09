@@ -15,6 +15,7 @@ from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_file_reads import open_regular_file
 from crewplane.architecture.safe_files import ensure_single_link_regular_file
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.observability.events import (
@@ -251,15 +252,30 @@ class PersistentRunLogger:
 
 
 def _append_event_log_line(path: Path, line: str) -> None:
-    flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+    if os.name == "nt":
+        from crewplane.architecture.safe_files_windows import open_writable_file
+
+        with (
+            open_writable_file(path, append=True) as descriptor,
+            os.fdopen(descriptor, "ab", closefd=False) as handle,
+        ):
+            handle.write(line.encode("utf-8"))
+        return
+    flags = (
+        os.O_WRONLY
+        | os.O_APPEND
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
     descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
-        handle.write(line)
+    with os.fdopen(descriptor, "ab") as handle:
+        handle.write(line.encode("utf-8"))
 
 
 def _event_line_is_durable(path: Path, line: str) -> bool:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
     expected_line = line.encode("utf-8")
-    with os.fdopen(descriptor, "rb") as handle:
+    with (
+        open_regular_file(path) as descriptor,
+        os.fdopen(descriptor, "rb", closefd=False) as handle,
+    ):
         return any(durable_line == expected_line for durable_line in handle)

@@ -23,6 +23,7 @@ from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from crewplane.core.review_checkpoint_state import CheckpointWorkspace
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import make_plan, make_run_manifest
 from tests.helpers.review_checkpoints import checkpoint_payload
 
@@ -223,14 +224,14 @@ def test_workspace_verification_rejects_destination_damage(
     content = path.read_bytes()
     path.unlink()
     if damage == "different":
-        path.write_text("{}")
+        path.write_text("{}", encoding="utf-8", newline="\n")
     elif damage == "malformed":
-        path.write_text("{")
+        path.write_text("{", encoding="utf-8", newline="\n")
     elif damage in {"symlink", "hardlink"}:
         target = output.stages_dir / "alias.json"
         target.write_bytes(content)
         if damage == "symlink":
-            path.symlink_to(target)
+            symlink_or_skip(path, target)
         else:
             os.link(target, path)
     error = json.JSONDecodeError if damage == "malformed" else ValueError

@@ -16,6 +16,7 @@ from crewplane.runtime.workspace.worktree.checkout_placement import (
     allocate_worktree_workspace,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -24,6 +25,8 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

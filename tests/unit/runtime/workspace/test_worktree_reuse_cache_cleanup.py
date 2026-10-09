@@ -19,6 +19,7 @@ from crewplane.runtime.workspace.worktree.cache import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_workspace_source_snapshot
 from tests.helpers.workspace_service import (
     create_git_repo,
@@ -30,6 +31,8 @@ from tests.helpers.workspace_worktree_reuse import (
     two_node_lineage_plan,
     workspace_request,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_reuse_cache_node_cleanup_updates_all_reused_state_paths(

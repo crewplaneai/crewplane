@@ -163,7 +163,9 @@ def print_provider_detection(
         status = "found" if found else "not found"
         console.print(f"   {provider.ljust(width)}   {status}")
     console.print("")
-    console.print("Detection only checks executable names on PATH.")
+    console.print(
+        "Detection checks command and required launcher availability; it does not run providers."
+    )
     console.print(
         "It does not authenticate providers, run version commands, "
         "check account/model access, or make model calls."

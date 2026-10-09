@@ -5,6 +5,7 @@ import hashlib
 import tempfile
 from contextlib import ExitStack
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
@@ -13,6 +14,7 @@ from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.review_checkpoint_state import CheckpointReviewerFailure
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
 from ..common import (
@@ -23,6 +25,7 @@ from ..common import (
 )
 from ..consensus import evaluate_review_output
 from ..errors import NodeExecutionError, is_expected_execution_failure
+from ..invocation_tasks import gather_invocations
 from ..provider_call import (
     bind_invocation_output,
     publish_invocation_output,
@@ -78,27 +81,23 @@ async def run_reviewer_round(
                 private_outputs.enter_context(
                     tempfile.TemporaryDirectory(prefix="crewplane-reviewer-")
                 )
-            )
+            ).resolve(strict=True)
             / "provider-output.md"
             for _provider in request.reviewers
         ]
-        tasks = [
-            asyncio.create_task(
-                invoke_reviewer_with_drift_guard(
+        completed = await gather_invocations(
+            [
+                partial(
+                    invoke_reviewer_with_drift_guard,
                     request,
                     runtime,
                     index,
                     provider,
                     invocation_output_files[index],
                 )
-            )
-            for index, provider in enumerate(request.reviewers)
-        ]
-        try:
-            completed = await asyncio.gather(*tasks, return_exceptions=True)
-        except asyncio.CancelledError:
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
+                for index, provider in enumerate(request.reviewers)
+            ]
+        )
         ordered_results, ordered_failures = collect_ordered_reviewer_results(
             request,
             completed,
@@ -273,6 +272,11 @@ def collect_ordered_reviewer_results(
 ) -> tuple[list[ReviewerInvocationResult], list[ReviewerInvocationFailure]]:
     invocation_results: list[ReviewerInvocationResult] = []
     invocation_failures: list[ReviewerInvocationFailure] = []
+    for result in completed:
+        if isinstance(result, BaseException):
+            cleanup_error = unconfirmed_process_cleanup(result)
+            if cleanup_error is not None:
+                raise cleanup_error
     for index, result in enumerate(completed):
         provider = request.reviewers[index]
         task_id, output_file = reviewer_output_path(request, provider)

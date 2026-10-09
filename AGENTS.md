@@ -8,7 +8,10 @@ Use this file for repo-wide agent behavior. Use [DEVELOPMENT.md](./DEVELOPMENT.m
 
 `crewplane` is a Python 3.13+ Typer CLI for running multi-agent workflows defined in Markdown. The core architectural rule is blackboard-style orchestration: providers do not coordinate through shared in-memory state; they communicate through artifacts written under `.crewplane/`.
 
-Crewplane supports Linux, macOS, and WSL. Native Windows is not supported.
+Crewplane supports Linux, macOS, and WSL. Native Windows acceptance is pending.
+Preserve the scope and lifecycle guarantees in
+[ADR 0018](docs/architecture/adr/0018-native-windows-support.md), and require its
+acceptance evidence before advertising support.
 
 When changing behavior, preserve these properties:
 

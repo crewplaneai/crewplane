@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.safe_files import is_safe_relative_path
+from crewplane.core.platform import is_native_windows
+
 from ..naming import build_generated_file_result_dir_name
 
 RESERVED_WORKSPACE_PATH_ROOTS = frozenset(
@@ -26,14 +29,15 @@ GENERATED_FILE_SNAPSHOT_METADATA_NAME = ".crewplane-generated-file-snapshot.json
 
 
 def is_reserved_workspace_path(relative_path: Path) -> bool:
-    if relative_path.parts and relative_path.parts[0] in {
+    first = relative_path.parts[0] if relative_path.parts else ""
+    if is_native_windows():
+        first = first.casefold()
+    if first in {
         GENERATED_FILE_SOURCE_METADATA_NAME,
         GENERATED_FILE_SNAPSHOT_METADATA_NAME,
     }:
         return True
-    return bool(
-        relative_path.parts and relative_path.parts[0] in RESERVED_WORKSPACE_PATH_ROOTS
-    )
+    return first in RESERVED_WORKSPACE_PATH_ROOTS
 
 
 def generated_file_node_prefix(node_id: str) -> Path:
@@ -45,5 +49,5 @@ def generated_file_path_belongs_to_node(relative_path: str, node_id: str) -> boo
     return (
         len(parts) >= 4
         and tuple(parts[:2]) == generated_file_node_prefix(node_id).parts
-        and all(part not in {"", ".", ".."} for part in parts)
+        and is_safe_relative_path(relative_path)
     )

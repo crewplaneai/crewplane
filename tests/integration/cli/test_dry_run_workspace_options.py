@@ -10,7 +10,11 @@ from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.platforms import requires_workspace_support
 from tests.integration.cli.dry_run_helpers import artifact_tree
+
+pytestmark = requires_workspace_support
+
 
 isolated_git = isolated_git_support.isolated_git
 

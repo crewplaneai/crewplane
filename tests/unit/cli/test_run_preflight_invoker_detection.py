@@ -34,6 +34,9 @@ from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import ProviderSpec, WorkflowNode, WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
+
 TEST_MODULE = "tests.unit.cli.test_run_preflight_invoker_detection"
 
 

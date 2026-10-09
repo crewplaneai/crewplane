@@ -17,6 +17,8 @@ from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invoker import invoke_agent
 from crewplane.runtime.agent.retry_units import normalize_retry_wait_units_in_text
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

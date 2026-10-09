@@ -18,6 +18,7 @@ from crewplane.artifacts.workspace.node_state import (
 from crewplane.core.preflight.workspace.observability import node_workspace_descriptor
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     WORKTREE_CONTRACT_PAYLOAD,
     make_node_state,
@@ -28,6 +29,8 @@ from tests.helpers.resume import (
 )
 from tests.helpers.workspace_branch_export import record_node_branch_export
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("kind", ["snapshot", "worktree"])

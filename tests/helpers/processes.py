@@ -9,6 +9,8 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
+import pytest
+
 PROCESS_TIMEOUT_SECONDS = 30.0
 
 
@@ -25,6 +27,8 @@ def run_process(
     check: bool = False,
     timeout: float = PROCESS_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
+    if os.name != "posix":
+        pytest.skip("This subprocess test harness requires POSIX process sessions")
     with subprocess.Popen(
         command,
         cwd=cwd,

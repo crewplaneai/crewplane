@@ -26,6 +26,7 @@ from crewplane.runtime.workspace.mutator_fence import (
     release_workspace_mutator,
     workspace_mutator_is_fenced,
 )
+from tests.helpers.platforms import requires_posix
 from tests.integration.runtime.agent.invocation_command_support import (
     command_workspace_context,
 )
@@ -87,6 +88,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(task, return_exceptions=True)
             release_workspace_mutator(state_path)
 
+    @requires_posix
     async def test_cancelled_command_records_unresolved_process_drain(self) -> None:
         temp_dir = mkdtemp(dir=self.tmp_path)
         state_path = Path(temp_dir) / "workspace-state.json"
@@ -164,6 +166,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         assert workspace_mutator_is_fenced(state_path)
         release_workspace_mutator(state_path)
 
+    @requires_posix
     async def test_process_drain_write_failure_preserves_error_and_fence(self) -> None:
         temp_dir = mkdtemp(dir=self.tmp_path)
         state_path = Path(temp_dir) / "workspace-state.json"

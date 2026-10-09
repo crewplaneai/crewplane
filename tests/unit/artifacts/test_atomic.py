@@ -13,6 +13,7 @@ from crewplane.artifacts.atomic import (
     atomic_write_json_if_absent,
     atomic_write_text,
 )
+from tests.helpers.platforms import requires_posix
 
 
 @pytest.mark.parametrize(
@@ -91,6 +92,7 @@ def test_atomic_write_propagates_file_fsync_integrity_failure(tmp_path) -> None:
     assert any("sync temporary file" in note for note in raised.value.__notes__)
 
 
+@requires_posix
 def test_atomic_write_propagates_directory_fsync_integrity_failure(tmp_path) -> None:
     path = tmp_path / "payload.json"
     failure = OSError(errno.ENOSPC, "injected directory sync failure")
@@ -108,6 +110,7 @@ def test_atomic_write_propagates_directory_fsync_integrity_failure(tmp_path) -> 
     assert any("sync parent directory" in note for note in raised.value.__notes__)
 
 
+@requires_posix
 def test_atomic_write_propagates_replacement_failure_without_losing_target(
     tmp_path,
 ) -> None:
@@ -129,6 +132,7 @@ def test_atomic_write_propagates_replacement_failure_without_losing_target(
     assert not tuple(tmp_path.glob(".payload.json.*.tmp"))
 
 
+@requires_posix
 def test_atomic_write_allows_unsupported_directory_fsync(tmp_path) -> None:
     path = tmp_path / "payload.json"
 

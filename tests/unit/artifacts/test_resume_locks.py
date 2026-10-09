@@ -18,6 +18,7 @@ from crewplane.artifacts.locks.process_identity import (
     ProcessInspector,
 )
 from crewplane.artifacts.naming import build_lock_name
+from tests.helpers.platforms import requires_lock_recovery
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -26,6 +27,7 @@ from tests.helpers.resume import (
 from tests.helpers.resume_locks import FakeProcessInspector, UnsafeProcessInspector
 
 
+@requires_lock_recovery
 def test_process_inspector_treats_pid_start_identity_mismatch_as_not_live(
     monkeypatch,
 ) -> None:
@@ -50,6 +52,7 @@ def test_process_inspector_treats_pid_start_identity_mismatch_as_not_live(
     )
 
 
+@requires_lock_recovery
 def test_process_inspector_rejects_out_of_range_process_id(monkeypatch) -> None:
     def kill(pid: int, signal_number: int) -> None:
         assert pid == 2_147_483_648
@@ -69,6 +72,7 @@ def test_process_inspector_rejects_out_of_range_process_id(monkeypatch) -> None:
         )
 
 
+@requires_lock_recovery
 def test_process_start_identity_handles_spaces_and_parentheses_in_command() -> None:
     fields_after_command = ["S", *(str(index) for index in range(4, 23))]
     stat_content = f"100 (provider (worker) cli) {' '.join(fields_after_command)}"
@@ -79,6 +83,7 @@ def test_process_start_identity_handles_spaces_and_parentheses_in_command() -> N
     assert identity == "22"
 
 
+@requires_lock_recovery
 def test_process_inspector_detects_live_process_group(monkeypatch) -> None:
     def killpg(process_group_id: int, signal_number: int) -> None:
         assert process_group_id == 100
@@ -89,6 +94,7 @@ def test_process_inspector_detects_live_process_group(monkeypatch) -> None:
     assert ProcessInspector().is_process_group_live(100)
 
 
+@requires_lock_recovery
 def test_process_inspector_rejects_out_of_range_process_group(monkeypatch) -> None:
     def killpg(process_group_id: int, signal_number: int) -> None:
         assert process_group_id == 2_147_483_648
@@ -211,6 +217,7 @@ def test_acquire_update_and_release_lock_without_process_start_identity(
     assert not lock.lock_dir.exists()
 
 
+@requires_lock_recovery
 def test_live_owner_fails_closed(tmp_path) -> None:
     lock = acquire_same_context_lock(
         tmp_path,
@@ -232,6 +239,7 @@ def test_live_owner_fails_closed(tmp_path) -> None:
         lock.release()
 
 
+@requires_lock_recovery
 def test_empty_lock_directory_recovers_after_grace(tmp_path) -> None:
     lock_name = build_lock_name(WORKFLOW_NAME, WORKFLOW_IDENTITY, WORKFLOW_SIGNATURE)
     (tmp_path / "locks" / lock_name).mkdir(parents=True)
@@ -250,6 +258,7 @@ def test_empty_lock_directory_recovers_after_grace(tmp_path) -> None:
         lock.release()
 
 
+@requires_lock_recovery
 def test_ownerless_grace_restarts_for_recreated_lock(tmp_path, monkeypatch) -> None:
     lock_name = build_lock_name(WORKFLOW_NAME, WORKFLOW_IDENTITY, WORKFLOW_SIGNATURE)
     lock_dir = tmp_path / "locks" / lock_name
@@ -296,6 +305,7 @@ def test_ownerless_grace_restarts_for_recreated_lock(tmp_path, monkeypatch) -> N
     assert len(sleep_calls) == 2
 
 
+@requires_lock_recovery
 def test_malformed_owner_lock_fails_closed_and_preserves_lock(tmp_path) -> None:
     lock_name = build_lock_name(WORKFLOW_NAME, WORKFLOW_IDENTITY, WORKFLOW_SIGNATURE)
     lock_dir = tmp_path / "locks" / lock_name
@@ -315,6 +325,7 @@ def test_malformed_owner_lock_fails_closed_and_preserves_lock(tmp_path) -> None:
     assert lock_dir.exists()
 
 
+@requires_lock_recovery
 def test_unsupported_live_check_fails_closed(tmp_path) -> None:
     lock = acquire_same_context_lock(
         tmp_path,

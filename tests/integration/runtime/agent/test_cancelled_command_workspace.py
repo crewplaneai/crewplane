@@ -112,8 +112,10 @@ async def _cancel_command_with_workspace(
             "unresolved" if pipes_open else "confirmed"
         )
         assert workspace_mutator_is_fenced(workspace.state_path) is pipes_open
-        assert [event.status for event in events] == ["started", "exited"]
-        assert events[-1].returncode is not None
+        assert [event.status for event in events] == (
+            ["started"] if pipes_open else ["started", "exited"]
+        )
+        assert (events[-1].returncode is None) is pipes_open
         assert not process_group_is_alive(events[0].process_group_id)
 
         await ProviderInvocationLifecycleState(

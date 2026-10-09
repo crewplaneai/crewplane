@@ -19,6 +19,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
     workspace_selection_record,
@@ -29,6 +30,8 @@ from tests.integration.runtime.execution.fragment_assembler_support import (
     run_fragment_git,
     write_lineage_state_with_bundle,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_assemble_prompt_rejects_runtime_dynamic_workspace_file_locator(

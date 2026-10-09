@@ -13,6 +13,9 @@ from crewplane.runtime.workspace.git import (
     GitCommand,
     git,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_git_command_run_uses_bounded_timeout(

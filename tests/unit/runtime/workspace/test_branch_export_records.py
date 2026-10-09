@@ -13,8 +13,11 @@ from crewplane.runtime.workspace.branch_export import records
 from crewplane.runtime.workspace.branch_export.fulfillment import BranchExportCheckpoint
 from crewplane.runtime.workspace.branch_export.git import BranchExportOperation
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import branch_export_plan
 from tests.helpers.workspace_service import create_git_repo
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

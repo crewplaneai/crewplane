@@ -16,6 +16,7 @@ from crewplane.core.preflight import (
 from crewplane.core.preflight.secrets import FingerprintKeyProvider
 from crewplane.core.preflight.static_resources import resolve_static_file
 from tests.helpers import isolated_git as isolated_git_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
@@ -26,6 +27,7 @@ from tests.helpers.workspace_preflight import (
 isolated_git = isolated_git_support.isolated_git
 
 
+@requires_workspace_support
 @pytest.mark.parametrize(
     ("raw_path", "message"),
     [
@@ -40,7 +42,9 @@ isolated_git = isolated_git_support.isolated_git
 def test_workspace_file_preflight_rejects_unsafe_paths(
     tmp_path: Path, raw_path: str, message: str
 ) -> None:
-    (tmp_path / "context.md").write_text("Project context", encoding="utf-8")
+    (tmp_path / "context.md").write_text(
+        "Project context", encoding="utf-8", newline="\n"
+    )
     snapshot = init_git_repo(tmp_path)
 
     preview = compile_workflow_with_source_snapshot(
@@ -55,12 +59,15 @@ def test_workspace_file_preflight_rejects_unsafe_paths(
     }
 
 
+@requires_workspace_support
 @pytest.mark.parametrize("operation", ["ls-tree", "cat-file"])
 @pytest.mark.usefixtures("isolated_git")
 def test_workspace_file_preflight_reports_git_read_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    (tmp_path / "context.md").write_text("Project context", encoding="utf-8")
+    (tmp_path / "context.md").write_text(
+        "Project context", encoding="utf-8", newline="\n"
+    )
     snapshot = init_git_repo(tmp_path)
     original_run = subprocess.run
     attempted: list[list[str]] = []
@@ -98,14 +105,14 @@ def test_static_file_policy_rechecks_symlink_destination_after_existence_check(
     project = tmp_path / "project"
     project.mkdir()
     path = project / "context.md"
-    path.write_text("Safe original", encoding="utf-8")
+    path.write_text("Safe original", encoding="utf-8", newline="\n")
     target = (
         tmp_path / "external.md"
         if destination == "external"
         else project / ".crewplane" / "execution-stages" / "secret.md"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("Do not read", encoding="utf-8")
+    target.write_text("Do not read", encoding="utf-8", newline="\n")
     original_exists = Path.exists
     replaced = False
 
@@ -114,7 +121,7 @@ def test_static_file_policy_rechecks_symlink_destination_after_existence_check(
         if candidate == path and not replaced:
             replaced = True
             path.unlink()
-            path.symlink_to(target)
+            symlink_or_skip(path, target)
         return original_exists(candidate)
 
     with monkeypatch.context() as patch:
@@ -125,12 +132,16 @@ def test_static_file_policy_rechecks_symlink_destination_after_existence_check(
     assert result.resource is None
     assert result.payload is None
     assert len(result.diagnostics) == 1
-    expected = (
-        "after symlink resolution"
+    diagnostic = result.diagnostics[0]
+    assert diagnostic.code == "FILE-POLICY"
+    assert diagnostic.phase == "file_policy"
+    assert diagnostic.path == "context.md"
+    assert diagnostic.metadata == {"resolved_path": target.resolve().as_posix()}
+    assert diagnostic.message == (
+        "Template access denied after symlink resolution: context.md"
         if destination == "external"
-        else "runtime-owned path"
+        else "Template access denied for Crewplane runtime-owned path: context.md"
     )
-    assert expected in result.diagnostics[0].message
 
 
 @pytest.mark.parametrize(

@@ -164,7 +164,7 @@ def test_restore_reads_and_reconstructs_feedback_in_order(
     assert not (restorer.root / "a/review.md").exists()
 
 
-@pytest.mark.parametrize("damage", ["missing", "changed", "non_utf8"])
+@pytest.mark.parametrize("damage", ["missing", "changed"])
 def test_restore_propagates_first_candidate_read_failure_without_mutation(
     restorer: ProgressRestorer, damage: str
 ) -> None:
@@ -173,18 +173,9 @@ def test_restore_propagates_first_candidate_read_failure_without_mutation(
     if damage == "missing":
         path.unlink()
         error, message = ValueError, "Checkpoint dependency is missing or unsafe"
-    elif damage == "changed":
+    else:
         path.write_bytes(b"changed")
         error, message = ValueError, "Checkpoint dependency changed"
-    else:
-        payload = b"\xff"
-        path.write_bytes(payload)
-        restorer.files["a/current.md"].signature = (
-            len(payload),
-            hashlib.sha256(payload).hexdigest(),
-        )
-        before = restorer.checkpoint.model_dump()
-        error, message = UnicodeDecodeError, "utf-8"
     (restorer.root / "a/selected.md").unlink()
 
     with pytest.raises(error, match=message):
@@ -192,7 +183,27 @@ def test_restore_propagates_first_candidate_read_failure_without_mutation(
 
     assert restorer.checkpoint.model_dump() == before
     if damage != "missing":
-        assert path.read_bytes() == (b"changed" if damage == "changed" else b"\xff")
+        assert path.read_bytes() == b"changed"
+
+
+def test_restore_renders_verified_non_utf8_candidate_without_changing_bytes(
+    restorer: ProgressRestorer,
+) -> None:
+    path = restorer.root / "a/current.md"
+    payload = b"candidate\r\n\xff\x1a"
+    path.write_bytes(payload)
+    signature = len(payload), hashlib.sha256(payload).hexdigest()
+    restorer.files["a/current.md"].signature = signature
+    before = restorer.checkpoint.model_dump()
+
+    progress = restorer.restore()
+
+    assert progress.active_audit is not None
+    candidate = progress.active_audit.executor_outputs[0]
+    assert candidate.content == "candidate\r\n\ufffd\x1a"
+    assert candidate.output_signature == signature
+    assert path.read_bytes() == payload
+    assert restorer.checkpoint.model_dump() == before
 
 
 def test_encode_reports_active_audit_error_before_loop_error(

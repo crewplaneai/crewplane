@@ -66,7 +66,7 @@ def apply_fixture_mutations(plan: FixtureMutationPlan) -> None:
     for mutation in plan.mutations:
         target = mutation.target
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(mutation.content, encoding="utf-8")
+        target.write_bytes(mutation.content.encode("utf-8"))
 
 
 def _normalize_sidecar(raw_sidecar: object) -> _NormalizedSidecar:

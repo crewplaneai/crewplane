@@ -21,6 +21,7 @@ from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
     resolve_workspace_file,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
     workspace_selection_record,
@@ -31,6 +32,8 @@ from tests.integration.runtime.execution.fragment_assembler_support import (
     run_fragment_git,
     write_lineage_state_with_bundle,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_initial_pre_review_reads_project_initial_runtime_dynamic_workspace_file(

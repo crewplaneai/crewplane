@@ -16,11 +16,11 @@ jobs:
   cross-platform:
     name: ${{ matrix.os }} py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 25 }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -47,6 +47,18 @@ jobs:
 
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
+
+      - name: Build Windows wheel
+        if: ${{ runner.os == 'Windows' }}
+        run: uv build
+
+      - name: Smoke-test installed Windows wheels
+        shell: pwsh
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer uv
 
   shuffled-suite:
     name: shuffled suite (ubuntu py3.13)

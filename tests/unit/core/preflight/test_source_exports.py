@@ -48,6 +48,7 @@ def test_preflight_source_exports_preserve_provenance_and_errors(
     workflow.write_text(
         f'---\nschema_version: "{SCHEMA_VERSION}"\nname: source-test\nnodes:\n  - id: build\n    mode: sequential\n    providers: [mock]\n---\n\n## build\nBuild it.\n',
         encoding="utf-8",
+        newline="\n",
     )
     result = loader(workflow, tmp_path)
     assert result.root_workflow_path == workflow.resolve()
@@ -56,7 +57,7 @@ def test_preflight_source_exports_preserve_provenance_and_errors(
     assert [record.path for record in result.referenced_workflows] == [
         workflow.resolve()
     ]
-    workflow.write_text("missing frontmatter", encoding="utf-8")
+    workflow.write_text("missing frontmatter", encoding="utf-8", newline="\n")
     with pytest.raises(ValueError) as direct:
         source.load_workflow_source_for_preflight(workflow, tmp_path)
     with pytest.raises(type(direct.value), match="frontmatter") as exported:

@@ -22,6 +22,7 @@ from crewplane.architecture.ports.artifacts import (
 )
 from crewplane.cli.workflow_runner import WorkflowCancelledByUser, execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -37,6 +38,7 @@ from crewplane.observability.events import format_execution_event_log_line
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import make_execution_event
+from tests.helpers.platforms import requires_resume_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import create_project
@@ -71,7 +73,9 @@ def test_cli_repetition_bypasses_failed_history(
     records = project.manifests()
     assert len(records) == 1 + (count or 1)
     assert len({record["workflow_signature"] for record in records}) == 1
-    expected_resumed = ["node0"] if count is None and not force else []
+    expected_resumed = (
+        ["node0"] if count is None and not force and not is_native_windows() else []
+    )
     assert all(
         record.get("resumed_nodes", []) == expected_resumed
         for record in records
@@ -180,6 +184,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             datetime(2026, 9, 23, 12),
         ]
 
+    @requires_resume_support
     async def test_failed_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
@@ -248,6 +253,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(manifest["status"], "succeeded")
             self.assertEqual(manifest["resumed_nodes"], ["a"])
 
+    @requires_resume_support
     async def test_cancelled_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
@@ -349,6 +355,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(second_manifest["status"], "succeeded")
             self.assertEqual(second_manifest["resumed_nodes"], ["a"])
 
+    @requires_resume_support
     async def test_live_dashboard_cancelled_run_resumes_validated_node_boundary(
         self,
     ) -> None:

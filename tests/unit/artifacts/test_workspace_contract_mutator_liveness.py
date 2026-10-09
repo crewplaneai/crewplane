@@ -8,10 +8,13 @@ from crewplane.artifacts.workspace.state.contracts import (
     PersistedWorkspaceOperation,
     workspace_state_contract_errors,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.artifacts.workspace_state_contracts_support import (
     valid_snapshot_payload,
     valid_worktree_payload,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("operation", ["cleanup", "failed_invocation"])

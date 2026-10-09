@@ -19,8 +19,11 @@ from crewplane.runtime.workspace.branch_export.records import (
     prepared_branch_export_record,
     skipped_branch_export_record,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import branch_export_plan
 from tests.helpers.workspace_service import create_git_repo
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("origin", ("current_run", "verified_history"))

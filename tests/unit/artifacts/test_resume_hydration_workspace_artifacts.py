@@ -9,6 +9,7 @@ from crewplane.artifacts.resume.validation import (
     validate_resume_frontier,
 )
 from crewplane.artifacts.run_history import find_same_context_runs
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -25,6 +26,8 @@ from tests.unit.artifacts.resume_hydration_support import (
     workspace_snapshot_plan,
     write_snapshot_workspace_state,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

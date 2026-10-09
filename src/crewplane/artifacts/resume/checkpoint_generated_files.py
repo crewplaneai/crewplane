@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.review_checkpoint_state import (
     CheckpointFile,
@@ -77,7 +78,7 @@ def _verify_generated_snapshot_evidence(
     source = contained_regular_file(snapshot_root, GENERATED_FILE_SOURCE_METADATA_NAME)
     if entries is None or source is None:
         raise ValueError("Checkpoint generated-file snapshot evidence is unavailable.")
-    metadata = json.loads(source.read_bytes())
+    metadata = json.loads(read_contained_bytes(source.parent, source.name))
     if (
         not isinstance(metadata, dict)
         or not isinstance(metadata.get("source_root"), str)

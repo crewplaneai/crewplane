@@ -8,6 +8,9 @@ from crewplane.core.workspace.naming import (
     safe_ref_component,
     temporary_import_ref_prefix,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

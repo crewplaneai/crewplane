@@ -26,6 +26,9 @@ from crewplane.core.workflow.validation import (
     validate_workflow_plan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
@@ -94,6 +97,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("ghost-agent", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_reports_missing_env_wrapped_cli(self) -> None:
         workflow = WorkflowPlan(
             name="Workflow",
@@ -136,6 +140,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertIn(f"CLI '{missing_executable}' not found in PATH", errors[0])
         self.assertIn("wrapped-agent", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_reports_missing_path_qualified_env_cli(
         self,
     ) -> None:
@@ -150,6 +155,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn(f"CLI '{missing_executable}' not found in PATH", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_resolves_path_qualified_custom_env_from_project_root(
         self,
     ) -> None:
@@ -168,6 +174,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_preserves_path_resolved_custom_env(
         self,
     ) -> None:
@@ -184,6 +191,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_uses_env_path_assignment(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -197,6 +205,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_uses_env_reset_after_option_terminator(
         self,
     ) -> None:
@@ -218,6 +227,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_treats_env_terminator_after_reset_as_command(
         self,
     ) -> None:
@@ -230,6 +240,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("CLI '--' not found in PATH", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_resolves_inherited_relative_env_path_from_project(
         self,
     ) -> None:
@@ -246,6 +257,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_uses_env_explicit_search_path(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -264,6 +276,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_reports_missing_cli_after_env_chdir(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -278,6 +291,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("CLI 'missing-provider' not found in PATH", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_uses_env_chdir_for_relative_cli(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -291,6 +305,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_uses_env_chdir_for_relative_path(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -304,6 +319,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_rejects_provider_outside_env_path(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -323,6 +339,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("CLI 'parent-provider' not found in PATH", errors[0])
 
+    @requires_posix
     def test_cli_adapter_validation_rechecks_env_when_wrapped_with_custom_path(
         self,
     ) -> None:
@@ -378,6 +395,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    @requires_posix
     def test_cli_adapter_validation_rejects_non_executable_relative_path(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
         project_root = Path(tmp_dir)
@@ -603,6 +621,7 @@ def _collect_wrapped_cli_errors(
     )
 
 
+@requires_posix
 @pytest.mark.parametrize("executable", ["tools/provider", r"tools\provider"])
 @pytest.mark.parametrize("wrapped", [False, True])
 @pytest.mark.parametrize("executable_file", [False, True])

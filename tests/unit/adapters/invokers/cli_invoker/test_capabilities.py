@@ -23,6 +23,8 @@ from crewplane.adapters.invokers.cli_invoker.validation import (
 from crewplane.architecture.contracts import InvocationContext, ProviderKind
 from crewplane.core.config import AgentConfig
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def test_capability_defaults_are_explicit_and_immutable() -> None:
     capability = CliProviderCapability(

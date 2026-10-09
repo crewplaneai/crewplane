@@ -30,6 +30,7 @@ from crewplane.runtime.execution.provider_call import (
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import topology_from_workflow
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
     ParallelReviewerBarrierInvoker,
@@ -177,6 +178,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
         assert invoker.slow_log_path is not None
         assert peer_log_read_count == 0
 
+    @requires_workspace_support
     async def test_parallel_reviewer_private_snapshots_do_not_overlap(
         self,
     ) -> None:
@@ -242,10 +244,18 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             snapshot_roots.append(snapshot_root)
             return snapshot_root
 
-        with patch.object(
-            provider_generated_files,
-            "snapshot_generated_file_workspace",
-            side_effect=coordinate_snapshot,
+        temporary_root = self.tmp_path / "provider-temporaries"
+        temporary_root.mkdir()
+        temporary_alias = self.tmp_path / "temporary-alias"
+        symlink_or_skip(temporary_alias, temporary_root, target_is_directory=True)
+
+        with (
+            patch("tempfile.tempdir", str(temporary_alias)),
+            patch.object(
+                provider_generated_files,
+                "snapshot_generated_file_workspace",
+                new=coordinate_snapshot,
+            ),
         ):
             await execute_sequential_stage(
                 config,

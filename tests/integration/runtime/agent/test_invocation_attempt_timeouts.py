@@ -22,6 +22,8 @@ from crewplane.runtime.agent.invocation.command import (
 )
 from crewplane.runtime.agent.invocation.output import cleanup_structured_output_file
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 @pytest.mark.parametrize("attempt", [0, 1, 3])
 @pytest.mark.parametrize("with_context", [False, True])
@@ -91,7 +93,7 @@ def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
     )
     assert plan.structured_output_file is not None
     try:
-        plan.structured_output_file.write_text("stale", encoding="utf-8")
+        plan.structured_output_file.write_text("stale", encoding="utf-8", newline="\n")
 
         prepare_runtime_for_attempt(plan)
 

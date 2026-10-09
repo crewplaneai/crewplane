@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 from pathlib import Path
 
 from rich.text import Text
@@ -16,6 +17,7 @@ from crewplane.artifacts.failure_artifacts import (
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from .common import (
     CompiledRuntimeContext,
@@ -30,9 +32,10 @@ from .common import (
     should_print_console,
 )
 from .errors import NodeExecutionError, is_expected_execution_failure
+from .invocation_tasks import gather_invocations
 from .workspace_files import ResolvedWorkspaceFile
 
-type ParallelInvocationResult = Path | Exception
+type ParallelInvocationResult = Path | BaseException
 
 
 def _build_parallel_invocations(
@@ -110,8 +113,9 @@ async def _run_parallel_invocations(
             return result.error
         return result.output_file
 
-    tasks = [asyncio.create_task(_run_single(invocation)) for invocation in invocations]
-    return await asyncio.gather(*tasks)
+    return await gather_invocations(
+        [partial(_run_single, invocation) for invocation in invocations]
+    )
 
 
 def _write_parallel_failure_artifact(
@@ -139,7 +143,7 @@ def _record_parallel_failure(
     result: ParallelInvocationResult,
     telemetry: ExecutionTelemetry | None,
 ) -> int:
-    if not isinstance(result, Exception):
+    if not isinstance(result, BaseException):
         if should_print_console(telemetry):
             execution_console(telemetry).print(
                 f"[green]✓[/] {invocation.task_id} → {invocation.output_file.name}"
@@ -149,13 +153,21 @@ def _record_parallel_failure(
         execution_console(telemetry).print(
             Text.assemble(("✗", "red"), f" {invocation.task_id} failed: {result}")
         )
+    assert isinstance(result, Exception)
     _write_parallel_failure_artifact(invocation, result)
     return 1
 
 
 def _raise_unexpected_parallel_failure(results: list[ParallelInvocationResult]) -> None:
     for result in results:
-        if isinstance(result, Exception) and not is_expected_execution_failure(result):
+        if isinstance(result, BaseException):
+            cleanup_error = unconfirmed_process_cleanup(result)
+            if cleanup_error is not None:
+                raise cleanup_error
+    for result in results:
+        if isinstance(result, BaseException) and not is_expected_execution_failure(
+            result
+        ):
             raise result
 
 

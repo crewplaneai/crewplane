@@ -11,6 +11,9 @@ from crewplane.core.preflight.runtime_config.workspace import (
     requires_controlled_child_environment,
 )
 from crewplane.runtime.workspace.invocation import controlled_child_environment_required
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 class Snapshot(BaseModel):

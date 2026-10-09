@@ -15,6 +15,7 @@ from crewplane.artifacts.resume.validation import (
 )
 from crewplane.artifacts.run_history import find_same_context_runs
 from crewplane.core.execution_state import ArtifactDescriptor
+from tests.helpers.platforms import extended_file_test_root
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -227,6 +228,7 @@ def test_hydrate_rechecks_generated_file_target_after_copy(
 def test_hydrate_resume_frontier_copies_generated_file_from_bounded_node_directory(
     tmp_path,
 ) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     manifest = make_run_manifest("source", "workflow--source", status="failed")
     write_run_manifest(tmp_path, manifest)
     source = find_same_context_runs(

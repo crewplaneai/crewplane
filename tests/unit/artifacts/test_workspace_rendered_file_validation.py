@@ -5,7 +5,10 @@ import pytest
 from crewplane.artifacts.workspace.state.validation import (
     provider_rendered_workspace_files_match,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan, make_workspace_file_locator
+
+pytestmark = requires_workspace_support
 
 
 def test_rendered_workspace_file_match_rejects_bool_descriptor_round_num() -> None:

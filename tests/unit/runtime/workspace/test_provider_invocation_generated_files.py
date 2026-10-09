@@ -26,6 +26,7 @@ from crewplane.runtime.execution.runtime_context import (
 )
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     disabled_workspace_plan,
     read_json_object,
@@ -34,6 +35,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.service_provider_invocation_support import (
     SuccessfulRuntimeInvoker,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_generated_file_workspace_cleanup_registered_after_cwd_deleted(

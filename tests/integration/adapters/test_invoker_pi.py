@@ -55,10 +55,12 @@ def test_pi_subprocess_receives_literal_stdin_and_publishes_only_stdout(
         "from pathlib import Path\n"
         "import time\n"
         "time.sleep(0.05)\n"
-        "prompt = sys.stdin.read()\n"
+        "prompt = sys.stdin.buffer.read().decode('utf-8')\n"
         "Path('captured.json').write_text(json.dumps([sys.argv[1:], prompt]))\n"
         "print('diagnostic', file=sys.stderr)\n"
-        "print(prompt, end='')\n"
+        "sys.stdout.buffer.write(prompt.encode('utf-8'))\n",
+        encoding="utf-8",
+        newline="\n",
     )
     config = AgentConfig(
         cli_cmd=[sys.executable, str(harness)],
@@ -97,7 +99,7 @@ def test_pi_subprocess_receives_literal_stdin_and_publishes_only_stdout(
         "--no-session",
         "--approve",
     ]
-    assert output.read_text() == prompt
+    assert output.read_text(encoding="utf-8") == prompt
     assert usages[0].provider_usage_status == "none"
     assert usages[0].visible_estimate_is_lower_bound
 

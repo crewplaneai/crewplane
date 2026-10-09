@@ -25,12 +25,15 @@ from crewplane.runtime.workspace.worktree.ref_cleanup import (
     cleanup_plan_workspace_refs,
     delete_run_workspace_refs,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import workspace_plan
 from tests.unit.runtime.workspace.cleanup_support import (
     cache_workspace_path,
     cleanup_git_repo,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("name", ['cache"quoted', r"cache\literal"])

@@ -16,6 +16,7 @@ from crewplane.runtime.execution.review_loop.drift import (
 from crewplane.runtime.execution.review_loop.drift import (
     snapshots as review_loop_drift_snapshots,
 )
+from tests.helpers.platforms import symlink_or_skip
 from tests.integration.runtime.execution.review_loop_drift_support import (
     make_drift_request,
     recovery_payload,
@@ -259,7 +260,7 @@ def test_reserved_scans_preserve_missing_roots_and_unsafe_entries(
         hardlink = manifests / "hardlink"
         hardlink.hardlink_to(safe)
         symlink = manifests / "symlink"
-        symlink.symlink_to(tmp_path / "outside")
+        symlink_or_skip(symlink, tmp_path / "outside")
         snapshot = scan(output)
         if scan_name == "shared_reserved_snapshot":
             assert {safe, hardlink, symlink} <= snapshot.keys()

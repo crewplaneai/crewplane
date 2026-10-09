@@ -12,6 +12,7 @@ from threading import Lock
 from typing import Literal
 
 from crewplane.architecture.contracts import JsonObject, JsonValue
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 
 from .diagnostics import (
     PreflightDiagnostic,
@@ -114,7 +115,26 @@ class FingerprintKeyProvider:
                 persisted=True,
                 diagnostics=tuple(diagnostics),
             )
-        return FingerprintKeyResult(key=self.key_path.read_bytes(), persisted=True)
+        if os.name != "nt":
+            return FingerprintKeyResult(key=self.key_path.read_bytes(), persisted=True)
+        try:
+            key = read_contained_bytes(
+                self.key_path.parent, self.key_path.name, FINGERPRINT_KEY_SIZE
+            )
+        except (OSError, ValueError) as exc:
+            return FingerprintKeyResult(
+                key=b"",
+                persisted=True,
+                diagnostics=(
+                    PreflightDiagnostic(
+                        code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                        phase=PreflightDiagnosticPhase.ENV_POLICY,
+                        path=self.key_path.as_posix(),
+                        message=f"Unable to read protected fingerprint key: {exc}",
+                    ),
+                ),
+            )
+        return FingerprintKeyResult(key=key, persisted=True)
 
     def _validate_key_file(self) -> list[PreflightDiagnostic]:
         diagnostics: list[PreflightDiagnostic] = []
@@ -130,7 +150,10 @@ class FingerprintKeyProvider:
                     message=f"Unable to inspect fingerprint key: {exc}",
                 )
             ]
-        if stat.S_ISLNK(metadata.st_mode):
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or getattr(metadata, "st_file_attributes", 0) & 0x400
+        ):
             diagnostics.append(
                 PreflightDiagnostic(
                     code=PreflightDiagnosticCode.FINGERPRINT_KEY,

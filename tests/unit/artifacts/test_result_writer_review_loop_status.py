@@ -9,6 +9,7 @@ from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStatusError
 from crewplane.artifacts.results.writer import ResultWriter
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import symlink_or_skip
 from tests.unit.artifacts.review_loop_status_support import (
     INVALID_STATUS_CASES,
     StatusMutator,
@@ -286,7 +287,7 @@ def test_unsafe_latest_candidate_does_not_get_aggregated(
     outside.write_text("outside", encoding="utf-8")
     candidate = stage_dir / "executor_round1.md"
     try:
-        candidate.symlink_to(outside)
+        symlink_or_skip(candidate, outside)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     writer = build_writer(tmp_path / "result.md", tmp_path / "findings.md")

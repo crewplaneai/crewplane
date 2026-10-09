@@ -11,8 +11,10 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.contracts.provider_log import build_provider_log_header
 from crewplane.core.config import AgentConfig
+from crewplane.core.platform import is_native_windows
 
 from .capability import CliInvocationRequest, CliProviderCapability
+from .command_resolution import resolve_command
 from .providers import (
     claude,
     codex,
@@ -24,6 +26,7 @@ from .providers import (
     opencode,
     pi,
 )
+from .windows_launchers import prepare_windows_launcher
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.CLAUDE: claude.CLAUDE,
@@ -71,8 +74,14 @@ def build_cli_invocation_plan(
     capability.validate_request(request)
     command = capability.build_command(request, prompt)
     try:
+        launch_command = command.cmd
+        if is_native_windows():
+            resolved = resolve_command(
+                command.cmd[0], working_directory, request.environment
+            )
+            launch_command = prepare_windows_launcher(resolved, command.cmd[1:])
         return InvocationPlan(
-            cmd=command.cmd,
+            cmd=launch_command,
             stdin_data=command.stdin_data,
             structured_output_file=command.structured_output_file,
             output_extractor=capability.output_extractor,

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.helpers.platforms import requires_posix
 from tests.unit.packaging.ci_workflow_support import workflow_step_run
 from tests.unit.packaging.release_surfaces_support import read_text, write_executable
 
@@ -54,6 +55,7 @@ def test_uv_update_follows_pull_request_ci_without_requiring_success() -> None:
         ("", "false", False),
     ],
 )
+@requires_posix
 def test_uv_update_selects_only_the_triggering_branch(
     tmp_path: Path, target_head: str, changes_pin: str, expected_active: bool
 ) -> None:

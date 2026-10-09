@@ -13,9 +13,11 @@ from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import invoke_agent
+from tests.helpers.platforms import requires_posix
 from tests.helpers.processes import kill_process_group
 
 
+@requires_posix
 @pytest.mark.parametrize(
     ("scope", "error_message", "operation"),
     [

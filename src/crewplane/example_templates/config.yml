@@ -158,6 +158,7 @@ agents:
   #   invocation_idle_timeout_seconds: null
   #
   # deepseek:
+  #   # Unix only: this command uses env.
   #   cli_cmd: [env, DSH_PERMISSION_MODE=danger-full-access, dsh, --profile, headless]
   #   provider_kind: deepseek
   #   prompt_transport: argv
@@ -188,6 +189,7 @@ settings:
   # - Submodules, sparse clone, partial clone: no; use disabled mode or full clone
   # - Ordinary ignored caches: yes; use setup profiles or snapshot workspaces
   workspace:
+    # Native Windows requires false.
     enabled: false
     cache_root: null
     cleanup_on_success: true

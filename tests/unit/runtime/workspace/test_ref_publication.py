@@ -17,6 +17,7 @@ from crewplane.runtime.workspace.worktree import (
 from crewplane.runtime.workspace.worktree.protected_refs import (
     protected_ref_snapshot_for_scopes,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     read_json_object,
     run_git_text,
@@ -27,6 +28,8 @@ from tests.unit.runtime.workspace.ref_publication_support import (
     ref_oid,
     remove_published_workspace,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_result_refs_are_published_in_one_transaction_after_prepared_evidence(

@@ -384,7 +384,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         )
         tmp_dir = mkdtemp(dir=self.tmp_path)
         path = Path(tmp_dir) / "workflow.task.md"
-        path.write_text(workflow_content, encoding="utf-8")
+        path.write_text(workflow_content, encoding="utf-8", newline="\n")
         workflow = validate_workflow_plan(load_tasks(path))
 
         rendered = _executor_prompt(workflow.nodes[0])

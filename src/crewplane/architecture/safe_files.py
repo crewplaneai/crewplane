@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 from contextlib import suppress
 from pathlib import Path
 
 _CREATE_RETRIES = 2
+_WINDOWS_DEVICE = re.compile(
+    r"^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³]) *(?:\.|$)",
+    re.IGNORECASE,
+)
+
+
+def is_windows_device_name(name: str) -> bool:
+    return _WINDOWS_DEVICE.match(name) is not None
+
+
+def is_safe_path_component(component: str) -> bool:
+    return (
+        bool(component)
+        and component not in {".", ".."}
+        and not component.endswith((".", " "))
+        and not is_windows_device_name(component)
+        and not any(ord(char) < 32 or char in '<>:"/\\|?*' for char in component)
+    )
 
 
 def path_is_absent(path: Path) -> bool:
@@ -22,6 +41,12 @@ def ensure_contained_directory(root: Path, relative_path: str) -> Path:
     """Create and return a non-symlink directory below ``root``."""
 
     parts = _relative_path_parts(relative_path)
+    if os.name == "nt":
+        from . import safe_files_windows
+
+        result = safe_files_windows.contained_directory(root, parts, create=True)
+        assert result is not None
+        return result
     _ensure_directory_root(root)
     current = root
     for part in parts:
@@ -34,6 +59,10 @@ def contained_directory(root: Path, relative_path: str) -> Path | None:
     """Resolve a non-symlink directory below ``root`` when it exists."""
 
     parts = _relative_path_parts(relative_path)
+    if os.name == "nt":
+        from . import safe_files_windows
+
+        return safe_files_windows.contained_directory(root, parts)
     if not _directory_root_exists_safely(root):
         return None
     current = root
@@ -64,6 +93,10 @@ def contained_regular_file(root: Path, relative_path: str) -> Path | None:
     parts = _relative_path_parts_optional(relative_path)
     if not parts:
         return None
+    if os.name == "nt":
+        from . import safe_files_windows
+
+        return safe_files_windows.contained_regular_file(root, parts)
     if path_has_symlink_component(root):
         return None
     candidate = _walk_without_symlink(root, parts)
@@ -78,6 +111,10 @@ def contained_regular_file(root: Path, relative_path: str) -> Path | None:
 def ensure_single_link_regular_file(path: Path) -> Path:
     """Create or return a single-link regular file without following links."""
 
+    if os.name == "nt":
+        from . import safe_files_windows
+
+        return safe_files_windows.ensure_regular_file(path)
     _ensure_directory_root(path.parent)
 
     # At most one create attempt plus bounded retries to tolerate benign races.
@@ -115,6 +152,10 @@ def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path
     parts = _relative_path_parts(relative_path)
     if not parts:
         raise ValueError("Contained replacement requires a file path.")
+    if os.name == "nt":
+        from . import safe_files_windows
+
+        return safe_files_windows.replace_contained_file(root, parts, source)
     source_stat = source.lstat()
     if not is_single_link_regular_file(source_stat):
         raise ValueError(f"Publication source must be a single-link file: {source}")
@@ -144,9 +185,7 @@ def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path
 
 def is_safe_relative_path(relative_path: str) -> bool:
     """Check raw relative POSIX syntax without normalizing or inspecting the path."""
-    return not Path(relative_path).is_absolute() and all(
-        part not in {"", ".", ".."} for part in relative_path.split("/")
-    )
+    return all(is_safe_path_component(part) for part in relative_path.split("/"))
 
 
 def _relative_path_parts(relative_path: str) -> tuple[str, ...]:
@@ -213,7 +252,7 @@ def _create_regular_file_exclusively(path: Path) -> bool:
     try:
         descriptor = os.open(
             path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
             0o600,
         )
     except FileExistsError:
@@ -369,7 +408,10 @@ def path_is_symlink(path: Path) -> bool:
     """Return whether ``path`` itself is a symlink without following it."""
 
     try:
-        return stat.S_ISLNK(path.lstat().st_mode)
+        metadata = path.lstat()
+        return stat.S_ISLNK(metadata.st_mode) or bool(
+            getattr(metadata, "st_file_attributes", 0) & 0x400
+        )
     except PermissionError:
         raise
     except OSError:

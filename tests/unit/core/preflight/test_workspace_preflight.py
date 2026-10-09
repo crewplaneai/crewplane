@@ -8,6 +8,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_preflight import (
     compile_with_source_snapshot,
     compile_workflow_with_source_snapshot,
@@ -16,6 +17,8 @@ from tests.helpers.workspace_preflight import (
     workspace_workflow,
 )
 from tests.helpers.workspace_records import WORKTREE_CONTRACT_PAYLOAD
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_enabled_core_preflight_requires_source_snapshot(

@@ -4,7 +4,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.adapters.invokers.cli import cli_command_available
+from crewplane.adapters.invokers.cli import (
+    cli_command_available,
+    cli_command_diagnostic,
+)
+from crewplane.core.platform import is_native_windows
 
 from .rendering_config import render_provider_ready_config
 from .rendering_providers import KNOWN_PROVIDER_NAMES
@@ -15,6 +19,7 @@ from .rendering_yaml_loading import load_config_mapping
 class ProviderDetection:
     provider: str
     found: bool
+    diagnostic: str | None = None
 
 
 def detect_providers(
@@ -33,6 +38,9 @@ def detect_providers(
             cli_command_available(
                 config.agents[provider].cli_cmd, project_root, which_fn
             ),
+            cli_command_diagnostic(config.agents[provider].cli_cmd, project_root)
+            if is_native_windows()
+            else None,
         )
         for provider in KNOWN_PROVIDER_NAMES
     )

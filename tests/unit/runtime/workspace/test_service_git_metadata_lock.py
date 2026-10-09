@@ -7,6 +7,9 @@ from threading import Event
 import pytest
 
 import crewplane.runtime.workspace.locks as workspace_locks
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_git_metadata_lock_fails_explicitly_without_posix_fcntl(

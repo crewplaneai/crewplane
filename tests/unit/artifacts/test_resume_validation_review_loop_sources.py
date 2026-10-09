@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from crewplane.artifacts.resume.validation import validate_resume_frontier
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -68,7 +69,7 @@ def test_validate_frontier_accepts_initial_reviewer_project_source(
             reviewer_payload,
         ),
     ):
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
     attach_workspace_descriptor(source.run_dir, plan, "a")
 
     frontier = validate_resume_frontier(source, plan)
@@ -162,7 +163,7 @@ def test_validate_frontier_accepts_initial_reviewer_upstream_source(
             reviewer_payload,
         ),
     ):
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
     attach_workspace_descriptor(source.run_dir, plan, "a")
     attach_workspace_descriptor(source.run_dir, plan, "b")
 
@@ -208,7 +209,7 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
             role="reviewer",
         )
     ]
-    status_path.write_text(json.dumps(status_payload), encoding="utf-8")
+    status_path.write_text(json.dumps(status_payload), encoding="utf-8", newline="\n")
     write_stage_output_file(
         source.run_dir / "a" / "review-audit-round-2" / "alpha_round1.md"
     )
@@ -288,7 +289,7 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
             reviewer_payload,
         ),
     ):
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
     attach_workspace_descriptor(source.run_dir, plan, "a")
 
     frontier = validate_resume_frontier(source, plan)
@@ -388,7 +389,7 @@ def test_validate_frontier_accepts_downstream_review_loop_lineage(
         ),
         (source.run_dir / "b" / "workspace-state.json", downstream_payload),
     ):
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
     attach_workspace_descriptor(source.run_dir, plan, "a")
     attach_workspace_descriptor(source.run_dir, plan, "b")
 
@@ -464,3 +465,6 @@ def _write_review_status_file_for_node(
         json.dumps(payload),
         encoding="utf-8",
     )
+
+
+pytestmark = requires_workspace_support

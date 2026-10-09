@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts import update_uv_bootstrap as updater
+from tests.helpers.platforms import requires_posix
 from tests.helpers.processes import run_process
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -124,6 +125,7 @@ def test_fetch_text_sends_repository_token_only_to_github_api(
         ("Linux", "x86_64", "musl libc", "x86_64-unknown-linux-musl"),
     ],
 )
+@requires_posix
 def test_render_shell_metadata_selects_platform_archive(
     kernel: str,
     machine: str,

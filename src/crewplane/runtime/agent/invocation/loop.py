@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import CancelledError, sleep
+from asyncio import CancelledError, create_task, sleep, to_thread
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never, assert_never
@@ -30,6 +30,7 @@ from .command import (
     prepare_runtime_for_attempt,
     run_invocation_attempt,
 )
+from .command_lifecycle import command_io_result, wait_for_command_io
 from .output import (
     build_invocation_attempt_result,
     cleanup_extracted_invocation_output,
@@ -174,7 +175,11 @@ async def _run_attempt_command(
     context: _InvocationLoopContext,
     state: _InvocationLoopState,
 ) -> CommandResult:
-    prepare_runtime_for_attempt(context.plan)
+    preparation = create_task(to_thread(prepare_runtime_for_attempt, context.plan))
+    cancellation = await wait_for_command_io(preparation)
+    command_io_result(preparation, cancellation)
+    if cancellation is not None:
+        raise cancellation
     state.usage_state.accumulator.record_attempt_start()
     return await run_invocation_attempt(
         plan=context.plan,

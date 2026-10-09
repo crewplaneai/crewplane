@@ -20,6 +20,7 @@ from crewplane.runtime.workspace.worktree.lineage import (
     worktree_protected_ref_scopes,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -29,6 +30,8 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_worktree_protected_ref_scope_covers_exact_destination_refs(

@@ -14,6 +14,7 @@ from crewplane.architecture.ports.artifacts import (
     StageFinalizeResult,
     StageTaskSpec,
 )
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
@@ -38,6 +39,7 @@ from .atomic import (
 from .directory_manager import DirectoryManager
 from .naming import (
     build_log_filename,
+    build_stage_directory_name,
     node_state_relative_path,
     preflight_manifest_relative_path,
     preflight_plan_relative_path,
@@ -193,7 +195,7 @@ class OutputManager:
         ensure_contained_directory(self.stages_dir, log_path)
         provider_dir = ensure_contained_directory(
             self.stages_dir,
-            f"{log_path}/{safe_artifact_name(provider)}",
+            f"{log_path}/{build_stage_directory_name(safe_artifact_name(provider))}",
         )
         return provider_dir / build_log_filename(
             task_id,
@@ -299,7 +301,7 @@ class OutputManager:
     ) -> Path:
         manifest_path = self._run_manifest_path()
         current = RunManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
+            read_contained_bytes(manifest_path.parent, manifest_path.name)
         )
         updated = current.model_copy(
             update={
@@ -346,7 +348,7 @@ class OutputManager:
     ) -> Path:
         manifest_path = self._run_manifest_path()
         current = RunManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
+            read_contained_bytes(manifest_path.parent, manifest_path.name)
         )
         resumed_nodes = [*current.resumed_nodes, node_id]
         updated = current.model_copy(

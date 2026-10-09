@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from crewplane.core.platform import is_native_windows
 from crewplane.runtime.workspace.cleanup import WorkspaceCleanupResult
 from crewplane.runtime.workspace.worktree.ref_cleanup import (
     WorkspaceRunRefCleanup,
@@ -112,6 +113,11 @@ def resolve_cleanup_workspace_context(
     older_than: str | None,
     orphans: bool,
 ) -> WorkspaceCleanupContext:
+    if is_native_windows():
+        raise ValueError(
+            "Managed workspace maintenance is not supported on native Windows. "
+            "Use the originating WSL or POSIX environment."
+        )
     options = WorkspaceCleanupOptions(
         config_file=config_file,
         successful=successful,

@@ -69,6 +69,9 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
     review_output,
 )
 
+# Bound hangs without making filesystem-heavy setup a cancellation deadline.
+REVIEW_STAGE_TIMEOUT_SECONDS = 30
+
 
 @pytest.mark.parametrize("consensus_on_exhaustion", ["fatal", "continue"])
 @pytest.mark.parametrize("review_completed", [False, True])
@@ -113,7 +116,7 @@ def test_cancellation_during_completed_audit_status_preserves_policy(
                 )
             )
             with pytest.raises(error):
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert cancel_requested
             assert [call["role"] for call in invoker.calls] == [
                 "executor",
@@ -204,7 +207,7 @@ def test_cancellation_after_executor_validation_preserves_terminal_policy(
                 )
             )
             with pytest.raises(expected_error):
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert cancel_requested
             assert [(call["role"], call["round_num"]) for call in invoker.calls] == [
                 ("executor", 1),
@@ -297,7 +300,7 @@ def test_executor_failure_survives_recovery_cancellation(
                 )
             )
             with pytest.raises(type(expected)) as caught:
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert caught.value is expected
             assert recovery_checked
             assert [(call["role"], call["round_num"]) for call in invoker.calls] == [
@@ -395,7 +398,7 @@ def test_cancellation_after_context_recovery_preserves_terminal_policy(
                 )
             )
             with pytest.raises(expected):
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert recovery_completed
             assert [(call["role"], call["round_num"]) for call in invoker.calls] == [
                 ("executor", 1),
@@ -490,7 +493,7 @@ def test_cancellation_after_completed_review_preserves_terminal_policy(
                 )
             )
             with pytest.raises(error):
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert cancel_requested
             assert [(call["role"], call["round_num"]) for call in invoker.calls] == [
                 ("executor", 1),
@@ -578,7 +581,7 @@ def test_review_failure_survives_status_publication_cancellation(
                 )
             )
             with pytest.raises(type(expected)) as caught:
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert caught.value is expected
             assert failure_published
             status = json.loads(
@@ -641,7 +644,7 @@ def test_cancellation_during_no_progress_decision_preserves_policy(
                 )
             )
             with pytest.raises(error):
-                await asyncio.wait_for(task, timeout=5)
+                await asyncio.wait_for(task, timeout=REVIEW_STAGE_TIMEOUT_SECONDS)
             assert cancel_requested
             assert [(call["role"], call["round_num"]) for call in invoker.calls] == [
                 ("executor", 1),

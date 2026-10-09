@@ -32,6 +32,8 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
     execute_workflow,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

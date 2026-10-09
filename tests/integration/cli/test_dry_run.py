@@ -19,6 +19,7 @@ from tests.helpers.isolated_git import (
     configure_isolated_git_environment,
     require_git,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     cli_process_state,
@@ -169,6 +170,7 @@ class CliDryRunTests(unittest.TestCase):
             output_text,
         )
 
+    @requires_workspace_support
     def test_workspace_enabled_dry_run_succeeds_without_artifacts(
         self,
     ) -> None:
@@ -196,6 +198,7 @@ class CliDryRunTests(unittest.TestCase):
         self.assertIn("review.node", output_text)
         self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
 
+    @requires_workspace_support
     def test_workspace_enabled_validate_succeeds_without_artifacts(
         self,
     ) -> None:

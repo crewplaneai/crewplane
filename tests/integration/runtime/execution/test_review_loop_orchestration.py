@@ -31,6 +31,7 @@ from crewplane.runtime.execution.review_loop.types import (
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.review_checkpoints import checkpoint_payload
 from tests.integration.runtime.execution.review_loop_rounds_support import (
+    REVIEW_IO_TIMEOUT_SECONDS,
     make_review_node,
     make_round_runtime_context,
 )
@@ -179,7 +180,9 @@ def test_stall_public_contract_publishes_before_policy_error(
     assert progress.continued_after_stop is continued
 
 
-@pytest.mark.parametrize("signature_state", ["valid", "missing", "mismatch"])
+@pytest.mark.parametrize(
+    "signature_state", ["valid", "missing", "mismatch", "source_mismatch"]
+)
 def test_seed_preserves_identity_provenance_and_publication_requirements(
     context: ReviewLoopRunContext, signature_state: str
 ) -> None:
@@ -188,6 +191,8 @@ def test_seed_preserves_identity_provenance_and_publication_requirements(
         artifact = replace(artifact, output_signature=None)
     elif signature_state == "mismatch":
         artifact = replace(artifact, content="Unpublished replacement.")
+    elif signature_state == "source_mismatch":
+        artifact.output_file.write_bytes(b"Unpublished replacement.")
     audit_dir = context.node_dir / "audit-round-2"
     audit_dir.mkdir()
     if signature_state != "valid":
@@ -320,7 +325,7 @@ def test_initial_candidate_and_terminal_status_io_drain_before_owner_cleanup(
             assert get_ident() != owner_thread, "Publication blocked the event loop"
             assert owner_context.get() == "owner context"
             loop.call_soon_threadsafe(entered.set)
-            assert release.wait(timeout=2)
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS)
             result = original(*args, **kwargs)
             completed.set()
             if storage_failure:
@@ -346,7 +351,7 @@ def test_initial_candidate_and_terminal_status_io_drain_before_owner_cleanup(
             monkeypatch.setattr(orchestration, "execute_single_audit_round", audit)
         task = asyncio.create_task(owner())
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             task.cancel("first cancellation")
             await asyncio.sleep(0)
             task.cancel("second cancellation")
@@ -357,7 +362,7 @@ def test_initial_candidate_and_terminal_status_io_drain_before_owner_cleanup(
             release.set()
             error: BaseException | None = None
             try:
-                await task
+                await asyncio.wait_for(task, timeout=REVIEW_IO_TIMEOUT_SECONDS)
             except (OSError, asyncio.CancelledError) as exc:
                 error = exc
         if storage_failure:
@@ -499,7 +504,7 @@ def test_settled_failure_survives_status_publication_cancellation(
             publication_count += 1
             if publication_count == publication_index:
                 loop.call_soon_threadsafe(entered.set)
-                assert release.wait(timeout=2)
+                assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS)
             path = persist(node_dir, payload)
             events.append(payload["stop_reason"] or "status")
             if publication_count == publication_index:
@@ -524,7 +529,7 @@ def test_settled_failure_survives_status_publication_cancellation(
         monkeypatch.setattr(orchestration, "persist_review_loop_status", publish)
         task = asyncio.create_task(owner())
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             if cancellation == "cancelled":
                 task.cancel("first cancellation")
                 await asyncio.sleep(0)
@@ -535,7 +540,7 @@ def test_settled_failure_survives_status_publication_cancellation(
         finally:
             release.set()
             try:
-                await task
+                await asyncio.wait_for(task, timeout=REVIEW_IO_TIMEOUT_SECONDS)
             except BaseException as exc:
                 error = exc
             else:
@@ -810,7 +815,9 @@ def cancel_at_io(monkeypatch: pytest.MonkeyPatch, storage_failure: bool) -> Canc
             loop.call_soon_threadsafe(entered.set)
             assert get_ident() != owner_thread, "Storage blocked the event loop"
             assert owner_context.get() == "owner context"
-            assert release.wait(timeout=10), "storage operation was never released"
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS), (
+                "storage operation was never released"
+            )
             result = original(*args, **kwargs)
             completed.set()
             if storage_failure:
@@ -827,7 +834,7 @@ def cancel_at_io(monkeypatch: pytest.MonkeyPatch, storage_failure: bool) -> Canc
         monkeypatch.setattr(module, name, blocking)
         task = asyncio.create_task(owner())
         try:
-            await asyncio.wait_for(entered.wait(), timeout=10)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             task.cancel("first cancellation")
             await asyncio.sleep(0)
             task.cancel("second cancellation")
@@ -839,7 +846,8 @@ def cancel_at_io(monkeypatch: pytest.MonkeyPatch, storage_failure: bool) -> Canc
         finally:
             release.set()
             results = await asyncio.wait_for(
-                asyncio.gather(task, return_exceptions=True), timeout=10
+                asyncio.gather(task, return_exceptions=True),
+                timeout=REVIEW_IO_TIMEOUT_SECONDS,
             )
         assert cleanup == [True]
         error = results[0]

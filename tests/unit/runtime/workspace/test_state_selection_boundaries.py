@@ -17,12 +17,15 @@ from crewplane.runtime.workspace.state_selection import (
     same_node_executor_state_path,
     workspace_state_is_lineage_source,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan
 from tests.unit.runtime.workspace.state_selection_support import (
     ArtifactStore,
     same_selection_node,
     write_selection_state,
 )
+
+pytestmark = requires_workspace_support
 
 
 def lineage_payload(round_num: object = 1, task_id: str = "alpha") -> dict[str, object]:

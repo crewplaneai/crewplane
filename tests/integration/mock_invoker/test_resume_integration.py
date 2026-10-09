@@ -14,6 +14,7 @@ from tests.helpers.mock_resume import (
     write_mock_config,
     write_review_loop_fixtures,
 )
+from tests.helpers.platforms import requires_resume_support
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
@@ -103,6 +104,7 @@ def _event_records(run_dir: Path) -> list[dict[str, object]]:
     ]
 
 
+@requires_resume_support
 def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -248,6 +250,7 @@ def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
     assert "B forced result" in (second_results_dir / "b-result.md").read_text("utf-8")
 
 
+@requires_resume_support
 def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

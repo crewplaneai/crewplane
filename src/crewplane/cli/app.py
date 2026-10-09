@@ -327,7 +327,11 @@ def run(
     except ResumeLockError as exc:
         console.print(f"[red]✗[/] Run lock unavailable: {exc}")
         console.print(
-            "[yellow]Stop any matching crewplane run before retrying. "
+            "[yellow]Confirm that the original Crewplane run and every provider "
+            "descendant have stopped before removing only the lock path above. "
+            "Keep the lock when cleanup cannot be established.[/]"
+            if is_native_windows()
+            else "[yellow]Stop any matching crewplane run before retrying. "
             "If no run is active, remove .crewplane/locks and retry.[/]"
         )
         raise typer.Exit(code=1) from None

@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 from tempfile import mkdtemp
@@ -17,6 +18,8 @@ from crewplane.architecture.contracts import (
 from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
@@ -59,7 +62,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            rf"Exit code 1: Fatal error: permission denied \(see {log_file}\)",
+            rf"Exit code 1: Fatal error: permission denied \(see {re.escape(str(log_file))}\)",
         ):
             await invoke_agent_with_runner(
                 config=config,
@@ -113,7 +116,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(
             RuntimeError,
-            rf"Exit code 1: Codex ran out of room in the model context window\. \(see {log_file}\)",
+            rf"Exit code 1: Codex ran out of room in the model context window\. \(see {re.escape(str(log_file))}\)",
         ) as caught:
             await invoke_agent_with_runner(
                 config=config,

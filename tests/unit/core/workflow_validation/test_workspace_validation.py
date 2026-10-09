@@ -20,6 +20,37 @@ from crewplane.core.workflow.validation.workspace import (
 from crewplane.version import SCHEMA_VERSION
 
 
+@pytest.fixture(autouse=True)
+def posix_workspace_policy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
+        lambda: False,
+    )
+
+
+@pytest.mark.parametrize("kind", [None, "worktree", "snapshot"])
+@pytest.mark.parametrize("workspace_enabled", [False, True])
+def test_windows_requires_disabled_workspace_feature(
+    monkeypatch, kind, workspace_enabled
+) -> None:
+    monkeypatch.setattr(
+        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
+        lambda: True,
+    )
+    workflow = WorkflowPlan(
+        name="windows",
+        nodes=[_executor_node("run")],
+        worktrees={} if kind is None else {"work": {"kind": kind}},
+    )
+    diagnostics = collect_workflow_policy_diagnostics(
+        workflow, _config(workspace_enabled)
+    )
+    assert (
+        any("settings.workspace.enabled: false" in item.message for item in diagnostics)
+        is workspace_enabled
+    )
+
+
 def _config(workspace_enabled: bool) -> Config:
     return Config(
         version=SCHEMA_VERSION,
@@ -98,16 +129,28 @@ def test_worktrees_are_rejected_when_workspace_is_disabled() -> None:
     assert "settings.workspace.enabled: true" in messages[0]
 
 
-def test_workflow_without_worktrees_uses_project_root_execution() -> None:
+@pytest.mark.parametrize("platform", ["Linux", "Windows"])
+@pytest.mark.parametrize("workspace_enabled", [False, True])
+def test_workflow_without_worktrees_uses_project_root_execution(
+    monkeypatch, platform, workspace_enabled
+) -> None:
+    monkeypatch.setattr(
+        "crewplane.core.workflow.validation.workspace_diagnostics.is_native_windows",
+        lambda: platform == "Windows",
+    )
     workflow = WorkflowPlan(
         name="enabled defaults",
         nodes=[_executor_node("inspect")],
     )
 
-    messages = _messages(workflow, _config(workspace_enabled=True))
-    selections = logical_workspace_selections(workflow, _config(workspace_enabled=True))
+    messages = _messages(workflow, _config(workspace_enabled))
+    selections = logical_workspace_selections(workflow, _config(workspace_enabled))
 
-    assert messages == ()
+    if platform == "Windows" and workspace_enabled:
+        assert len(messages) == 1
+        assert "settings.workspace.enabled: false" in messages[0]
+    else:
+        assert messages == ()
     assert selections["inspect"].enabled is False
     assert selections["inspect"].materialization == "project_root"
 

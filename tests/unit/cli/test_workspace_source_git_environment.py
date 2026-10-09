@@ -11,11 +11,15 @@ from tests.helpers.isolated_git import (
     require_git,
     run_git,
 )
+from tests.helpers.platforms import requires_workspace_support
 
 isolated_git = _isolated_git_support.isolated_git
 
 
 pytestmark = pytest.mark.usefixtures("isolated_git")
+
+
+pytestmark = [pytestmark, requires_workspace_support]
 
 
 @pytest.mark.parametrize(
@@ -199,6 +203,7 @@ def test_workspace_git_failure_diagnostics_redact_output_credentials(
             )
         ),
         encoding="utf-8",
+        newline="\n",
     )
     fake_git.chmod(0o755)
     monkeypatch.setenv("PATH", f"{fake_bin.as_posix()}{os.pathsep}{os.environ['PATH']}")

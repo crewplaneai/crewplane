@@ -8,6 +8,9 @@ import pytest
 
 from crewplane.runtime.workspace.worktree import reset
 from crewplane.runtime.workspace.worktree.protected_refs import ProtectedRefSnapshot
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 class GitCommand:

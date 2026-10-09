@@ -17,6 +17,8 @@ from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 from crewplane.runtime.agent.usage import estimate_token_count
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

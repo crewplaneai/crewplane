@@ -22,6 +22,7 @@ from crewplane.cli.run.preflight import (
 from crewplane.core.config import load_config
 from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import make_run_manifest, write_run_manifest
 
 
@@ -117,7 +118,7 @@ def test_successful_non_mock_manifest_is_rejected(tmp_path: Path) -> None:
 def test_unsafe_history_returns_warning_without_traceback(tmp_path: Path) -> None:
     config, source, console = initialize_default_project(tmp_path)
     stages_root = tmp_path / ".crewplane" / "execution-stages"
-    stages_root.symlink_to(tmp_path)
+    symlink_or_skip(stages_root, tmp_path)
 
     evidence = find_successful_mock_run_evidence(
         tmp_path,

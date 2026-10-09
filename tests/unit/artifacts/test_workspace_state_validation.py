@@ -12,6 +12,7 @@ import pytest
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.artifacts.workspace.state import materialization_results, validation
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan, make_workspace_source_snapshot
 from tests.helpers.resume_validation import (
     provider_workspace_state_payload,
@@ -19,6 +20,8 @@ from tests.helpers.resume_validation import (
     source_record,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 def _checkpoint_case(

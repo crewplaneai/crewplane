@@ -18,7 +18,10 @@ from crewplane.runtime.workspace.setup import (
     workspace_setup_artifacts,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import workspace_setup_policy
+
+pytestmark = requires_workspace_support
 
 
 def test_setup_policies_keep_command_collections_independent() -> None:

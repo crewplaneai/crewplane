@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 import crewplane.runtime.workspace.cleanup as workspace_cleanup
 from crewplane.cli.app import app
 from crewplane.runtime.workspace.state import WorkspaceStateRetention
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     make_run_manifest,
     write_run_manifest,
@@ -18,6 +19,8 @@ from tests.unit.cli.cleanup_support import (
     cleanup_project,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_workspaces_removes_one_coherent_multi_generation_worktree(

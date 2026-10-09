@@ -1,10 +1,18 @@
+"""Copy selected generated files with source validation and failure cleanup."""
+
 from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from pathlib import Path
+from typing import BinaryIO
 
+from crewplane.architecture import safe_files_windows, windows_file_handles
+from crewplane.architecture.safe_file_reads import stable_file_signature
+from crewplane.architecture.safe_files import is_safe_relative_path
 from crewplane.core.file_hashing import FILE_HASH_CHUNK_BYTES
 
 from .snapshot_policy import GeneratedFileSnapshotCandidate
@@ -15,6 +23,34 @@ def copy_generated_file_snapshot_candidate(
     target: Path,
     resolved_workspace_root: Path,
 ) -> tuple[int, str]:
+    """Copy a selected workspace file and hash the exact destination bytes.
+
+    Args:
+        candidate: Selected file with a safe relative path and its recorded
+            device, inode, and byte count under the workspace root.
+        target: File in a caller-prepared, safe snapshot directory. Its parent
+            must exist; opening it may create or truncate it.
+        resolved_workspace_root: Resolved root used to open the source through
+            the candidate's relative path.
+
+    Returns:
+        A ``(byte_count, sha256_hex)`` tuple for the copied bytes.
+
+    Raises:
+        RuntimeError: The source path is unsafe or source validation fails.
+        OSError: File access, copying, or cleanup fails.
+        ValueError: Windows handle protection or validation fails.
+
+    Acquired descriptors and streams are released on every exit. On POSIX,
+    OSError or RuntimeError failures trigger target unlinking. Windows copy
+    failures from these errors or ValueError close descriptors before
+    identity-checked destination cleanup, while its parent remains
+    protected. Cleanup requires a recorded destination identity; failures
+    before opening the Windows destination leave it untouched. Cleanup
+    errors propagate.
+    """
+    if os.name == "nt":
+        return _copy_windows_candidate(candidate, target, resolved_workspace_root)
     source_descriptor: int | None = None
     try:
         source_descriptor = _open_generated_file_snapshot_candidate(
@@ -82,6 +118,7 @@ def _open_generated_file_snapshot_directory(
 ) -> int:
     flags = (
         os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
         | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_DIRECTORY", 0)
         | getattr(os, "O_NOFOLLOW", 0)
@@ -114,6 +151,7 @@ def _open_generated_file_snapshot_source(
 ) -> int:
     flags = (
         os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
         | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_NONBLOCK", 0)
@@ -130,34 +168,40 @@ def _open_generated_file_snapshot_source(
             f"{candidate.relative_label}"
         ) from exc
     try:
-        opened_stat = os.fstat(descriptor)
-        if not stat.S_ISREG(opened_stat.st_mode):
-            raise RuntimeError(
-                "Generated-file snapshot source is not a regular file: "
-                f"{candidate.relative_label}"
-            )
-        if opened_stat.st_nlink != 1:
-            raise RuntimeError(
-                "Generated-file snapshot source has multiple hard links: "
-                f"{candidate.relative_label}"
-            )
-        if (opened_stat.st_dev, opened_stat.st_ino) != (
-            candidate.source_device,
-            candidate.source_inode,
-        ):
-            raise RuntimeError(
-                "Generated-file snapshot source changed identity before copying: "
-                f"{candidate.relative_label}"
-            )
-        if opened_stat.st_size != candidate.size_bytes:
-            raise RuntimeError(
-                "Generated-file snapshot source changed size before copying: "
-                f"{candidate.relative_label}"
-            )
+        _validate_generated_file_snapshot_source(os.fstat(descriptor), candidate)
     except BaseException:
         os.close(descriptor)
         raise
     return descriptor
+
+
+def _validate_generated_file_snapshot_source(
+    opened_stat: os.stat_result,
+    candidate: GeneratedFileSnapshotCandidate,
+) -> None:
+    if not stat.S_ISREG(opened_stat.st_mode):
+        raise RuntimeError(
+            "Generated-file snapshot source is not a regular file: "
+            f"{candidate.relative_label}"
+        )
+    if opened_stat.st_nlink != 1:
+        raise RuntimeError(
+            "Generated-file snapshot source has multiple hard links: "
+            f"{candidate.relative_label}"
+        )
+    if (opened_stat.st_dev, opened_stat.st_ino) != (
+        candidate.source_device,
+        candidate.source_inode,
+    ):
+        raise RuntimeError(
+            "Generated-file snapshot source changed identity before copying: "
+            f"{candidate.relative_label}"
+        )
+    if opened_stat.st_size != candidate.size_bytes:
+        raise RuntimeError(
+            "Generated-file snapshot source changed size before copying: "
+            f"{candidate.relative_label}"
+        )
 
 
 def _copy_open_generated_file_snapshot_candidate(
@@ -165,12 +209,18 @@ def _copy_open_generated_file_snapshot_candidate(
     candidate: GeneratedFileSnapshotCandidate,
     target: Path,
 ) -> tuple[int, str]:
+    with target.open("wb") as target_handle:
+        return _copy_snapshot_bytes(source_descriptor, candidate, target_handle)
+
+
+def _copy_snapshot_bytes(
+    source_descriptor: int,
+    candidate: GeneratedFileSnapshotCandidate,
+    target_handle: BinaryIO,
+) -> tuple[int, str]:
     digest = sha256()
     bytes_read = 0
-    with (
-        os.fdopen(source_descriptor, "rb", closefd=False) as source_handle,
-        target.open("wb") as target_handle,
-    ):
+    with os.fdopen(source_descriptor, "rb", closefd=False) as source_handle:
         for payload in iter(lambda: source_handle.read(FILE_HASH_CHUNK_BYTES), b""):
             bytes_read += len(payload)
             if bytes_read > candidate.size_bytes:
@@ -191,12 +241,83 @@ def _copy_open_generated_file_snapshot_candidate(
 def _validate_generated_file_snapshot_relative_path(
     candidate: GeneratedFileSnapshotCandidate,
 ) -> None:
-    relative_path = candidate.relative_path
-    if (
-        relative_path.is_absolute()
-        or not relative_path.parts
-        or any(part in {"", ".", ".."} for part in relative_path.parts)
-    ):
+    if not is_safe_relative_path(candidate.relative_label):
         raise RuntimeError(
             f"Generated-file snapshot source path is unsafe: {candidate.relative_label}"
         )
+
+
+def _copy_windows_candidate(
+    candidate: GeneratedFileSnapshotCandidate, target: Path, root: Path
+) -> tuple[int, str]:
+    _validate_generated_file_snapshot_relative_path(candidate)
+    with safe_files_windows.protected_directory(target.parent) as parent:
+        identity: tuple[int, int] | None = None
+        try:
+            with ExitStack() as handles:
+                descriptor = handles.enter_context(
+                    _open_windows_snapshot_source(root, candidate)
+                )
+                initial = _validate_windows_snapshot_source(descriptor, candidate)
+                destination = handles.enter_context(
+                    safe_files_windows.open_writable_file(target)
+                )
+                identity = windows_file_handles.descriptor_identity(destination, target)
+                return _copy_windows_snapshot_bytes(
+                    descriptor, candidate, destination, initial
+                )
+        except (OSError, ValueError, RuntimeError):
+            if identity is not None:
+                safe_files_windows.delete_matching_entry(parent, target.name, identity)
+            raise
+
+
+def _validate_windows_snapshot_source(
+    descriptor: int, candidate: GeneratedFileSnapshotCandidate
+) -> os.stat_result:
+    initial = os.fstat(descriptor)
+    if (initial.st_dev, initial.st_ino, initial.st_size) != (
+        candidate.source_device,
+        candidate.source_inode,
+        candidate.size_bytes,
+    ):
+        raise RuntimeError(
+            f"Generated-file snapshot source changed before copying: {candidate.relative_label}"
+        )
+    return initial
+
+
+def _copy_windows_snapshot_bytes(
+    source_descriptor: int,
+    candidate: GeneratedFileSnapshotCandidate,
+    destination_descriptor: int,
+    initial: os.stat_result,
+) -> tuple[int, str]:
+    with os.fdopen(destination_descriptor, "wb", closefd=False) as stream:
+        result = _copy_snapshot_bytes(source_descriptor, candidate, stream)
+    if stable_file_signature(initial) != stable_file_signature(
+        os.fstat(source_descriptor)
+    ):
+        raise RuntimeError(
+            f"Generated-file snapshot source changed while copying: {candidate.relative_label}"
+        )
+    return result
+
+
+@contextmanager
+def _open_windows_snapshot_source(
+    root: Path, candidate: GeneratedFileSnapshotCandidate
+) -> Iterator[int]:
+    with ExitStack() as handles:
+        try:
+            descriptor = handles.enter_context(
+                safe_files_windows.open_regular_file(
+                    root.joinpath(*candidate.relative_path.parts)
+                )
+            )
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                "Generated-file snapshot source changed before copying: "
+                f"{candidate.relative_label}"
+            ) from exc
+        yield descriptor

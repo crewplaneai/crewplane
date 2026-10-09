@@ -168,7 +168,7 @@ class MockAgentInvoker:
             prompt,
         )
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(resolution.content, encoding="utf-8")
+        output_file.write_bytes(resolution.content.encode("utf-8"))
         apply_fixture_mutations(mutation_plan)
         write_invocation_log(
             self._options,

@@ -10,6 +10,7 @@ from crewplane.artifacts.run_history import (
     RunHistoryError,
     find_same_context_runs,
 )
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import (
     RUNTIME_SIGNATURE,
     WORKFLOW_IDENTITY,
@@ -154,7 +155,8 @@ def test_history_rejects_symlinked_stages_root(tmp_path) -> None:
     outside_stages = tmp_path / "outside-stages"
     outside_stages.mkdir()
     try:
-        (tmp_path / "execution-stages").symlink_to(
+        symlink_or_skip(
+            tmp_path / "execution-stages",
             outside_stages,
             target_is_directory=True,
         )
@@ -191,7 +193,8 @@ def test_history_rejects_symlinked_run_directory_escape(tmp_path) -> None:
     )
     symlink_path = stages_root / manifest.run_key_name
     try:
-        symlink_path.symlink_to(
+        symlink_or_skip(
+            symlink_path,
             outside_manifest.parents[1],
             target_is_directory=True,
         )
@@ -230,7 +233,8 @@ def test_history_rejects_symlinked_manifest_directory_escape(tmp_path) -> None:
     run_dir.mkdir()
     symlink_path = run_dir / "manifests"
     try:
-        symlink_path.symlink_to(
+        symlink_or_skip(
+            symlink_path,
             outside_manifest.parent,
             target_is_directory=True,
         )
@@ -269,7 +273,7 @@ def test_history_rejects_symlinked_run_manifest_escape(tmp_path) -> None:
     manifest_dir.mkdir(parents=True)
     symlink_path = manifest_dir / "run.json"
     try:
-        symlink_path.symlink_to(outside_manifest)
+        symlink_or_skip(symlink_path, outside_manifest)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

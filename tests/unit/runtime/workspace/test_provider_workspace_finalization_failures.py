@@ -37,6 +37,7 @@ from crewplane.runtime.workspace.mutator_fence import workspace_mutator_is_fence
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -53,6 +54,8 @@ from tests.unit.runtime.workspace.service_provider_invocation_support import (
     exception_notes_contain,
     wait_for_workspace_cancellation,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_success_finalization_owns_worker_when_fence_write_fails(

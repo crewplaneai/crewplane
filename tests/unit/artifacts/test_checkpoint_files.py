@@ -18,6 +18,7 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointReview,
     CheckpointReviewerFailure,
 )
+from tests.helpers.platforms import symlink_or_skip
 
 
 @pytest.fixture
@@ -95,7 +96,7 @@ def test_checkpoint_dependency_error_precedence(
         descriptor = descriptor.model_copy(update={"signature": (0, "0" * 64)})
         path.unlink()
         if damage == "unsafe":
-            path.symlink_to(tmp_path / "target.md")
+            symlink_or_skip(path, tmp_path / "target.md")
             (tmp_path / "target.md").write_bytes(b"candidate")
     elif damage == "changed":
         path.write_bytes(b"different")

@@ -5,7 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from crewplane.core.workspace import git_reads
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_preflight import init_git_repo
+
+pytestmark = requires_workspace_support
 
 
 def test_literal_git_reads_preserve_special_paths_and_exact_bytes(

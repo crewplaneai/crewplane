@@ -12,6 +12,7 @@ from crewplane.artifacts.locks import (
     acquire_same_context_lock,
 )
 from crewplane.artifacts.locks.process_identity import ProcessInspector
+from tests.helpers.platforms import requires_lock_recovery, symlink_or_skip
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -24,6 +25,8 @@ from tests.helpers.resume_locks import (
     FakeProcessInspector,
     write_manifest_at_run_key,
 )
+
+pytestmark = requires_lock_recovery
 
 
 def test_pid_start_identity_mismatch_recovers_stale_lock(
@@ -228,7 +231,7 @@ def test_stale_lock_with_symlinked_manifest_directory_fails_closed(
     run_dir = tmp_path / "execution-stages" / "workflow--source"
     run_dir.mkdir(parents=True)
     try:
-        (run_dir / "manifests").symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(run_dir / "manifests", outside, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 
@@ -265,7 +268,7 @@ def test_stale_lock_with_symlinked_run_manifest_fails_closed(
     manifest_dir = tmp_path / "execution-stages" / "workflow--source" / "manifests"
     manifest_dir.mkdir(parents=True)
     try:
-        (manifest_dir / "run.json").symlink_to(outside_manifest)
+        symlink_or_skip(manifest_dir / "run.json", outside_manifest)
     except OSError as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
 

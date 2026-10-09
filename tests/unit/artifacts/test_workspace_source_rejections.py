@@ -18,6 +18,7 @@ from crewplane.artifacts.workspace.state.validation import (
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_plan, replace_plan_fields
 from tests.helpers.resume_validation import (
     attach_git_workspace_source,
@@ -25,6 +26,8 @@ from tests.helpers.resume_validation import (
     source_record,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

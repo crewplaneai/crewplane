@@ -15,6 +15,9 @@ from rich.console import Console
 from crewplane.cli.update import default_update_context, update_crewplane
 from crewplane.cli.update import runner as update_runner
 from crewplane.cli.update.types import CommandRunner, UpdateCommand
+from tests.helpers.platforms import requires_self_update
+
+pytestmark = requires_self_update
 
 
 @dataclass

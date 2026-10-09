@@ -13,6 +13,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def test_codex_reasoning_request_builds_native_config_before_extra_args() -> None:
     context = InvocationContext(

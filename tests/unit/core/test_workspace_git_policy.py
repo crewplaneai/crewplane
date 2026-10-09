@@ -18,6 +18,9 @@ from crewplane.core.workspace.git_policy import (
 )
 from crewplane.runtime.agent.workspace_environment import workspace_child_environment
 from crewplane.runtime.workspace import git as runtime_workspace_git
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_sanitized_workspace_git_environment_removes_inherited_git_state(

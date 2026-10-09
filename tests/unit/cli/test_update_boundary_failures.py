@@ -8,7 +8,10 @@ import pytest
 from rich.console import Console
 
 from crewplane.cli.update import UpdateError, update_crewplane
+from tests.helpers.platforms import requires_self_update
 from tests.unit.cli.update_helpers import FailedCommands, update_context
+
+pytestmark = requires_self_update
 
 
 @pytest.mark.parametrize(

@@ -17,23 +17,30 @@ from tests.unit.packaging.release_surfaces_support import (
 )
 
 
+@pytest.mark.parametrize(
+    "windows_status", ["success", "failure", "cancelled", "skipped"]
+)
 @pytest.mark.parametrize("lint_status", ["success", "failure", "cancelled", "skipped"])
 @pytest.mark.parametrize("test_status", ["success", "failure", "cancelled", "skipped"])
 def test_package_guard_requires_successful_checks(
-    lint_status: str, test_status: str
+    lint_status: str, test_status: str, windows_status: str
 ) -> None:
     workflow = yaml.load(
         read_text(".github", "workflows", "ci.yml"), Loader=yaml.BaseLoader
     )
     package = workflow["jobs"]["package"]
-    assert {"lint", "test"} <= set(package["needs"])
+    assert {"lint", "test", "windows"} <= set(package["needs"])
     assert package["if"] == "${{ always() }}"
     guard = package["steps"][0]["run"]
-    guard = guard.replace("${{ needs.lint.result }}", lint_status).replace(
-        "${{ needs.test.result }}", test_status
+    guard = (
+        guard.replace("${{ needs.lint.result }}", lint_status)
+        .replace("${{ needs.test.result }}", test_status)
+        .replace("${{ needs.windows.result }}", windows_status)
     )
     result = run_process(["bash", "-e", "-c", guard], check=False)
-    assert (result.returncode == 0) is (lint_status == test_status == "success")
+    assert (result.returncode == 0) is (
+        lint_status == test_status == windows_status == "success"
+    )
 
 
 def test_ci_package_smoke_and_typechecks_precede_artifact_upload() -> None:
@@ -76,7 +83,7 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
     nightly = load_workflow("nightly.yml")
     job = nightly["jobs"]["cross-platform"]
     matrix = job["strategy"]["matrix"]
-    assert set(matrix["os"]) == {"ubuntu-latest", "macos-latest"}
+    assert set(matrix["os"]) == {"ubuntu-latest", "macos-latest", "windows-latest"}
     assert {"3.13", "3.14"} <= set(matrix["python-version"])
     commands = [step.get("run", "") for step in job["steps"]]
     assert (
@@ -278,3 +285,19 @@ def test_testpypi_workflow_uses_trusted_publishing() -> None:
     assert "skip-existing" not in "\n".join(
         step.get("run", "") + str(step.get("with", {})) for step in publisher["steps"]
     )
+
+
+def test_windows_required_jobs_execute_suite_and_both_installed_wheels() -> None:
+    job = load_workflow("ci.yml")["jobs"]["windows"]
+    assert job["runs-on"] == "windows-latest"
+    assert set(job["strategy"]["matrix"]["python-version"]) == {"3.13", "3.14"}
+    commands = [step.get("run", "") for step in job["steps"]]
+    prefix = "uv run --locked --python ${{ matrix.python-version }} --extra dev"
+    assert f"{prefix} python -m pytest -q --durations=20" in commands
+    for installer in ("pip", "uv"):
+        assert (
+            f"{prefix} python tests/helpers/installed_wheel_smoke.py --installer {installer}"
+            in commands
+        )
+    assert not job.get("continue-on-error")
+    assert all("make " not in command for command in commands)

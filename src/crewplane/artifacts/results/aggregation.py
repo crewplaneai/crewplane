@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 
 from ..failure_artifacts import (
     is_synthetic_invocation_failure,
@@ -69,7 +70,9 @@ def add_output_to_aggregation(
     findings_selection: FindingsSelection,
     context: _AggregationContext,
 ) -> None:
-    raw_output = output_file.read_text(encoding="utf-8")
+    raw_output = read_contained_bytes(output_file.parent, output_file.name).decode(
+        "utf-8", errors="replace"
+    )
     if not raw_output.strip():
         aggregation.skipped_empty_outputs.append(output_file)
         return

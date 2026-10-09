@@ -14,6 +14,7 @@ from crewplane.artifacts.naming import build_node_state_filename
 from crewplane.artifacts.run_history import find_same_context_runs
 from crewplane.artifacts.verification import read_verified_node_artifact
 from crewplane.core.execution_state import ArtifactDescriptor
+from tests.helpers.platforms import extended_file_test_root
 from tests.helpers.resume import make_node_state, make_run_manifest, write_node_state
 
 
@@ -220,6 +221,7 @@ def _write_corrupt_node_state(stages_dir: Path, node_id: str) -> None:
 def test_manifest_writer_paths_are_discovered_by_readers(
     tmp_path: Path, node_id: str
 ) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     output = OutputManager("workflow", base_dir=tmp_path)
     manifest = make_run_manifest(output.run_id, output.run_key_name, status="succeeded")
     manifest_path = output.write_run_manifest(manifest)

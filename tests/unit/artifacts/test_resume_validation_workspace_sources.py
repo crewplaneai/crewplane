@@ -12,6 +12,7 @@ from crewplane.artifacts.workspace.source_validation import (
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -29,6 +30,8 @@ from tests.helpers.resume_validation import (
     write_stage_output_file,
 )
 from tests.helpers.workspace_records import workspace_selection_record
+
+pytestmark = requires_workspace_support
 
 
 def test_validate_frontier_rejects_provider_workspace_wrong_project_source(

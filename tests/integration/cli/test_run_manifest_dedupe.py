@@ -140,12 +140,14 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
+            output_text = stream.getvalue().replace("\\", "/")
             self.assertIn("Workflow: Review apps", output_text)
             self.assertIn("Artifact key: review-apps", output_text)
-            stages_root = str((tmp_path / ".crewplane" / "execution-stages").resolve())
-            results_root = str(
-                (tmp_path / ".crewplane" / "execution-results").resolve()
+            stages_root = (
+                (tmp_path / ".crewplane" / "execution-stages").resolve().as_posix()
+            )
+            results_root = (
+                (tmp_path / ".crewplane" / "execution-results").resolve().as_posix()
             )
             self.assertRegex(
                 output_text,

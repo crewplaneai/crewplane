@@ -22,6 +22,7 @@ from .models import (
     PreflightExecutionNode,
     RenderPlan,
 )
+from .plan_contract_artifacts import validate_artifact_contract_uniqueness
 from .plan_signatures import (
     effective_runtime_config_signature_for_plan,
     workflow_signature,
@@ -136,6 +137,15 @@ def compile_preflight_preview(
         effective_options,
         state,
     )
+    try:
+        validate_artifact_contract_uniqueness(nodes)
+    except ValueError as exc:
+        append_diagnostic(
+            state,
+            code=PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+            phase=PreflightDiagnosticPhase.VALIDATION,
+            message=str(exc),
+        )
     if has_errors(state):
         return _build_preview(
             source,

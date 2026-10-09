@@ -120,7 +120,7 @@ class MockAgentInvoker(NoPresentationInvoker):
                 f"Unexpected invocation {call_index + 1}; scripted {len(self.outputs)} outputs"
             )
         content = "ok" if self.outputs is None else self.outputs[call_index]
-        output_file.write_text(content, encoding="utf-8")
+        output_file.write_text(content, encoding="utf-8", newline="\n")
 
 
 class GraphDependencyOrderInvoker(NoPresentationInvoker):
@@ -143,11 +143,11 @@ class GraphDependencyOrderInvoker(NoPresentationInvoker):
         if invocation_context.node_id == "first":
             await asyncio.sleep(0.05)
             self.first_completed = True
-            output_file.write_text("first done", encoding="utf-8")
+            output_file.write_text("first done", encoding="utf-8", newline="\n")
             return
         if not self.first_completed:
             raise AssertionError("second started before dependency graph was satisfied")
-        output_file.write_text("second done", encoding="utf-8")
+        output_file.write_text("second done", encoding="utf-8", newline="\n")
 
 
 def compile_test_plan(
@@ -298,7 +298,7 @@ class OptionalOutputInvoker(NoPresentationInvoker):
         content = self.outputs[call_index]
         if content is None:
             return
-        output_file.write_text(content, encoding="utf-8")
+        output_file.write_text(content, encoding="utf-8", newline="\n")
 
 
 class ArtifactDriftInvoker(NoPresentationInvoker):
@@ -341,10 +341,10 @@ class ArtifactDriftInvoker(NoPresentationInvoker):
             }
         )
         call_index = len(self.calls) - 1
-        output_file.write_text(self.outputs[call_index], encoding="utf-8")
+        output_file.write_text(self.outputs[call_index], encoding="utf-8", newline="\n")
         for mutation_path, content in self.mutations_by_call.get(call_index, []):
             mutation_path.parent.mkdir(parents=True, exist_ok=True)
-            mutation_path.write_text(content, encoding="utf-8")
+            mutation_path.write_text(content, encoding="utf-8", newline="\n")
         for mutation_path, content in self.append_mutations_by_call.get(call_index, []):
             mutation_path.parent.mkdir(parents=True, exist_ok=True)
             with mutation_path.open("a", encoding="utf-8") as handle:
@@ -371,7 +371,7 @@ class SelectiveFailInvoker(NoPresentationInvoker):
         )
         if model in self.failing_models:
             raise provider_failure(f"simulated failure for {model}")
-        output_file.write_text(f"success: {model}", encoding="utf-8")
+        output_file.write_text(f"success: {model}", encoding="utf-8", newline="\n")
 
 
 class FindingsSelectiveFailInvoker(NoPresentationInvoker):
@@ -403,6 +403,7 @@ class FindingsSelectiveFailInvoker(NoPresentationInvoker):
                 ]
             ),
             encoding="utf-8",
+            newline="\n",
         )
 
 
@@ -430,7 +431,7 @@ class GatedModelInvoker(NoPresentationInvoker):
                 raise AssertionError(
                     f"Model {model!r} was not released by its causal gate."
                 ) from exc
-        output_file.write_text(f"done: {model}", encoding="utf-8")
+        output_file.write_text(f"done: {model}", encoding="utf-8", newline="\n")
 
 
 class FailingLogOutputManager(OutputManager):
@@ -508,7 +509,7 @@ class TaskOutputInvoker(NoPresentationInvoker):
                 ) from exc
         assert task_id in self.outputs_by_task_id, f"Unexpected task: {task_id}"
         content = self.outputs_by_task_id[task_id]
-        output_file.write_text(content, encoding="utf-8")
+        output_file.write_text(content, encoding="utf-8", newline="\n")
 
 
 class ParallelReviewerBarrierInvoker(NoPresentationInvoker):
@@ -541,10 +542,10 @@ class ParallelReviewerBarrierInvoker(NoPresentationInvoker):
                     "Reviewers did not reach the parallel invocation barrier."
                 ) from exc
             output_file.write_text(
-                review_output(verdict="NO_FINDINGS"), encoding="utf-8"
+                review_output(verdict="NO_FINDINGS"), encoding="utf-8", newline="\n"
             )
             return
-        output_file.write_text("executor output", encoding="utf-8")
+        output_file.write_text("executor output", encoding="utf-8", newline="\n")
 
 
 class CleanupOnCancelInvoker(NoPresentationInvoker):

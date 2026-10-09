@@ -21,6 +21,7 @@ from crewplane.runtime.agent.process.drain import (
     ProcessDrainEvidence,
 )
 from crewplane.runtime.agent.process.stream_capture import ProcessOutputCapture
+from tests.helpers.platforms import requires_posix
 from tests.integration.runtime.agent.invocation_command_support import (
     command_workspace_context,
 )
@@ -82,6 +83,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         assert events[1].returncode is not None
         assert workspace_environment_applied_calls == 1
 
+    @requires_posix
     async def test_process_exit_reporting_does_not_mask_process_failure(self) -> None:
         def record_process_event(event: InvocationProcessEvent) -> None:
             if event.status == "exited":
@@ -120,6 +122,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             for note in caught.value.__notes__
         )
 
+    @requires_posix
     async def test_drain_failure_precedes_exit_reporting_failure(self) -> None:
         def record_process_event(event: InvocationProcessEvent) -> None:
             if event.status == "exited":
@@ -181,10 +184,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         assert str(caught.value) == "provider process group remained live"
         assert isinstance(caught.value.__cause__, RuntimeError)
         assert str(caught.value.__cause__) == "provider output collection failed"
-        assert caught.value.__notes__ == [
-            "Provider process exit reporting failed: Provider process exited "
-            "reporting failed: cannot record exit"
-        ]
+        assert not getattr(caught.value, "__notes__", ())
 
     async def test_file_not_found_after_spawn_reaps_process(self) -> None:
         created_processes: list[asyncio.subprocess.Process] = []

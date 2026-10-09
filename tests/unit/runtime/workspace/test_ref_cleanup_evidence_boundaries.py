@@ -18,12 +18,15 @@ from crewplane.runtime.workspace.worktree.temporary_refs import (
 )
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit, run_git
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
     run_git_text,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 isolated_git = isolated_git_support.isolated_git
 

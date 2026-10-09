@@ -7,6 +7,7 @@ from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
 from crewplane.core.workflow.graph import ancestor_map
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workflow.validation.workspace_diagnostics import (
+    platform_workspace_diagnostics,
     repeat_force_run_workspace_diagnostics,
     workspace_policy_diagnostics,
 )
@@ -23,7 +24,7 @@ def collect_workspace_policy_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
-    repetition_diagnostics = (
+    repetition_diagnostics = platform_workspace_diagnostics(config) + (
         repeat_force_run_workspace_diagnostics(workflow, config)
         if workflow.repeat_force_run_count is not None
         else ()

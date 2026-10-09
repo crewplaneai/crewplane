@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Never
@@ -19,6 +20,7 @@ from crewplane.bootstrap import (
     build_runtime_config_snapshot,
 )
 from crewplane.core.config import Config
+from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight import (
     PreflightExecutionPlan,
 )
@@ -30,6 +32,7 @@ from crewplane.core.preflight.diagnostics import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.observability import ObservabilityHub, PersistentRunLogger
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 from crewplane.runtime.execution import execute_workflow
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
@@ -319,7 +322,12 @@ async def execute_workflow_run(
             resumed_node_ids=resume_plan.resumed_node_ids,
         )
     finally:
-        if not running_manifest_written or (
+        terminal_complete = not running_manifest_written or (
             terminalization is not None and terminalization.committed
-        ):
+        )
+        cleanup_complete = (
+            not is_native_windows()
+            or unconfirmed_process_cleanup(sys.exception()) is None
+        )
+        if terminal_complete and cleanup_complete:
             same_context_lock.release()

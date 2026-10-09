@@ -9,6 +9,7 @@ import yaml
 
 from crewplane.cli.templates import CONFIG_TEMPLATE, render_template_content
 from scripts.release import retry, smoke, state
+from tests.helpers.platforms import requires_posix
 from tests.unit.packaging.release_tool_support import write_minimal_repo
 
 
@@ -138,6 +139,7 @@ def test_installed_cli_smoke_rejects_non_mock_scaffold(tmp_path: Path) -> None:
         smoke.write_mock_config(config_path)
 
 
+@requires_posix
 def test_brew_smoke_uses_built_sdist_sha_for_local_formula(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -171,6 +173,7 @@ def test_brew_smoke_uses_built_sdist_sha_for_local_formula(
 
 
 @pytest.mark.parametrize("fail_command", ["--repository", "install", "test"])
+@requires_posix
 def test_brew_smoke_cleans_up_tap_after_failure(
     tmp_path: Path, fail_command: str
 ) -> None:

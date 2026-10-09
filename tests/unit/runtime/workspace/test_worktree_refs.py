@@ -4,6 +4,9 @@ from crewplane.core.workspace.naming import (
     safe_file_component,
     safe_ref_component,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_safe_ref_component_preserves_long_value_identity() -> None:

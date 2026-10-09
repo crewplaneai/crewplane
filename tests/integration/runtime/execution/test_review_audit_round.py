@@ -30,6 +30,7 @@ from crewplane.runtime.execution.review_loop.types import (
 )
 from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.review_loop_rounds_support import (
+    REVIEW_IO_TIMEOUT_SECONDS,
     make_review_node,
     make_round_runtime_context,
     provider_failure,
@@ -313,7 +314,9 @@ def test_publication_yields_and_finishes_before_repeated_cancellation(
         def block() -> None:
             worker_threads.append(get_ident())
             loop.call_soon_threadsafe(entered.set)
-            assert release.wait(timeout=2), "Publication blocked the event loop"
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS), (
+                "Publication blocked the event loop"
+            )
             completed.set()
             if storage_failure:
                 raise failure
@@ -343,7 +346,7 @@ def test_publication_yields_and_finishes_before_repeated_cancellation(
         expected_error = OSError if storage_failure else asyncio.CancelledError
         error: BaseException | None = None
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             assert len(worker_threads) == 1
             assert worker_threads[0] != owner_thread
             task.cancel("first cancellation")
@@ -513,7 +516,7 @@ def test_review_outcome_io_yields_and_drains_before_cancellation(
             )
             assert context.get() == "owner context"
             loop.call_soon_threadsafe(entered.set)
-            assert release.wait(timeout=2)
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS)
             completed.set()
             if io_failure:
                 raise failure
@@ -546,7 +549,7 @@ def test_review_outcome_io_yields_and_drains_before_cancellation(
         task = asyncio.create_task(audit_round.execute_single_audit_round(request))
         error: BaseException | None = None
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             task.cancel("first cancellation")
             await asyncio.sleep(0)
             task.cancel("second cancellation")
@@ -766,7 +769,7 @@ def test_runner_shutdown_drains_publication_before_owner_cleanup(
 
         def publish() -> None:
             loop.call_soon_threadsafe(entered.set)
-            assert release.wait(timeout=2)
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS)
             completed.set()
             if storage_failure:
                 raise failure
@@ -790,7 +793,7 @@ def test_runner_shutdown_drains_publication_before_owner_cleanup(
         tasks.extend(
             [asyncio.create_task(owner()), asyncio.create_task(release_on_shutdown())]
         )
-        await asyncio.wait_for(entered.wait(), timeout=1)
+        await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
         if interrupted:
             raise KeyboardInterrupt("runner interrupted")
 
@@ -851,7 +854,9 @@ def test_audit_io_yields_and_retains_ownership_until_cancellation(
             assert get_ident() != owner_thread
             assert context.get() == "owner context"
             loop.call_soon_threadsafe(entered.set)
-            assert release.wait(timeout=2), "Audit I/O blocked the event loop"
+            assert release.wait(timeout=REVIEW_IO_TIMEOUT_SECONDS), (
+                "Audit I/O blocked the event loop"
+            )
             completed.set()
             if storage_failure:
                 raise failure
@@ -890,7 +895,7 @@ def test_audit_io_yields_and_retains_ownership_until_cancellation(
         task = asyncio.create_task(audit_round.execute_single_audit_round(request))
         error: BaseException | None = None
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=REVIEW_IO_TIMEOUT_SECONDS)
             task.cancel("first cancellation")
             await asyncio.sleep(0)
             task.cancel("second cancellation")

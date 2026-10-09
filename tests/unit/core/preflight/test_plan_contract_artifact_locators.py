@@ -6,7 +6,9 @@ from crewplane.core.preflight.models import PreflightExecutionPlan
 from tests.helpers.resume import make_plan
 
 
-@pytest.mark.parametrize("reserved_root", ["logs", "manifests", "preflight"])
+@pytest.mark.parametrize(
+    "reserved_root", ["logs", "manifests", "preflight", "LOGS", "Preflight"]
+)
 def test_persisted_plan_rejects_reserved_stage_roots(reserved_root: str) -> None:
     payload = make_plan().model_dump(mode="json")
     payload["nodes"][0]["artifact_contract"]["stage_path"] = reserved_root
@@ -16,12 +18,13 @@ def test_persisted_plan_rejects_reserved_stage_roots(reserved_root: str) -> None
         PreflightExecutionPlan.model_validate(payload)
 
 
-def test_persisted_plan_rejects_hierarchically_overlapping_stage_paths() -> None:
+@pytest.mark.parametrize("locator", ["a/nested", "A/nested", "A"])
+def test_persisted_plan_rejects_overlapping_stage_paths(locator: str) -> None:
     payload = make_plan().model_dump(mode="json")
     payload["nodes"][1]["artifact_contract"].update(
         {
-            "stage_path": "a/nested",
-            "log_path": "a/nested/logs",
+            "stage_path": locator,
+            "log_path": f"{locator}/logs",
         }
     )
 

@@ -130,7 +130,7 @@ def test_extract_visible_output_uses_persisted_stdout_without_materializing(
     tmp_path,
 ) -> None:
     stream_path = tmp_path / "stdout.txt"
-    stream_path.write_text("line 1\nline 2", encoding="utf-8")
+    stream_path.write_text("line 1\nline 2", encoding="utf-8", newline="\n")
 
     extracted = extract_invocation_output(
         output_extractor=None,

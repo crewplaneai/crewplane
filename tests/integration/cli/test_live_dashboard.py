@@ -10,8 +10,10 @@ import typer
 
 import crewplane.cli.app as cli
 from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.core.platform import is_native_windows
 from crewplane.observability import ObservabilityHub
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_tmux_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
@@ -62,9 +64,10 @@ def test_repetition_starts_and_stops_observers_per_pass(
     monkeypatch.setattr(tmux_adapter, "TmuxCompactRuntime", RecordingObserver)
     result = project.run(*(["--no-live"] if no_live else []))
     assert result.exit_code == 0, (result.output, result.exception, stream.getvalue())
-    assert events == (["start", "stop"] * 3 if tmux_available and not no_live else [])
+    live_available = tmux_available and not no_live and not is_native_windows()
+    assert events == (["start", "stop"] * 3 if live_available else [])
     assert len(project.manifests()) == 3
-    if not tmux_available and not no_live:
+    if not tmux_available and not no_live and not is_native_windows():
         assert all(
             "tmux not found" in output
             for output in stream.getvalue().split("(fresh)")[1:]
@@ -194,6 +197,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("event_sink", captured_kwargs)
             self.assertIn("run_id", captured_kwargs)
 
+    @requires_tmux_support
     def test_tty_run_enables_live_dashboard_by_default(self) -> None:
         with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
@@ -301,6 +305,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 stream.getvalue(),
             )
 
+    @requires_tmux_support
     def test_run_finalizes_manifest_and_summary_when_dashboard_requests_cancel(
         self,
     ) -> None:
@@ -374,6 +379,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 console_text,
             )
 
+    @requires_tmux_support
     def test_tty_live_dashboard_uses_configured_tmux_auto_close(self) -> None:
         with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
@@ -520,6 +526,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("event_sink", captured_kwargs)
             self.assertIn("run_id", captured_kwargs)
 
+    @requires_tmux_support
     def test_tty_run_falls_back_when_tmux_missing(self) -> None:
         with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
@@ -563,6 +570,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("event_sink", captured_kwargs)
             self.assertIn("tmux not found", stream.getvalue())
 
+    @requires_tmux_support
     def test_tty_run_falls_back_when_no_live_observers_start(self) -> None:
         with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"

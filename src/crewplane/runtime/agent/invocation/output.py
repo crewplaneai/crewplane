@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import codecs
 import contextlib
 from pathlib import Path
 
@@ -11,8 +10,8 @@ from crewplane.architecture.contracts import (
     OutputExtractionResult,
     OutputExtractor,
 )
+from crewplane.architecture.safe_file_reads import copy_regular_file
 from crewplane.core.file_text import (
-    STREAM_READ_BYTES,
     path_decoded_character_count,
     path_has_non_whitespace_text,
 )
@@ -157,9 +156,9 @@ def write_extracted_invocation_output(
     output_file: Path,
 ) -> None:
     if extracted_output.result.output_path is None:
-        output_file.write_text(extracted_output.result.output_text, encoding="utf-8")
+        output_file.write_bytes(extracted_output.result.output_text.encode("utf-8"))
         return
-    _write_decoded_stream_file(extracted_output.result.output_path, output_file)
+    copy_regular_file(extracted_output.result.output_path, output_file)
 
 
 def cleanup_extracted_invocation_output(
@@ -190,17 +189,6 @@ def _stream_size_bytes(fallback_text: str, path: Path | None) -> int:
     if path is not None and path.is_file():
         return path.stat().st_size
     return len(fallback_text.encode("utf-8"))
-
-
-def _write_decoded_stream_file(source: Path, destination: Path) -> None:
-    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    with (
-        source.open("rb") as source_handle,
-        destination.open("w", encoding="utf-8") as destination_handle,
-    ):
-        while chunk := source_handle.read(STREAM_READ_BYTES):
-            destination_handle.write(decoder.decode(chunk))
-        destination_handle.write(decoder.decode(b"", final=True))
 
 
 def cleanup_structured_output_file(path: Path | None) -> None:

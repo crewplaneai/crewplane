@@ -8,10 +8,13 @@ from typer.testing import CliRunner
 
 import crewplane.runtime.workspace.cleanup as workspace_cleanup
 from crewplane.cli.app import app
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.cli.cleanup_support import (
     cleanup_project,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_workspaces_defaults_to_advisory_dry_run(tmp_path: Path) -> None:

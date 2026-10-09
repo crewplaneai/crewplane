@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
     is_single_link_regular_file,
     path_has_symlink_component,
@@ -89,7 +90,7 @@ def _history_root_exists(stages_root: Path) -> bool:
 
 def _read_run_manifest(path: Path) -> RunManifest | None:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(read_contained_bytes(path.parent, path.name))
     except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return _validate_run_manifest(payload)

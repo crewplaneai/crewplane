@@ -29,6 +29,7 @@ from crewplane.runtime.workspace.branch_export.records import (
     skipped_branch_export_record,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     history_record_for_output,
@@ -40,6 +41,8 @@ from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_preview_branch_exports_rejects_result_ref_that_is_not_a_commit(

@@ -16,6 +16,7 @@ from crewplane.runtime.execution.workspace_files import (
     dynamic_locator_source,
     dynamic_locator_source_state_path,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.unit.runtime.workspace.state_selection_support import (
     ArtifactStore,
@@ -26,6 +27,8 @@ from tests.unit.runtime.workspace.state_selection_support import (
     write_selection_review_status,
     write_selection_state,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_dynamic_locator_source_uses_review_loop_canonical_state(

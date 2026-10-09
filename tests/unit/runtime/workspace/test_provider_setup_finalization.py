@@ -36,6 +36,7 @@ from crewplane.runtime.workspace.setup import (
 from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -49,6 +50,8 @@ from tests.unit.runtime.workspace.service_provider_setup_invocation_support impo
     start_git_metadata_lock_holder,
     stop_git_metadata_lock_holder,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(

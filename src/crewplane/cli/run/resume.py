@@ -20,6 +20,7 @@ from crewplane.artifacts.run_history import (
     find_same_context_runs,
 )
 from crewplane.core.config import Config
+from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
@@ -249,6 +250,11 @@ def artifact_valid_history_plan(
                 workflow_identity=workflow_identity,
                 decision=ResumeDecision(kind="skip", successful_run=record),
             )
+    if is_native_windows():
+        return ResumePlan(
+            workflow_identity=workflow_identity,
+            decision=ResumeDecision(kind="execute_full"),
+        )
     observation = None
     if any(
         record.manifest.status in {"failed", "cancelled"} for record in records

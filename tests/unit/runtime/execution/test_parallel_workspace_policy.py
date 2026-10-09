@@ -14,6 +14,9 @@ from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution import NodeExecutionError
 from crewplane.runtime.execution.parallel import enforce_parallel_failure_policy
 from crewplane.runtime.execution.stage_tasks import ParallelResultSummary
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_lineage_worktree_parallel_node_rejects_allowed_executor_failure() -> None:

@@ -17,6 +17,7 @@ from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import extended_file_test_root
 
 
 @pytest.mark.parametrize("absolute", [False, True])
@@ -49,6 +50,7 @@ def test_generated_file_source_root_preserves_invocation_path_and_parent(
 def test_workspace_generated_files_hash_truncated_stage_directories(
     tmp_path: Path,
 ) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     base_dir = tmp_path
     output = OutputManager("Workflow", base_dir=base_dir)
     stage_prefix = "a" * 120
@@ -58,12 +60,13 @@ def test_workspace_generated_files_hash_truncated_stage_directories(
         workspace = base_dir / f"workspace-{suffix}"
         (workspace / "src").mkdir(parents=True)
         (workspace / "src" / "app.txt").write_text(
-            f"{suffix} content",
-            encoding="utf-8",
+            f"{suffix} content", encoding="utf-8", newline="\n"
         )
         stage_dir = output.create_node_dir(node_artifact_request(stage_name))
         provider_output = stage_dir / "alpha_round1.md"
-        provider_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+        provider_output.write_text(
+            "Updated `src/app.txt`.\n", encoding="utf-8", newline="\n"
+        )
 
         result = output.finalize_node(
             node_artifact_request(stage_name),

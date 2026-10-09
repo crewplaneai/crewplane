@@ -6,8 +6,11 @@ and packages/opencode/src/session/{processor,session}.ts.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 FIXTURES = (
     Path(__file__).parents[1]
@@ -56,6 +59,8 @@ def native_tokens(**overrides) -> dict:
 
 
 def write_fake_executable(directory: Path) -> Path:
+    if os.name != "posix":
+        pytest.skip("The OpenCode double requires a POSIX shebang launcher")
     executable = directory / "opencode-double"
     executable.write_text(
         f"#!{sys.executable}\n"

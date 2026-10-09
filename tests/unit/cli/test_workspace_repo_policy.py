@@ -11,7 +11,10 @@ from crewplane.cli.run.workspace import (
 from crewplane.cli.run.workspace import repo_policy as workspace_repo_policy
 from crewplane.cli.run.workspace import source_policy as policy
 from crewplane.core.config import Settings
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_source_policy import git_source_context
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_source_policy_rejects_unsupported_git_state_files(

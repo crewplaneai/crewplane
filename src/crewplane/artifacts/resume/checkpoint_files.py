@@ -9,6 +9,7 @@ from pathlib import Path
 from crewplane.architecture.contracts.artifacts import (
     build_review_audit_directory_name,
 )
+from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
     contained_regular_file,
     ensure_contained_directory,
@@ -105,7 +106,9 @@ def read_checkpoint_file(root: Path, descriptor: CheckpointFile) -> bytes:
         raise ValueError(
             f"Checkpoint dependency is missing or unsafe: {descriptor.relative_path}"
         )
-    payload = path.read_bytes()
+    payload = read_contained_bytes(
+        root, descriptor.relative_path, descriptor.signature[0]
+    )
     if (len(payload), hashlib.sha256(payload).hexdigest()) != descriptor.signature or (
         contained_regular_file(root, descriptor.relative_path) != path
     ):

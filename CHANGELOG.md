@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Staged native Windows fresh project-root execution through pip/uv on local NTFS; native acceptance remains pending.
+
 ## [0.3.6] - 2026-10-05
 
 ### Added

@@ -17,6 +17,7 @@ run Crewplane inside WSL. See
 | Run skipped | [Duplicate skip](running-workflows.md#duplicate-skip). |
 | Run resumed | [Resume](running-workflows.md#resume). |
 | Run lock unavailable | [Run lock unavailable](#run-lock-unavailable). |
+| Windows launcher or file error | [Native Windows launch and file errors](#native-windows-launch-and-file-errors). |
 | No dashboard | [tmux missing](#tmux-missing) or [Watch Runs Live and Inspect Results](watch-runs-live-and-inspect-results.md). |
 | Need help | [Reproducible support bundle](reproducible-support-bundle.md). |
 
@@ -37,7 +38,7 @@ and `.crewplane/execution-results/<run-key>/` as needed.
 | `Resume advisory: would_skip` | Dry-run predicts duplicate skip. | Run with `--force` to bypass. |
 | `Resume advisory: would_resume <n> node(s) from <run-id> (nodes: <ids>)` | Dry-run predicts resume hydration of the listed dependency-closed nodes from a failed or cancelled run. | Inspect `resumed_nodes` and `.crewplane/execution-stages/<run-key>/<node-id>/resume-source.json` after a run. |
 | `Resuming workflow '<name>' from <n> validated node boundary(s)` | A run hydrated completed nodes from prior artifacts. | Inspect `.crewplane/execution-stages/<run-key>/manifests/run.json`. |
-| `Run lock unavailable: <reason>` | The same-context run lock could not be acquired. | [Run lock unavailable](#run-lock-unavailable). |
+| `Run lock unavailable: <reason>` | The run's lock already exists or could not be created. | [Run lock unavailable](#run-lock-unavailable). |
 | `tmux not found; continuing without live dashboard.` | Execution can continue without the live dashboard. | Use `--no-live` or install/configure tmux. |
 | `No workflow file found` | Default discovery found no top-level `.task.md`. | Run `crewplane init` or pass `--tasks`. |
 | `Multiple workflow files found` | Default discovery found more than one top-level `.task.md`. | Pass `--tasks` to select one. |
@@ -95,33 +96,53 @@ run. Check `resumed_nodes` in the run manifest and
 
 ## Run Lock Unavailable
 
-`crewplane run` holds a lock directory under `.crewplane/locks/` while a
-workflow executes, so two runs with the same workflow name, workflow identity,
-and workflow signature cannot interleave. The lock name is built from those
-fields. The lock records its owning process and is released when the run ends.
+`crewplane run` creates a lock folder under `.crewplane/locks/` to prevent two
+runs of the same workflow, inputs, and settings from writing files at the same
+time.
 
-`Run lock unavailable` means the lock could not be acquired. Either a matching
-run is still active, or a previous run ended without releasing the lock, for
-example after a crash or power loss. The next run reclaims the lock only when
-the recorded owner process is verified to be no longer alive and the lock and
-manifest metadata are readable and match the current run; corrupt, mismatched,
-cross-host, or otherwise unverifiable lock state fails closed with a specific
-reason instead. A successful reclaim finalizes the interrupted run's manifest
-as `cancelled`, which makes it eligible for resume consideration; resume itself
-still depends on validated node-boundary artifacts.
+`Run lock unavailable` means a lock already exists or Crewplane cannot create
+one. An earlier run may still be active, or it may have stopped without removing
+its lock, for example after a crash or power loss. Follow the guidance for your
+platform below.
 
-If the message repeats with no active run, or an error traceback references
-`.crewplane/locks/`, confirm no crewplane process is running, then delete the
-lock state and retry:
+### Linux, macOS, and WSL
 
-```bash
-rm -rf .crewplane/locks
-```
+Rerun the command. Crewplane can remove an old lock after checking that the
+previous run and its providers have stopped and that the saved run information
+matches. If it cannot verify this, it stops and explains why. After removing the
+lock, it marks the interrupted run as `cancelled` and can reuse saved progress
+that passes its checks.
 
-Manual deletion skips the automatic finalization, so the interrupted run keeps
-`status: running` and is not considered for resume. If an older successful run
-with the same context exists, the next run prints `Identical context detected`;
-use `--force` for a fresh run.
+### Native Windows locks
+
+Windows does not remove leftover locks automatically, even if a lock looks old
+or the run is listed as finished. `--force` cannot bypass a lock. Follow the
+manual recovery steps below.
+
+### Manual lock recovery
+
+If Crewplane cannot remove an old lock automatically:
+
+1. Use your system's process manager to confirm that the original Crewplane
+   command, its providers, and any programs they started have stopped. If you
+   cannot confirm this, leave the lock in place.
+2. Keep the saved run files for troubleshooting. Delete only the lock folder
+   named in the error, then rerun your command.
+
+Deleting a lock does not change the saved run status. If the old run is still
+marked `running`, Crewplane cannot resume it. An earlier successful result may
+still let Crewplane skip the run; use `--force` to run the whole workflow again.
+
+## Native Windows launch and file errors
+
+| Error | What to do |
+| --- | --- |
+| `Provider launch was withheld` with a Job Object restriction | The provider was not started. Check whether your terminal or CI runner prevents Crewplane from managing the programs it starts. |
+| Sharing violation | Another program may have the file open. Close that program before retrying. |
+| Path too long | Use a shorter project path. Longer paths require support from Windows, Python, and the provider tools. |
+
+For missing provider commands or PowerShell policy errors, see
+[provider setup](../getting-started/provider-setup.md#native-windows-launcher-selection).
 
 ## Template Access Denied
 

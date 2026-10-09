@@ -33,6 +33,7 @@ from crewplane.runtime.execution.runtime_context import (
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -43,6 +44,8 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.service_provider_invocation_support import (
     SuccessfulRuntimeInvoker,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_provider_invocation_uses_snapshot_workspace_cwd(

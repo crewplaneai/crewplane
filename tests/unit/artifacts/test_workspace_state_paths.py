@@ -11,6 +11,9 @@ from crewplane.artifacts.workspace.state.paths import (
     workspace_state_filename,
     workspace_temporary_refs_filename,
 )
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(

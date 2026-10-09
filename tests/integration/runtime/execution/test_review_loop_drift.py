@@ -13,6 +13,8 @@ from crewplane.architecture.ports import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
 )
+from crewplane.core.platform import is_native_windows
+from crewplane.runtime.agent.process.drain import ProcessDrainError
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.review_loop.drift import (
     capture as review_loop_drift_capture,
@@ -33,6 +35,7 @@ from crewplane.runtime.execution.review_loop.types import (
     ActivityWindow,
     DriftMonitoringWindow,
 )
+from tests.helpers.platforms import symlink_or_skip
 from tests.integration.runtime.execution.review_loop_drift_support import (
     make_drift_request,
     recovery_payload,
@@ -136,7 +139,9 @@ def test_cli_provider_process_state_tampering_remains_fatal(
         if event.status == "exited":
             payload = json.loads(publication.path.read_text(encoding="utf-8"))
             payload["returncode"] = 99
-            publication.path.write_text(json.dumps(payload), encoding="utf-8")
+            publication.path.write_text(
+                json.dumps(payload), encoding="utf-8", newline="\n"
+            )
         return publication
 
     monkeypatch.setattr(
@@ -145,8 +150,20 @@ def test_cli_provider_process_state_tampering_remains_fatal(
         write_process_event_then_tamper,
     )
 
-    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
-        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+    if is_native_windows():
+        with pytest.raises(
+            ProcessDrainError, match="cleanup reporting failed"
+        ) as failure:
+            asyncio.run(
+                review_loop_drift_guard.run_provider_call_with_drift_guard(request)
+            )
+        assert any("1 fatal path(s)" in note for note in failure.value.__notes__)
+        assert not failure.value.evidence.process_group_stopped
+    else:
+        with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+            asyncio.run(
+                review_loop_drift_guard.run_provider_call_with_drift_guard(request)
+            )
 
 
 def test_preexisting_shared_reserved_drift_is_fatal_when_not_exclusive(
@@ -253,7 +270,7 @@ def test_drift_guard_restores_unsafe_strict_log_substitution(
     original = f"original {target_kind}\n".encode()
     target.write_bytes(original)
     outside = tmp_path / f"outside-{target_kind}.txt"
-    outside.write_text("outside\n", encoding="utf-8")
+    outside.write_text("outside\n", encoding="utf-8", newline="\n")
 
     class UnsafeLogMutatingInvoker:
         def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
@@ -270,8 +287,8 @@ def test_drift_guard_restores_unsafe_strict_log_substitution(
             invocation_context=None,  # noqa: ARG002 - Required by protocol.
         ) -> None:
             target.unlink()
-            target.symlink_to(outside)
-            output_file.write_text("provider output", encoding="utf-8")
+            symlink_or_skip(target, outside)
+            output_file.write_text("provider output", encoding="utf-8", newline="\n")
 
     request.invoker = UnsafeLogMutatingInvoker()
 

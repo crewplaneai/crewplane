@@ -4,6 +4,9 @@ import pytest
 
 from crewplane.core.preflight import PreflightExecutionNode, PreflightExecutionPlan
 from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_plan_node_returns_compiled_node() -> None:

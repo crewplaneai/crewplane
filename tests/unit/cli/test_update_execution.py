@@ -23,6 +23,10 @@ from crewplane.cli.update.types import (
     UpdateContext,
     UpdatePlan,
 )
+from tests.helpers.platforms import requires_self_update
+
+pytestmark = requires_self_update
+
 
 PACKAGE_NAME = "crewplane"
 METADATA_PACKAGE_NAME = "crewplane-from-project-metadata"

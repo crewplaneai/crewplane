@@ -4,9 +4,16 @@ import hashlib
 import os
 import stat
 import tempfile
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Protocol
 
+from crewplane.architecture.safe_file_reads import (
+    bounded_file_chunks,
+    open_regular_file,
+    stable_file_signature,
+)
 from crewplane.architecture.safe_files import (
     is_single_link_regular_file,
     replace_contained_file,
@@ -89,24 +96,22 @@ def publish_invocation_output(
     )
     with publications.transaction():
         if invocation_output_file != output_file:
-            staged_output = _stage_verified_invocation_output(
+            with _stage_verified_invocation_output(
                 invocation_output_file,
                 output_file.parent,
                 bound_signature,
-            )
-            try:
-                replace_contained_file(
-                    output_file.parent,
-                    output_file.name,
-                    staged_output,
-                )
-            except (OSError, ValueError) as exc:
-                raise RuntimeError(
-                    "Refusing to publish an invocation output through an unsafe "
-                    f"destination: {output_file.as_posix()}"
-                ) from exc
-            finally:
-                staged_output.unlink(missing_ok=True)
+            ) as staged_output:
+                try:
+                    replace_contained_file(
+                        output_file.parent,
+                        output_file.name,
+                        staged_output,
+                    )
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError(
+                        "Refusing to publish an invocation output through an unsafe "
+                        f"destination: {output_file.as_posix()}"
+                    ) from exc
         publication_signature = bind_invocation_output(output_file)
         if publication_signature != bound_signature:
             raise RuntimeError(
@@ -124,12 +129,9 @@ def publish_invocation_output(
 def bind_invocation_output(path: Path) -> ContentSignature:
     """Bind one stable single-link output file to its exact byte signature."""
 
-    descriptor, initial_stat = _open_invocation_output(path)
-    try:
+    with _protected_invocation_output(path) as (descriptor, initial_stat):
         size_bytes, sha256 = _hash_descriptor(descriptor)
         _ensure_open_output_unchanged(path, descriptor, initial_stat, size_bytes)
-    finally:
-        os.close(descriptor)
     return size_bytes, sha256
 
 
@@ -137,23 +139,17 @@ def read_bound_invocation_output(
     path: Path,
     expected_signature: ContentSignature,
 ) -> str:
-    """Read exact UTF-8 output bytes only when they match a prior binding."""
+    """Verify bound output bytes before rendering text with UTF-8 replacement."""
 
     payload = _read_bound_invocation_payload(path, expected_signature)
-    try:
-        return payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise RuntimeError(
-            f"Invocation output is not valid UTF-8: {path.as_posix()}"
-        ) from exc
+    return payload.decode("utf-8", errors="replace")
 
 
 def _read_bound_invocation_payload(
     path: Path,
     expected_signature: ContentSignature,
 ) -> bytes:
-    descriptor, initial_stat = _open_invocation_output(path)
-    try:
+    with _protected_invocation_output(path) as (descriptor, initial_stat):
         payload, actual_signature = _read_descriptor(descriptor)
         _ensure_open_output_unchanged(
             path,
@@ -161,8 +157,6 @@ def _read_bound_invocation_payload(
             initial_stat,
             actual_signature[0],
         )
-    finally:
-        os.close(descriptor)
     if actual_signature != expected_signature:
         raise RuntimeError(
             f"Invocation output does not match its bound bytes: {path.as_posix()}"
@@ -170,17 +164,17 @@ def _read_bound_invocation_payload(
     return payload
 
 
+@contextmanager
 def _stage_verified_invocation_output(
     source: Path,
     destination_dir: Path,
     expected_signature: ContentSignature,
-) -> Path:
+) -> Iterator[Path]:
     initial_destination_stat = _real_directory_stat(destination_dir)
-    temporary_path, actual_signature = _copy_stable_invocation_output(
+    with _copy_stable_invocation_output(
         source,
         destination_dir,
-    )
-    try:
+    ) as (temporary_path, actual_signature):
         _validate_staged_invocation_output(
             source,
             destination_dir,
@@ -188,20 +182,21 @@ def _stage_verified_invocation_output(
             expected_signature,
             actual_signature,
         )
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
-    return temporary_path
+        yield temporary_path
 
 
+@contextmanager
 def _copy_stable_invocation_output(
     source: Path,
     destination_dir: Path,
-) -> tuple[Path, ContentSignature]:
+) -> Iterator[tuple[Path, ContentSignature]]:
+    if os.name == "nt":
+        with _copy_windows_invocation_output(source, destination_dir) as staged:
+            yield staged
+        return
     temporary_path: Path | None = None
     try:
-        descriptor, initial_stat = _open_invocation_output(source)
-        try:
+        with _protected_invocation_output(source) as (descriptor, initial_stat):
             with tempfile.NamedTemporaryFile(
                 dir=destination_dir,
                 prefix=".crewplane-publication-",
@@ -212,18 +207,33 @@ def _copy_stable_invocation_output(
                 temporary.flush()
                 os.fsync(temporary.fileno())
             _ensure_open_output_unchanged(
-                source,
-                descriptor,
-                initial_stat,
-                actual_signature[0],
+                source, descriptor, initial_stat, actual_signature[0]
             )
-        finally:
-            os.close(descriptor)
-    except BaseException:
+        yield temporary_path, actual_signature
+    finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
-        raise
-    return temporary_path, actual_signature
+
+
+@contextmanager
+def _copy_windows_invocation_output(
+    source: Path, destination_dir: Path
+) -> Iterator[tuple[Path, ContentSignature]]:
+    from crewplane.architecture.safe_files_windows import temporary_binary_file
+
+    with temporary_binary_file(destination_dir, ".crewplane-publication-") as (
+        temporary_path,
+        temporary,
+    ):
+        with _protected_invocation_output(source) as (descriptor, initial_stat):
+            actual_signature = _copy_descriptor(descriptor, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary.close()
+            _ensure_open_output_unchanged(
+                source, descriptor, initial_stat, actual_signature[0]
+            )
+        yield temporary_path, actual_signature
 
 
 def _validate_staged_invocation_output(
@@ -248,8 +258,31 @@ def _validate_staged_invocation_output(
     )
 
 
+@contextmanager
+def _protected_invocation_output(path: Path) -> Iterator[tuple[int, os.stat_result]]:
+    if os.name == "nt":
+        with ExitStack() as protection:
+            try:
+                descriptor = protection.enter_context(open_regular_file(path))
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(
+                    f"Invocation output is unavailable or unsafe: {path}"
+                ) from exc
+            yield descriptor, os.fstat(descriptor)
+        return
+    descriptor, metadata = _open_invocation_output(path)
+    try:
+        yield descriptor, metadata
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Invocation output changed while being read: {path}"
+        ) from exc
+    finally:
+        os.close(descriptor)
+
+
 def _open_invocation_output(path: Path) -> tuple[int, os.stat_result]:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
@@ -291,7 +324,7 @@ def _ensure_open_output_unchanged(
 def _hash_descriptor(descriptor: int) -> ContentSignature:
     digest = hashlib.sha256()
     size_bytes = 0
-    while chunk := os.read(descriptor, 1024 * 1024):
+    for chunk in bounded_file_chunks(descriptor):
         size_bytes += len(chunk)
         digest.update(chunk)
     return size_bytes, digest.hexdigest()
@@ -300,7 +333,7 @@ def _hash_descriptor(descriptor: int) -> ContentSignature:
 def _read_descriptor(descriptor: int) -> tuple[bytes, ContentSignature]:
     digest = hashlib.sha256()
     payload = bytearray()
-    while chunk := os.read(descriptor, 1024 * 1024):
+    for chunk in bounded_file_chunks(descriptor):
         payload.extend(chunk)
         digest.update(chunk)
     return bytes(payload), (len(payload), digest.hexdigest())
@@ -309,7 +342,7 @@ def _read_descriptor(descriptor: int) -> tuple[bytes, ContentSignature]:
 def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> ContentSignature:
     digest = hashlib.sha256()
     size_bytes = 0
-    while chunk := os.read(descriptor, 1024 * 1024):
+    for chunk in bounded_file_chunks(descriptor):
         destination.write(chunk)
         size_bytes += len(chunk)
         digest.update(chunk)
@@ -317,14 +350,9 @@ def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> ContentSign
 
 
 def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
-    return (
-        is_single_link_regular_file(second)
-        and first.st_dev == second.st_dev
-        and first.st_ino == second.st_ino
-        and first.st_size == second.st_size
-        and first.st_mtime_ns == second.st_mtime_ns
-        and first.st_ctime_ns == second.st_ctime_ns
-    )
+    return is_single_link_regular_file(second) and stable_file_signature(
+        first
+    ) == stable_file_signature(second)
 
 
 def _same_directory_identity(first: os.stat_result, second: os.stat_result) -> bool:

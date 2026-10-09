@@ -11,6 +11,7 @@ from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -23,6 +24,8 @@ from tests.helpers.workspace_worktree_reuse import (
     with_node_setup,
     workspace_request,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_reused_worktree_setup_runs_after_reset_and_clean(

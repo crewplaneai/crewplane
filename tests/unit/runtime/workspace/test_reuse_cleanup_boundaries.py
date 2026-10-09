@@ -19,6 +19,7 @@ from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -29,6 +30,8 @@ from tests.helpers.workspace_worktree_reuse import (
     two_node_lineage_plan,
     workspace_request,
 )
+
+pytestmark = requires_workspace_support
 
 isolated_git = isolated_git_support.isolated_git
 

@@ -11,6 +11,9 @@ from crewplane.artifacts.workspace.state.lineage import (
     review_output_coordinates,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.platforms import requires_workspace_support
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("audit_round_num", [None, 0, 1, 2])

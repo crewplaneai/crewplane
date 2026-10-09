@@ -1,19 +1,27 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import stat
 import tempfile
 from collections.abc import Callable, Sequence
-from contextlib import suppress
+from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.architecture.safe_file_reads import (
+    copy_regular_file,
+    read_contained_bytes,
+)
+from crewplane.architecture.safe_files import (
+    contained_regular_file,
+    ensure_contained_directory,
+    path_is_symlink,
+)
 
 from ..naming import build_generated_file_result_dir_name
+from . import snapshot_metadata
 from .detection import (
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
@@ -28,7 +36,6 @@ from .snapshot_io import copy_generated_file_snapshot_candidate
 from .snapshot_policy import (
     GeneratedFileRejectionLog,
     GeneratedFileSnapshotCandidate,
-    GeneratedFileSnapshotMetadata,
     GeneratedFileSnapshotPolicy,
     GeneratedFileSnapshotSelection,
     generated_file_rejection_metadata,
@@ -46,16 +53,6 @@ MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS = 100
 class GeneratedFileLinkResult:
     links: tuple[GeneratedFileLink, ...]
     warnings: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class GeneratedFileSnapshotRejectionSummary:
-    total_count: int = 0
-    recorded_files: tuple[dict[str, object], ...] = ()
-
-    @property
-    def truncated(self) -> bool:
-        return self.total_count > len(self.recorded_files)
 
 
 def build_generated_files_section(
@@ -103,12 +100,12 @@ def generated_file_links_for_content(
 ) -> GeneratedFileLinkResult:
     resolved_candidate_files = candidate_files
     if resolved_candidate_files is None:
-        resolved_candidate_files = _generated_file_snapshot_candidate_files(
+        resolved_candidate_files = snapshot_metadata.read_snapshot_candidate_files(
             workspace_root
         )
     detector = GeneratedFileReferenceDetector(
         workspace_root,
-        source_root=_generated_file_snapshot_source_root(workspace_root),
+        source_root=snapshot_metadata.read_snapshot_source_root(workspace_root),
     )
     links: list[GeneratedFileLink] = []
     warnings: list[str] = []
@@ -132,7 +129,7 @@ def generated_file_links_for_content(
                     stage_name,
                     copy_namespace,
                 )
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 warnings.append(f"Generated-file copy failed for {label!r}: {exc}")
                 continue
         links.append(GeneratedFileLink(label=label, target_path=target_path))
@@ -151,7 +148,13 @@ def snapshot_generated_file_workspace(
     on_file_published: Callable[[Path, tuple[int, str]], None] | None = None,
     snapshot_root: Path | None = None,
 ) -> Path:
-    content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
+    content = (
+        read_contained_bytes(output_file.parent, output_file.name).decode(
+            "utf-8", errors="replace"
+        )
+        if output_file.is_file()
+        else ""
+    )
     selected_snapshot_root = snapshot_root or generated_file_source_root(output_file)
     resolved_workspace_root = workspace_root.resolve(strict=True)
     selection = _select_snapshot_candidates(
@@ -162,7 +165,7 @@ def snapshot_generated_file_workspace(
         explicit_claims_only,
     )
     _replace_generated_file_source_root(selected_snapshot_root)
-    source_metadata_signature = _write_generated_file_source_metadata(
+    source_metadata_signature = snapshot_metadata.write_source_metadata(
         selected_snapshot_root,
         resolved_workspace_root,
     )
@@ -181,7 +184,7 @@ def snapshot_generated_file_workspace(
             on_file_published,
         ):
             copied_candidates.append(candidate)
-    snapshot_metadata_signature = _write_generated_file_snapshot_metadata(
+    snapshot_metadata_signature = snapshot_metadata.write_snapshot_metadata(
         selected_snapshot_root,
         [
             generated_file_snapshot_candidate_metadata(candidate)
@@ -330,128 +333,6 @@ def generated_file_source_root(output_file: Path) -> Path:
     )
 
 
-def _generated_file_snapshot_source_root(snapshot_root: Path) -> Path | None:
-    metadata_file = contained_regular_file(
-        snapshot_root,
-        GENERATED_FILE_SOURCE_METADATA_NAME,
-    )
-    if metadata_file is None:
-        return None
-    try:
-        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    source_root = payload.get("source_root")
-    if not isinstance(source_root, str) or not source_root:
-        return None
-    return Path(source_root)
-
-
-def _generated_file_snapshot_candidate_files(
-    snapshot_root: Path,
-) -> tuple[Path, ...] | None:
-    metadata_file = contained_regular_file(
-        snapshot_root,
-        GENERATED_FILE_SNAPSHOT_METADATA_NAME,
-    )
-    if metadata_file is None:
-        return None
-    try:
-        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ()
-    if not isinstance(payload, dict):
-        return ()
-    raw_files = payload.get("files")
-    if not isinstance(raw_files, list):
-        return ()
-    candidates: list[Path] = []
-    for item in raw_files:
-        if not isinstance(item, dict):
-            continue
-        raw_path = item.get("path")
-        if not isinstance(raw_path, str):
-            continue
-        candidate = contained_regular_file(snapshot_root, raw_path)
-        if candidate is not None:
-            candidates.append(candidate)
-    return tuple(candidates)
-
-
-def generated_file_snapshot_rejection_summary(
-    snapshot_root: Path,
-) -> GeneratedFileSnapshotRejectionSummary:
-    metadata_file = contained_regular_file(
-        snapshot_root,
-        GENERATED_FILE_SNAPSHOT_METADATA_NAME,
-    )
-    if metadata_file is None:
-        return GeneratedFileSnapshotRejectionSummary()
-    try:
-        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return GeneratedFileSnapshotRejectionSummary()
-    if not isinstance(payload, dict):
-        return GeneratedFileSnapshotRejectionSummary()
-    raw_rejections = payload.get("rejected_files")
-    if not isinstance(raw_rejections, list):
-        raw_rejections = []
-    recorded_files = tuple(item for item in raw_rejections if isinstance(item, dict))
-    raw_total_count = payload.get("rejected_file_count")
-    total_count = (
-        raw_total_count
-        if isinstance(raw_total_count, int)
-        and not isinstance(raw_total_count, bool)
-        and raw_total_count >= len(recorded_files)
-        else len(recorded_files)
-    )
-    return GeneratedFileSnapshotRejectionSummary(
-        total_count=total_count,
-        recorded_files=recorded_files,
-    )
-
-
-def _write_generated_file_source_metadata(
-    snapshot_root: Path,
-    source_root: Path,
-) -> tuple[int, str]:
-    metadata_file = snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME
-    content = (
-        json.dumps(
-            {"source_root": source_root.as_posix()},
-            allow_nan=False,
-            sort_keys=True,
-        )
-        + "\n"
-    )
-    metadata_file.write_text(content, encoding="utf-8")
-    payload = content.encode("utf-8")
-    return len(payload), sha256(payload).hexdigest()
-
-
-def _write_generated_file_snapshot_metadata(
-    snapshot_root: Path,
-    copied_files: Sequence[GeneratedFileSnapshotMetadata],
-    rejections: GeneratedFileRejectionLog,
-) -> tuple[int, str]:
-    payload: dict[str, object] = {"files": list(copied_files)}
-    if rejections.rejected_file_count:
-        payload.update(
-            {
-                "rejected_file_count": rejections.rejected_file_count,
-                "rejected_files": list(rejections.rejected_files),
-                "rejected_files_truncated": rejections.truncated,
-            }
-        )
-    metadata_file = snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME
-    content = json.dumps(payload, allow_nan=False, sort_keys=True) + "\n"
-    metadata_file.write_text(content, encoding="utf-8")
-    encoded = content.encode("utf-8")
-    return len(encoded), sha256(encoded).hexdigest()
-
-
 def _copy_workspace_generated_file(
     generated_file: Path,
     relative_path: str,
@@ -464,7 +345,23 @@ def _copy_workspace_generated_file(
         target = target / build_generated_file_result_dir_name(copy_namespace)
     for part in Path(relative_path).parts:
         target = target / part
-    target.parent.mkdir(parents=True, exist_ok=True)
+    protection: AbstractContextManager[object]
+    if os.name == "nt":
+        from crewplane.architecture.safe_files_windows import protected_directory
+
+        protection = protected_directory(target.parent, create=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        protection = nullcontext(target.parent)
+    with protection:
+        _copy_generated_file_to_target(generated_file, target)
+    return target
+
+
+def _copy_generated_file_to_target(generated_file: Path, target: Path) -> None:
+    if os.name == "nt":
+        _copy_windows_generated_file(generated_file, target)
+        return
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -474,18 +371,47 @@ def _copy_workspace_generated_file(
             delete=False,
         ) as handle:
             temporary_path = Path(handle.name)
-        shutil.copyfile(generated_file, temporary_path)
+        copy_regular_file(generated_file, temporary_path)
         shutil.copymode(generated_file, temporary_path)
         temporary_path.replace(target)
-    except OSError:
+    except (OSError, ValueError):
         if temporary_path is not None:
             with suppress(OSError):
                 temporary_path.unlink()
         raise
-    return target
+
+
+def _copy_windows_generated_file(generated_file: Path, target: Path) -> None:
+    from crewplane.architecture.safe_files_windows import (
+        protected_file,
+        rename_contained_file,
+        temporary_binary_file,
+    )
+    from crewplane.architecture.windows_file_handles import descriptor_identity
+
+    with temporary_binary_file(target.parent, ".generated-file-", ".tmp") as (
+        temporary_path,
+        stream,
+    ):
+        identity = descriptor_identity(stream.fileno(), temporary_path)
+        stream.close()
+        copy_regular_file(generated_file, temporary_path)
+        with protected_file(generated_file), protected_file(temporary_path):
+            shutil.copymode(generated_file, temporary_path)
+        rename_contained_file(temporary_path, target, identity)
 
 
 def _replace_generated_file_source_root(path: Path) -> None:
+    if os.name == "nt":
+        from crewplane.architecture.safe_files_windows import reset_directory
+
+        try:
+            reset_directory(path)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Generated-file source path is not a directory: {path.as_posix()}"
+            ) from exc
+        return
     _ensure_safe_directory(path.parent.parent)
     _ensure_contained_directory(path.parent.parent, Path(path.parent.name))
     try:
@@ -493,7 +419,7 @@ def _replace_generated_file_source_root(path: Path) -> None:
     except FileNotFoundError:
         path.mkdir(parents=True, exist_ok=False)
         return
-    if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+    if not stat.S_ISDIR(mode) or path_is_symlink(path):
         raise RuntimeError(
             f"Generated-file source path is not a directory: {path.as_posix()}"
         )
@@ -502,6 +428,8 @@ def _replace_generated_file_source_root(path: Path) -> None:
 
 
 def _ensure_contained_directory(root: Path, relative_path: Path) -> Path:
+    if os.name == "nt":
+        return ensure_contained_directory(root, relative_path.as_posix())
     current = root
     for part in relative_path.parts:
         if part in {"", ".", ".."}:
@@ -523,7 +451,7 @@ def _ensure_safe_directory(path: Path) -> None:
     except FileNotFoundError:
         path.mkdir(parents=True, exist_ok=True)
         return
-    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+    if path_is_symlink(path) or not stat.S_ISDIR(mode):
         raise RuntimeError(
             f"Generated-file source path is not a directory: {path.as_posix()}"
         )

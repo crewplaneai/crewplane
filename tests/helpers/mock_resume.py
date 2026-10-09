@@ -44,21 +44,21 @@ def write_mock_config(path: Path, fixture_dir: Path) -> None:
             sort_keys=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
 
 def write_executor_fixture(fixture_dir: Path, node_id: str, content: str) -> None:
     fixture_path = fixture_dir / node_id / "alpha_executor_0_round1.md"
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
-    fixture_path.write_text(content, encoding="utf-8")
+    fixture_path.write_text(content, encoding="utf-8", newline="\n")
 
 
 def write_review_loop_fixtures(fixture_dir: Path) -> None:
     review_dir = fixture_dir / "review.iterate" / "review-audit-round-1"
     review_dir.mkdir(parents=True, exist_ok=True)
     (review_dir / "alpha_executor_0_round1.md").write_text(
-        "Reviewed implementation candidate.\n",
-        encoding="utf-8",
+        "Reviewed implementation candidate.\n", encoding="utf-8", newline="\n"
     )
     (review_dir / "reviewer-round-1.md").write_text(
         "\n".join(
@@ -80,4 +80,5 @@ def write_review_loop_fixtures(fixture_dir: Path) -> None:
             ]
         ),
         encoding="utf-8",
+        newline="\n",
     )

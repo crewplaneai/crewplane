@@ -128,8 +128,12 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
             observed_runs[cwd].append(run_key)
             event_loops[cwd].append(asyncio.get_running_loop())
             if len(observed_runs[cwd]) == 1:
-                (cwd / "source.txt").write_text("edited", encoding="utf-8")
-                (cwd / "created.txt").write_text("untracked", encoding="utf-8")
+                (cwd / "source.txt").write_text(
+                    "edited", encoding="utf-8", newline="\n"
+                )
+                (cwd / "created.txt").write_text(
+                    "untracked", encoding="utf-8", newline="\n"
+                )
             observed_reads[cwd].append(
                 ((cwd / "source.txt").read_text(), (cwd / "created.txt").read_text())
             )
@@ -151,7 +155,7 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
         root = tmp_path / name
         project = create_project(root, count)
         monkeypatch.chdir(root)
-        (root / "source.txt").write_text("original", encoding="utf-8")
+        (root / "source.txt").write_text("original", encoding="utf-8", newline="\n")
         isolated_git.run(root, "init")
         isolated_git.run(root, "add", "source.txt")
         isolated_git.run(root, "commit", "-m", "initial source")
@@ -191,6 +195,7 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
                 {
                     path.name: path.read_text()
                     .replace(str(root), "ROOT")
+                    .replace(root.as_posix(), "ROOT")
                     .replace(directory.name, "RUN")
                     for path in sorted(directory.glob("*.md"))
                 }

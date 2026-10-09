@@ -30,6 +30,7 @@ from crewplane.runtime.execution.consensus import (
 )
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import extended_file_test_root
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -47,7 +48,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         self,
     ) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
-        tmp_path = Path(tmp_dir)
+        tmp_path = extended_file_test_root(Path(tmp_dir))
         config = Config(
             version=SCHEMA_VERSION,
             agents={

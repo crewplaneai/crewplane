@@ -17,6 +17,7 @@ from crewplane.cli.workflow_runner import execute_workflow_run
 from crewplane.core.config import load_config
 from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint, ReviewLoopCheckpoint
+from tests.helpers.platforms import requires_resume_support
 from tests.helpers.review_checkpoint_cli import write_checkpoint_project
 from tests.integration.cli.repeat_force_run_support import filesystem_snapshot
 
@@ -31,6 +32,7 @@ def interrupt_review(store, record):
 ORIGINAL_PUBLISH = OutputManager.write_review_checkpoint
 
 
+@requires_resume_support
 @pytest.mark.parametrize("predecessor", [False, True])
 def test_dry_run_reports_checkpoint_collection_without_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, predecessor: bool
@@ -79,6 +81,7 @@ def test_dry_run_reports_checkpoint_collection_without_writes(
     )
 
 
+@requires_resume_support
 @pytest.mark.parametrize("state_name", [".crewplane", "custom-state"])
 @pytest.mark.parametrize("phase", ["reviewers", "finalize"])
 @pytest.mark.parametrize("project_changed", [False, True])
@@ -146,6 +149,7 @@ def test_checkpoint_resume_observes_project_outside_state_directory(
         assert roles == (["reviewer"] if phase == "reviewers" else [])
 
 
+@requires_resume_support
 @pytest.mark.parametrize("failure", ["copy", "manifest", "setup"])
 def test_checkpoint_setup_failure_terminalizes_fresh_run_without_invocations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str

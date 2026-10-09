@@ -15,6 +15,7 @@ from crewplane.cli.update.types import (
     UpdateCommand,
     UpdateContext,
 )
+from tests.helpers.platforms import symlink_or_skip
 
 PACKAGE_NAME = "crewplane"
 VERSION_PROBE_SCRIPT = (
@@ -177,7 +178,7 @@ def test_homebrew_install_delegates_to_formula_owner(
     environment_root.mkdir(parents=True)
     formula_prefix = tmp_path / "opt" / "crewplane"
     formula_prefix.parent.mkdir()
-    formula_prefix.symlink_to(cellar_prefix, target_is_directory=True)
+    symlink_or_skip(formula_prefix, cellar_prefix, target_is_directory=True)
     runner = ProbeRunner({("brew", "--prefix", "crewplane"): f"{formula_prefix}\n"})
     context = make_context(environment_root, runner, None, {"brew"})
 
@@ -353,7 +354,7 @@ def test_linked_global_npm_package_is_rejected(tmp_path: Path) -> None:
     write_npm_package(source_root)
     npm_root.mkdir(parents=True)
     package_root = npm_root / "crewplane"
-    package_root.symlink_to(source_root, target_is_directory=True)
+    symlink_or_skip(package_root, source_root, target_is_directory=True)
     environment_root = package_root / ".venv"
     runner = ProbeRunner({("npm", "root", "--global"): f"{npm_root}\n"})
     context = make_context(environment_root, runner, "uv", {"npm"})

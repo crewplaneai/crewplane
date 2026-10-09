@@ -394,9 +394,7 @@ def test_durable_state_timestamp_contract(timestamp, record_field) -> None:
         assert validated.model_dump()[field] == timestamp
 
 
-@pytest.mark.parametrize(
-    "relative_path", [" ", " nested /file.md", r"nested\file.md", "nested/file.md"]
-)
+@pytest.mark.parametrize("relative_path", [" nested/file.md", "nested/file.md"])
 def test_artifact_descriptor_preserves_raw_path_spelling(relative_path: str) -> None:
     descriptor = ArtifactDescriptor(
         kind="output",

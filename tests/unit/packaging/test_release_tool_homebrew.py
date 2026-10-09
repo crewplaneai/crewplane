@@ -12,6 +12,7 @@ import pytest
 from scripts.release import homebrew, state
 from tests.helpers import isolated_git as _isolated_git_support
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.platforms import requires_posix
 from tests.unit.packaging.release_tool_support import (
     constant,
     matching_pypi,
@@ -402,6 +403,7 @@ def test_pull_request_snapshot_rejects_ambiguous_or_unowned_prs() -> None:
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_creates_one_branch_and_is_idempotent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -459,6 +461,7 @@ def test_publish_homebrew_pr_creates_one_branch_and_is_idempotent(
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_recovers_missing_and_closed_pull_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -483,6 +486,7 @@ def test_publish_homebrew_pr_recovers_missing_and_closed_pull_requests(
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_rebases_stale_automation_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -490,7 +494,9 @@ def test_publish_homebrew_pr_rebases_stale_automation_branch(
     homebrew.publish_formula_pull_request(tmp_path, setup.runner, setup.options)
     branch = f"automation/crewplane-{setup.context.version.project}"
     original_branch_sha = git(setup.origin, "rev-parse", f"refs/heads/{branch}")
-    (setup.seed / "README.md").write_text("tap documentation\n", encoding="utf-8")
+    (setup.seed / "README.md").write_text(
+        "tap documentation\n", encoding="utf-8", newline="\n"
+    )
     git(setup.seed, "add", "README.md")
     git(setup.seed, "commit", "-m", "document tap")
     git(setup.seed, "push", "origin", "main")
@@ -515,6 +521,7 @@ def test_publish_homebrew_pr_rebases_stale_automation_branch(
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_repairs_generated_description(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -545,6 +552,7 @@ def test_publish_homebrew_pr_repairs_generated_description(
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_rejects_manually_edited_description(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -560,6 +568,7 @@ def test_publish_homebrew_pr_rejects_manually_edited_description(
 
 
 @pytest.mark.usefixtures("isolated_git")
+@requires_posix
 def test_publish_homebrew_pr_rejects_modified_automation_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -570,6 +579,7 @@ def test_publish_homebrew_pr_rejects_modified_automation_branch(
     formula_path.write_text(
         formula_path.read_text(encoding="utf-8") + "# manual change\n",
         encoding="utf-8",
+        newline="\n",
     )
     git(setup.tap, "add", str(homebrew.TAP_FORMULA_PATH))
     git(setup.tap, "commit", "-m", "manual change")

@@ -20,6 +20,8 @@ from crewplane.core.preflight.execution_nodes import resolve_provider_model
 from crewplane.core.workflow.models import ProviderSpec, WorkflowNode, WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def request(command=None, model=None, **values) -> CliInvocationRequest:
     return CliInvocationRequest(
@@ -295,11 +297,11 @@ def test_valid_workflow_model_overrides_invalid_unused_default(tmp_path):
 )
 def test_existing_env_forms_and_absolute_executable_are_supported(tmp_path, prefix):
     executable = tmp_path / "renamed-provider"
-    executable.write_text("#!/bin/sh\nexit 0\n")
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
     executable.chmod(0o755)
-    invocation = request([*prefix, str(executable), "run"])
+    invocation = request([*prefix, executable.as_posix(), "run"])
     OPENCODE.validate_request(invocation)
-    assert str(executable) in OPENCODE.build_command(invocation, "prompt").cmd
+    assert executable.as_posix() in OPENCODE.build_command(invocation, "prompt").cmd
 
 
 @pytest.mark.parametrize("option", [["-C", "secret"], ["-Csecret"], ["--chdir=secret"]])

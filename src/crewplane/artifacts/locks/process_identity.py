@@ -4,6 +4,13 @@ import os
 import socket
 from dataclasses import dataclass
 
+from crewplane.core.platform import is_native_windows
+
+
+def _require_process_inspection() -> None:
+    if is_native_windows():
+        raise RuntimeError("Stale process inspection is unsupported on native Windows.")
+
 
 @dataclass(frozen=True)
 class ProcessIdentity:
@@ -24,6 +31,7 @@ class ProcessInspector:
         )
 
     def is_live(self, identity: ProcessIdentity) -> bool:
+        _require_process_inspection()
         if identity.hostname != socket.gethostname():
             raise RuntimeError("Cannot verify a process on a different host.")
         if not _pid_exists(identity.pid):
@@ -34,6 +42,7 @@ class ProcessInspector:
         return current_start == identity.start_identity
 
     def is_process_group_live(self, process_group_id: int) -> bool:
+        _require_process_inspection()
         if process_group_id <= 0:
             raise RuntimeError("Cannot verify an invalid process group.")
         if not hasattr(os, "killpg"):
@@ -50,6 +59,8 @@ class ProcessInspector:
 
 
 def process_start_identity(pid: int) -> str | None:
+    if is_native_windows():
+        return None
     stat_path = f"/proc/{pid}/stat"
     try:
         with open(stat_path, encoding="utf-8") as handle:
@@ -67,6 +78,7 @@ def process_start_identity(pid: int) -> str | None:
 
 
 def _pid_exists(pid: int) -> bool:
+    _require_process_inspection()
     if pid <= 0:
         return False
     try:

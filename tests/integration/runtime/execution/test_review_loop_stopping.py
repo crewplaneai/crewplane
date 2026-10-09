@@ -196,7 +196,7 @@ def test_rewording_handoff_does_not_count_as_a_source_change(
             CANDIDATE + " Still blocked.",
             CANDIDATE + " Acceptance is unavailable.",
         ],
-        {1: lambda: source.write_text("run()\n")},
+        {1: lambda: source.write_text("run()\n", encoding="utf-8", newline="\n")},
     )
     node = review_node()
     output = OutputManager("workflow", base_dir=tmp_path)

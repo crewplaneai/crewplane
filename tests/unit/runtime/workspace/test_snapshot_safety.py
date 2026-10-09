@@ -17,6 +17,7 @@ from crewplane.runtime.workspace.snapshot_scan import (
     snapshot_digest,
     snapshot_entries,
 )
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 
 
 @pytest.mark.skipif(os.name != "posix", reason="special-file checks are POSIX-only")
@@ -118,7 +119,7 @@ def test_snapshot_entries_rejects_directory_swap_before_descent(
         if target == directory.name:
             (directory / "inside.txt").unlink()
             directory.rmdir()
-            directory.symlink_to(outside, target_is_directory=True)
+            symlink_or_skip(directory, outside, target_is_directory=True)
         return real_open(target, flags, dir_fd=dir_fd)
 
     with (
@@ -131,6 +132,7 @@ def test_snapshot_entries_rejects_directory_swap_before_descent(
         snapshot_entries(tmp_path)
 
 
+@requires_posix
 def test_snapshot_fingerprints_preserve_encoding_order_and_exclusions(
     tmp_path: Path,
 ) -> None:
@@ -140,7 +142,7 @@ def test_snapshot_fingerprints_preserve_encoding_order_and_exclusions(
     (tmp_path / "nested").chmod(0o750)
     (tmp_path / "nested" / "empty").write_bytes(b"")
     (tmp_path / "nested" / "empty").chmod(0o600)
-    (tmp_path / "link").symlink_to("z.txt")
+    symlink_or_skip(tmp_path / "link", "z.txt")
     link_mode = stat.S_IMODE((tmp_path / "link").lstat().st_mode)
     expected = {
         "link": hashlib.sha256(
@@ -182,6 +184,7 @@ def test_snapshot_default_resource_limits_remain_unchanged() -> None:
     )
 
 
+@requires_posix
 @pytest.mark.parametrize("byte_limit", [0, 4])
 def test_snapshot_closes_owned_descriptors_after_success_and_failure(
     tmp_path: Path,

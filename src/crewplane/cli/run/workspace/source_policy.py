@@ -13,6 +13,9 @@ from crewplane.core.workflow.validation.workspace import (
     graph_safe_logical_workspace_selections,
     workflow_has_selected_managed_workspaces,
 )
+from crewplane.core.workflow.validation.workspace_diagnostics import (
+    WINDOWS_WORKSPACE_MESSAGE,
+)
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 
@@ -52,16 +55,12 @@ def collect_workspace_source_policy(
     settings = config.settings
     if not settings.workspace.enabled:
         return WorkspacePolicyCheck()
-    if not workflow_has_selected_managed_workspaces(workflow, config):
-        return WorkspacePolicyCheck()
-
     builder = WorkspacePolicyBuilder()
     if is_native_windows():
-        builder.errors.append(
-            "Workspace-enabled runs are not supported on native Windows. "
-            "Use WSL or a POSIX environment."
-        )
+        builder.errors.append(WINDOWS_WORKSPACE_MESSAGE)
         return builder.result()
+    if not workflow_has_selected_managed_workspaces(workflow, config):
+        return WorkspacePolicyCheck()
     if has_workspace_policy_errors(workflow, config):
         return builder.result()
 

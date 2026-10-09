@@ -14,9 +14,12 @@ from crewplane.core.workflow.validation.workspace import (
     logical_workspace_selections,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.core.workflow_composition.workflow_composition_imports_support import (
     write_import_workflow,
 )
+
+pytestmark = requires_workspace_support
 
 
 def _workspace_config(clean_start: str = "strict") -> Config:

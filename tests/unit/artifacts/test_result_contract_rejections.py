@@ -26,6 +26,7 @@ from crewplane.artifacts.results.selection import (
     ordered_task_ids,
 )
 from crewplane.artifacts.results.writer import ResultWriter
+from tests.helpers.platforms import symlink_or_skip
 
 
 @pytest.mark.parametrize(
@@ -87,8 +88,8 @@ def test_review_status_requires_consistent_producers_and_rounds(
 
 
 def test_dangling_review_status_directory_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "review-state").symlink_to(
-        tmp_path / "missing", target_is_directory=True
+    symlink_or_skip(
+        tmp_path / "review-state", tmp_path / "missing", target_is_directory=True
     )
 
     with pytest.raises(ReviewLoopStatusError, match="directory must not be a symlink"):

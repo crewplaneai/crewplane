@@ -4,9 +4,12 @@ import errno
 import json
 import os
 import tempfile
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
+
+from crewplane.core.platform import is_native_windows
 
 _TEMPORARY_SUFFIX = ".tmp"
 
@@ -41,8 +44,13 @@ def atomic_write_text(path: Path, content: str, ensure_parent: bool = True) -> P
 
 
 def atomic_write_bytes(path: Path, payload: bytes, ensure_parent: bool = True) -> Path:
-    if ensure_parent:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    with _publication_directory(path, ensure_parent):
+        return _replace_bytes(path, payload)
+
+
+def _replace_bytes(path: Path, payload: bytes) -> Path:
+    if os.name == "nt":
+        return _publish_windows_bytes(path, payload, replace=True)
     temp_path: Path | None = None
     publication_phase = "create temporary file"
     try:
@@ -84,8 +92,13 @@ def atomic_write_json_if_absent(
 def atomic_write_bytes_if_absent(
     path: Path, payload: bytes, ensure_parent: bool = True
 ) -> Path:
-    if ensure_parent:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    with _publication_directory(path, ensure_parent):
+        return _publish_bytes_if_absent(path, payload)
+
+
+def _publish_bytes_if_absent(path: Path, payload: bytes) -> Path:
+    if os.name == "nt":
+        return _publish_windows_bytes(path, payload, replace=False)
     temp_path: Path | None = None
     publication_phase = "create temporary file"
     try:
@@ -118,11 +131,44 @@ def atomic_write_bytes_if_absent(
                 temp_path.unlink()
 
 
+def _publish_windows_bytes(path: Path, payload: bytes, replace: bool) -> Path:
+    from crewplane.architecture.safe_files_windows import (
+        rename_contained_file,
+        replace_contained_file,
+        temporary_binary_file,
+    )
+    from crewplane.architecture.windows_file_handles import descriptor_identity
+
+    phase = "create temporary file"
+    try:
+        with temporary_binary_file(
+            path.parent, _temporary_name_prefix(path.name), _TEMPORARY_SUFFIX
+        ) as (temporary_path, stream):
+            phase = "write temporary file"
+            stream.write(payload)
+            stream.flush()
+            phase = "sync temporary file"
+            _fsync_file(stream.fileno())
+            identity = descriptor_identity(stream.fileno(), temporary_path)
+            stream.close()
+            phase = "replace target" if replace else "publish target link"
+            if replace:
+                rename_contained_file(temporary_path, path, identity)
+            else:
+                replace_contained_file(path.parent, (path.name,), temporary_path)
+            return path
+    except OSError as exc:
+        exc.add_note(f"Atomic publication failed for '{path}' during {phase}.")
+        raise
+
+
 def _fsync_file(file_descriptor: int) -> None:
     os.fsync(file_descriptor)
 
 
 def _fsync_directory(path: Path) -> None:
+    if is_native_windows():
+        return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         descriptor = os.open(path, flags)
@@ -147,3 +193,16 @@ def _directory_fsync_is_unsupported(error: OSError) -> bool:
         getattr(errno, "EOPNOTSUPP", errno.EINVAL),
     }
     return error.errno in unsupported_errnos
+
+
+@contextmanager
+def _publication_directory(path: Path, ensure_parent: bool) -> Iterator[None]:
+    if os.name == "nt":
+        from crewplane.architecture.safe_files_windows import protected_directory
+
+        with protected_directory(path.parent, create=ensure_parent):
+            yield
+        return
+    if ensure_parent:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    yield

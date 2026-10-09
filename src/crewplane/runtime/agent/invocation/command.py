@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Awaitable
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import BinaryIO, cast
@@ -13,9 +14,7 @@ from crewplane.architecture.contracts import (
     CommandResult,
     CommandRunner,
     InvocationContext,
-    InvocationDiagnosticSink,
     InvocationPlan,
-    InvocationProcessEvent,
     LogLevel,
 )
 from crewplane.core.platform import supports_posix_process_groups
@@ -27,29 +26,18 @@ from crewplane.runtime.workspace.state_evidence import (
 from ..process.drain import ProcessDrainError
 from ..process.runner import (
     build_retry_log_header,
-    close_log_handle,
     reap_failed_process,
     write_stdin_and_collect_output,
 )
-from ..process.stream_capture import ProcessOutputCapture
 from ..process.streams import drain_process_pipes, format_timeout_seconds
+from ..process.windows_launch import WindowsLaunch
 from ..workspace_environment import record_workspace_child_environment_applied
+from .command_lifecycle import (
+    CommandLifecycle,
+    command_io_result,
+    wait_for_command_io,
+)
 from .telemetry import emit_invocation_diagnostic
-
-
-@dataclass
-class _CommandLifecycle:
-    invocation_context: InvocationContext | None
-    process: asyncio.subprocess.Process | None = None
-    process_group_id: int | None = None
-    output_capture: ProcessOutputCapture | None = None
-    log_handle: BinaryIO | None = None
-
-    @property
-    def diagnostic_sink(self) -> InvocationDiagnosticSink | None:
-        if self.invocation_context is None:
-            return None
-        return self.invocation_context.diagnostics
 
 
 @dataclass(frozen=True)
@@ -69,14 +57,25 @@ def open_log_handle(
     append: bool,
     header_bytes: bytes | None = None,
 ) -> BinaryIO | None:
+    """Open a binary log, creating parents and flushing any header.
+
+    The caller owns the returned handle and must close it. Return None when
+    logging is disabled. Initialization failures close the handle and propagate
+    the original exception, even if closing also fails.
+    """
     if log_file is None:
         return None
     log_file.parent.mkdir(parents=True, exist_ok=True)
     mode = "ab" if append else "wb"
     handle = cast(BinaryIO, log_file.open(mode))
-    if header_bytes:
-        handle.write(header_bytes)
-        handle.flush()
+    try:
+        if header_bytes:
+            handle.write(header_bytes)
+            handle.flush()
+    except BaseException:
+        with suppress(BaseException):
+            handle.close()
+        raise
     return handle
 
 
@@ -91,7 +90,16 @@ async def run_command_once(
     idle_timeout_seconds: float | None,
     child_environment: ChildProcessEnvironment | None = None,
 ) -> CommandResult:
-    lifecycle = _CommandLifecycle(invocation_context)
+    """Run one child process, drain it, close its log, and report its exit.
+
+    Nonzero exits return normally. The caller must call cleanup_stream_files()
+    on the result after consuming its persisted streams. Execution failures
+    become RuntimeError; unconfirmed drain errors take precedence. Cancellation
+    is re-raised after cleanup, with any drain failure attached as its cause.
+    Log I/O, capture cleanup, and drain persistence finish before cancellation
+    propagates. Concurrent I/O failures remain attached to cancellation.
+    """
+    lifecycle = CommandLifecycle(invocation_context)
     request = _CommandExecutionRequest(
         cmd=cmd,
         stdin_data=stdin_data,
@@ -115,6 +123,7 @@ async def run_command_once(
         drain_error = await _handle_failed_command(lifecycle, exc)
         if drain_error is not None:
             exc.add_note(str(drain_error))
+            exc.__cause__ = drain_error
         raise
     except Exception as exc:
         drain_error = await _handle_failed_command(lifecycle, exc)
@@ -124,104 +133,138 @@ async def run_command_once(
             raise
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
-        active_exception = sys.exception()
-        close_log_handle(lifecycle.log_handle)
-        try:
-            _emit_process_exit(
-                invocation_context,
-                lifecycle.process,
-                lifecycle.process_group_id,
-            )
-        except Exception as exc:
-            if active_exception is None:
-                if lifecycle.output_capture is not None:
-                    lifecycle.output_capture.cleanup()
-                raise
-            active_exception.add_note(f"Provider process exit reporting failed: {exc}")
-
-    process = cast(asyncio.subprocess.Process, lifecycle.process)
-    output_capture = cast(ProcessOutputCapture, lifecycle.output_capture)
-    if process.returncode is None:
-        raise RuntimeError("Provider process finished without a return code.")
-    return CommandResult(
-        returncode=process.returncode,
-        stdout_text=output_capture.stdout_tail.decode(errors="replace"),
-        stderr_text=output_capture.stderr_tail.decode(errors="replace"),
-        stdout_path=output_capture.stdout.path,
-        stderr_path=output_capture.stderr.path,
-    )
+        await lifecycle.finalize(sys.exception())
+    return lifecycle.build_result()
 
 
 async def _execute_command(
-    lifecycle: _CommandLifecycle,
+    lifecycle: CommandLifecycle,
     request: _CommandExecutionRequest,
 ) -> None:
     start_new_session = supports_posix_process_groups()
-    process = await asyncio.create_subprocess_exec(
-        *request.cmd,
-        stdin=(
-            asyncio.subprocess.PIPE
+    if sys.platform == "win32":
+        lifecycle.windows_launch = WindowsLaunch()
+        process = await lifecycle.windows_launch.start(
+            request.cmd, request.cwd, _child_process_env(request.child_environment)
+        )
+    else:
+        process = await asyncio.create_subprocess_exec(
+            *request.cmd,
+            stdin=asyncio.subprocess.PIPE
             if request.stdin_data
-            else asyncio.subprocess.DEVNULL
-        ),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=request.cwd,
-        env=_child_process_env(request.child_environment),
-        start_new_session=start_new_session,
-    )
+            else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=request.cwd,
+            env=_child_process_env(request.child_environment),
+            start_new_session=start_new_session,
+        )
     lifecycle.process = process
     lifecycle.process_group_id = process.pid if start_new_session else None
     record_workspace_child_environment_applied(
         lifecycle.invocation_context,
         request.child_environment,
     )
-    _emit_process_started(
-        lifecycle.invocation_context,
-        process.pid,
-        lifecycle.process_group_id,
+    lifecycle.emit_started()
+    await _open_command_log(lifecycle, request)
+    if lifecycle.windows_launch is not None:
+        lifecycle.windows_launch.release()
+        lifecycle.output_capture = await lifecycle.windows_launch.collect(
+            request.stdin_data,
+            lifecycle.log_handle,
+            lifecycle.diagnostic_sink,
+            request.idle_timeout_seconds,
+        )
+    else:
+        lifecycle.output_capture = await write_stdin_and_collect_output(
+            process,
+            request.stdin_data,
+            lifecycle.log_handle,
+            lifecycle.diagnostic_sink,
+            lifecycle.process_group_id,
+            request.idle_timeout_seconds,
+        )
+    lifecycle.cleanup_confirmed = True
+    cancellation = await _persist_process_drain(lifecycle, None)
+    if cancellation is not None:
+        raise cancellation
+
+
+async def _open_command_log(
+    lifecycle: CommandLifecycle,
+    request: _CommandExecutionRequest,
+) -> None:
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            open_log_handle,
+            request.log_file,
+            append=request.append_log,
+            header_bytes=request.log_header,
+        )
     )
-    lifecycle.log_handle = open_log_handle(
-        request.log_file,
-        append=request.append_log,
-        header_bytes=request.log_header,
+    cancellation = await wait_for_command_io(task)
+    lifecycle.log_handle = command_io_result(task, cancellation)
+    if cancellation is not None:
+        raise cancellation
+
+
+async def _persist_process_drain(
+    lifecycle: CommandLifecycle,
+    error: ProcessDrainError | None,
+    cancellation: asyncio.CancelledError | None = None,
+) -> asyncio.CancelledError | None:
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            _record_process_drain_outcome,
+            lifecycle.invocation_context,
+            lifecycle.process,
+            lifecycle.process_group_id,
+            error,
+        )
     )
-    lifecycle.output_capture = await write_stdin_and_collect_output(
-        process,
-        request.stdin_data,
-        lifecycle.log_handle,
-        lifecycle.diagnostic_sink,
-        lifecycle.process_group_id,
-        request.idle_timeout_seconds,
-    )
-    _record_process_drain_success(
-        lifecycle.invocation_context,
-        process,
-        lifecycle.process_group_id,
-    )
+    cancellation = await wait_for_command_io(task, cancellation)
+    command_io_result(task, cancellation)
+    return cancellation
 
 
 async def _handle_failed_command(
-    lifecycle: _CommandLifecycle,
+    lifecycle: CommandLifecycle,
     failure: BaseException,
 ) -> ProcessDrainError | None:
-    drain_error = await _cleanup_failed_command(lifecycle)
+    cancellation = failure if isinstance(failure, asyncio.CancelledError) else None
+    drain_error, cancellation = await _cleanup_failed_command(lifecycle, cancellation)
     if drain_error is None and isinstance(failure, ProcessDrainError):
         drain_error = failure
-    _record_process_drain_outcome(
-        lifecycle.invocation_context,
-        lifecycle.process,
-        lifecycle.process_group_id,
-        drain_error,
-    )
+    cancellation = await _persist_process_drain(lifecycle, drain_error, cancellation)
+    if cancellation is not None and cancellation is not failure:
+        if drain_error is not None:
+            cancellation.add_note(str(drain_error))
+            cancellation.__cause__ = drain_error
+        raise cancellation
     return drain_error
 
 
 async def _cleanup_failed_command(
-    lifecycle: _CommandLifecycle,
+    lifecycle: CommandLifecycle,
+    cancellation: asyncio.CancelledError | None,
+) -> tuple[ProcessDrainError | None, asyncio.CancelledError | None]:
+    task = asyncio.create_task(_drain_failed_command(lifecycle))
+    cancellation = await wait_for_command_io(task, cancellation)
+    drain_error = command_io_result(task, cancellation)
+    cancellation = await lifecycle.cleanup_output(cancellation)
+    if drain_error is None:
+        lifecycle.cleanup_confirmed = True
+    return drain_error, cancellation
+
+
+async def _drain_failed_command(
+    lifecycle: CommandLifecycle,
 ) -> ProcessDrainError | None:
-    if lifecycle.process is not None:
-        try:
+    try:
+        if lifecycle.windows_launch is not None:
+            lifecycle.process = lifecycle.windows_launch.process
+            await lifecycle.windows_launch.drain()
+        if lifecycle.process is not None:
             await reap_failed_process(
                 lifecycle.process,
                 lifecycle.process_group_id,
@@ -232,12 +275,8 @@ async def _cleanup_failed_command(
                 lifecycle.diagnostic_sink,
                 lifecycle.process_group_id,
             )
-        except ProcessDrainError as exc:
-            if lifecycle.output_capture is not None:
-                lifecycle.output_capture.cleanup()
-            return exc
-    if lifecycle.output_capture is not None:
-        lifecycle.output_capture.cleanup()
+    except ProcessDrainError as exc:
+        return exc
     return None
 
 
@@ -282,10 +321,15 @@ def _workspace_state_path(
 
 
 def prepare_runtime_for_attempt(plan: InvocationPlan) -> None:
+    """Delete the plan's stale structured output before starting an attempt.
+
+    Missing or unconfigured output is harmless; other deletion errors propagate.
+    """
     prepare_structured_output_file(plan.structured_output_file)
 
 
 def prepare_structured_output_file(path: Path | None) -> None:
+    """Unlink configured structured output, ignoring absence but no other error."""
     if path is None:
         return
     path.unlink(missing_ok=True)
@@ -302,6 +346,13 @@ async def run_invocation_attempt(
     idle_timeout_seconds: float | None,
     child_environment: ChildProcessEnvironment | None,
 ) -> CommandResult:
+    """Run a zero-based attempt, using one-based receipts and retry log headers.
+
+    Attempt zero uses the plan header and truncates the log; retries append.
+    Return the runner's result unchanged, including its capture-file cleanup
+    obligations. Wall-clock timeout cancels and awaits the runner, emits a
+    diagnostic, and raises RuntimeError. Other errors and cancellation propagate.
+    """
     attempt_context = _context_for_attempt(invocation_context, attempt)
     attempt_result = command_runner(
         cmd=plan.cmd,
@@ -329,57 +380,6 @@ def _context_for_attempt(
     if invocation_context is None:
         return None
     return replace(invocation_context, attempt_num=zero_based_attempt + 1)
-
-
-def _emit_process_exit(
-    invocation_context: InvocationContext | None,
-    process: asyncio.subprocess.Process | None,
-    process_group_id: int | None,
-) -> None:
-    if invocation_context is None or process is None or process.returncode is None:
-        return
-    _emit_process_event(
-        invocation_context,
-        InvocationProcessEvent(
-            attempt=invocation_context.attempt_num,
-            pid=process.pid,
-            process_group_id=process_group_id,
-            status="exited",
-            returncode=process.returncode,
-        ),
-    )
-
-
-def _emit_process_started(
-    invocation_context: InvocationContext | None,
-    pid: int,
-    process_group_id: int | None,
-) -> None:
-    if invocation_context is None:
-        return
-    _emit_process_event(
-        invocation_context,
-        InvocationProcessEvent(
-            attempt=invocation_context.attempt_num,
-            pid=pid,
-            process_group_id=process_group_id,
-            status="started",
-        ),
-    )
-
-
-def _emit_process_event(
-    invocation_context: InvocationContext,
-    event: InvocationProcessEvent,
-) -> None:
-    if invocation_context.process_event_sink is None:
-        return
-    try:
-        invocation_context.process_event_sink(event)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Provider process {event.status} reporting failed: {exc}"
-        ) from exc
 
 
 def _retry_log_header(plan: InvocationPlan, attempt: int) -> bytes:

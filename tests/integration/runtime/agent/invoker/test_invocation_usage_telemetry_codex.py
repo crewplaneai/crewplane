@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import unittest
 from contextlib import suppress
 from pathlib import Path
@@ -16,8 +17,11 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.platform import is_native_windows
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import invoke_agent, invoke_agent_with_runner
+
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
 
 class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
@@ -253,7 +257,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
         fake_codex.chmod(0o755)
         diagnostics = []
         config = AgentConfig(
-            cli_cmd=[str(fake_codex), "exec"],
+            cli_cmd=[sys.executable, str(fake_codex), "exec"],
             provider_kind="codex",
             default_model="gpt-5.5",
             prompt_transport="stdin",
@@ -280,18 +284,25 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     invocation_context=context,
                     plan_builder=build_cli_invocation_plan,
                 ),
-                timeout=3.0,
+                timeout=8.0,
             )
         finally:
             if child_pid_file.exists():
                 child_pid = int(child_pid_file.read_text(encoding="utf-8"))
                 with suppress(ProcessLookupError):
-                    os.kill(child_pid, 9)
+                    try:
+                        os.kill(child_pid, 9)
+                    except OSError as exc:
+                        if (
+                            not is_native_windows()
+                            or getattr(exc, "winerror", None) != 87
+                        ):
+                            raise
 
         self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
         self.assertEqual(
             [diagnostic.operation for diagnostic in diagnostics],
-            ["process_pipe_drain_timeout"],
+            [] if is_native_windows() else ["process_pipe_drain_timeout"],
         )
         self.assertIn("response.completed", log_file.read_text(encoding="utf-8"))
 

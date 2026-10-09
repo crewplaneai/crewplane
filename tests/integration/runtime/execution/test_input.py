@@ -15,6 +15,7 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.input import execute_input_stage
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import symlink_or_skip
 
 
 def _plan(
@@ -160,7 +161,7 @@ def test_input_stage_rejects_symlinked_workspace_content(tmp_path: Path) -> None
     outside = tmp_path / "outside.txt"
     outside.write_bytes(payload)
     try:
-        workspace_file.symlink_to(outside)
+        symlink_or_skip(workspace_file, outside)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
@@ -196,7 +197,7 @@ def test_input_stage_rejects_symlinked_preflight_content(tmp_path: Path) -> None
     outside = tmp_path / "outside.txt"
     outside.write_bytes(payload)
     try:
-        static_file.symlink_to(outside)
+        symlink_or_skip(static_file, outside)
     except (NotImplementedError, OSError) as exc:
         pytest.skip(f"symlink creation is unavailable: {exc}")
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")

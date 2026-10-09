@@ -10,11 +10,13 @@ import pytest
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.runtime.workspace.service import worktree_failures
 from crewplane.runtime.workspace.state import read_workspace_state
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import make_workspace_source_snapshot
 
 type FailureRecorder = Callable[
     [WorkspaceSourceSnapshot, Path, Path | None, Exception], None
 ]
+
 
 pytestmark = pytest.mark.parametrize(
     ("record_failure", "status"),
@@ -23,6 +25,9 @@ pytestmark = pytest.mark.parametrize(
         (worktree_failures.record_cancelled_worktree_preparation, "cancelled"),
     ],
 )
+
+
+pytestmark = [pytestmark, requires_workspace_support]
 
 
 @pytest.fixture

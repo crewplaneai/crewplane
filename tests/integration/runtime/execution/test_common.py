@@ -17,6 +17,7 @@ from crewplane.runtime.execution.provider_call import publish_invocation_output
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,
 )
+from tests.helpers.platforms import requires_posix
 
 
 def _recovery_payload(
@@ -204,6 +205,7 @@ def test_large_runtime_recovery_is_disk_backed_and_closed(
     assert recovery_files[0].closed
 
 
+@requires_posix
 def test_runtime_recovery_descriptor_count_is_bounded() -> None:
 
     result = subprocess.run(

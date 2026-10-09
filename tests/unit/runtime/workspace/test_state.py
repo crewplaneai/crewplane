@@ -23,7 +23,10 @@ from crewplane.runtime.workspace.state import (
 )
 from crewplane.runtime.workspace.terminalization import publish_terminal_workspace_state
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("source_kind", ["project", "node", "candidate"])

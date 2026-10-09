@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from crewplane.core.platform import is_native_windows
+
 STATE_DIR_NAME = ".crewplane"
 EXECUTION_STAGES_DIR_NAME = "execution-stages"
 EXECUTION_RESULTS_DIR_NAME = "execution-results"
@@ -13,6 +15,9 @@ FILE_TOKEN_EXCLUDED_ROOTS = (*RUNTIME_ARTIFACT_ROOTS, f"{STATE_DIR_NAME}/preflig
 
 def is_reserved_state_path(path: str, reserved_roots: tuple[str, ...]) -> bool:
     """Match a project-relative POSIX path against reserved directory roots."""
+    if is_native_windows():
+        path = path.replace("\\", "/").casefold()
+        reserved_roots = tuple(root.casefold() for root in reserved_roots)
     return any(path == root or path.startswith(f"{root}/") for root in reserved_roots)
 
 
@@ -39,6 +44,8 @@ def resolve_state_file(
 
 def project_root_from_config_path(config_path: Path) -> Path:
     config_parent = config_path.resolve(strict=False).parent
-    if config_parent.name == STATE_DIR_NAME:
+    if (
+        config_parent.name.casefold() if is_native_windows() else config_parent.name
+    ) == STATE_DIR_NAME:
         return config_parent.parent
     return config_parent

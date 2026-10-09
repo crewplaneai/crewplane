@@ -13,9 +13,12 @@ from crewplane.runtime.workspace.cleanup import (
     WorkspaceCleanupFilter,
     cleanup_workspace_cache,
 )
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.runtime.workspace.cleanup_support import (
     cache_workspace_path,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_workspace_cache_preserves_multi_candidate_callback_order(

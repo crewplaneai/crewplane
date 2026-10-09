@@ -31,6 +31,7 @@ from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.isolated_git import run_git
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 
 LEGACY_PROMPT_FIELDS = {"prompt_arg", "quota_parser", "stdin_prompt_arg", "use_stdin"}
@@ -342,6 +343,7 @@ def initialized_templates(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return root
 
 
+@requires_workspace_support
 @pytest.mark.parametrize("relative_path", WORKFLOW_PATHS, ids=str)
 def test_initialized_workflow_compiles(
     initialized_templates: Path, relative_path: Path

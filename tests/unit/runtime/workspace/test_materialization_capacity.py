@@ -28,6 +28,7 @@ from crewplane.runtime.workspace.worktree.materialization import (
     materialize_worktree_workspace,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     file_sha256,
@@ -35,6 +36,8 @@ from tests.helpers.workspace_service import (
     run_git_text,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_runtime_and_preflight_use_the_same_tree_checkout_estimate(

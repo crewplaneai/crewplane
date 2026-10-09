@@ -58,8 +58,7 @@ def test_json_lines_keeps_first_record_when_tail_starts_on_line_boundary(
     log_path = tmp_path / "codex.log"
     keep_record = '{"message":"keep"}\n'
     log_path.write_text(
-        '{"message":"previous"}\n' + keep_record,
-        encoding="utf-8",
+        '{"message":"previous"}\n' + keep_record, encoding="utf-8", newline="\n"
     )
 
     snapshot = format_log_file(

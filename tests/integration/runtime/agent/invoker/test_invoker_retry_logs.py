@@ -13,6 +13,8 @@ from crewplane.runtime.agent.invoker import (
     invoke_agent,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

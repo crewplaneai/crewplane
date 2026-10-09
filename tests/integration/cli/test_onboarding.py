@@ -40,6 +40,8 @@ from crewplane.core.provider_names import known_provider_names
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest, write_run_manifest
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class WhichRecorder:
     def __init__(self, found: dict[str, str] | None = None) -> None:
@@ -158,7 +160,7 @@ def test_config_only_cli_state_is_reported_as_partial_on_rerun(
     workflow_path = tmp_path / WORKFLOW_RELATIVE_PATH
     config_text = render_provider_ready_config(rendered_default_config(), ("codex",))
     workflow_text = workflow_path.read_text(encoding="utf-8")
-    config_path.write_text(config_text, encoding="utf-8")
+    config_path.write_text(config_text, encoding="utf-8", newline="\n")
 
     output, which = run_onboarding_in_project(tmp_path)
 
@@ -378,8 +380,9 @@ def test_onboarding_selects_opencode_with_native_model_default(tmp_path):
 
 @pytest.mark.parametrize("select_all", [False, True])
 def test_onboarding_enables_multiple_selected_providers(
-    tmp_path: Path, select_all: bool
+    tmp_path: Path, select_all: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     initialize_default_project(tmp_path)
     write_successful_mock_history(tmp_path)
     available = known_provider_names()
@@ -645,7 +648,7 @@ def run_onboarding_in_project(
         root, stream, answers or [], selected_which, interactive, write_text
     )
     run_onboarding(options)
-    return stream.getvalue(), selected_which
+    return stream.getvalue().replace("\\", "/"), selected_which
 
 
 def make_options(
@@ -727,14 +730,18 @@ def test_generated_text_profile_validates_and_dry_runs_without_launch(
 ) -> None:
     initialize_default_project(tmp_path)
     (tmp_path / CONFIG_RELATIVE_PATH).write_text(
-        render_provider_ready_config(rendered_default_config(), (provider,))
+        render_provider_ready_config(rendered_default_config(), (provider,)),
+        encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / WORKFLOW_RELATIVE_PATH).write_text(
-        render_provider_ready_workflow(rendered_default_workflow(), (provider,))
+        render_provider_ready_workflow(rendered_default_workflow(), (provider,)),
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.chdir(tmp_path)
 
-    def find_provider(executable):
+    def find_provider(executable, path=None):  # noqa: ARG001
         assert executable in {"pi", "dsh", "env"}
         return "/usr/bin/env" if executable == "env" else f"/test/{executable}"
 

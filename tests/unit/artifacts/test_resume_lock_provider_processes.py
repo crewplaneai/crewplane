@@ -21,6 +21,7 @@ from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.naming import build_provider_process_state_filename
 from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION
 from crewplane.core.provider_process_state import ProviderProcessState
+from tests.helpers.platforms import requires_lock_recovery, symlink_or_skip
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -31,6 +32,8 @@ from tests.helpers.resume import (
 from tests.helpers.resume_locks import (
     FakeProcessInspector,
 )
+
+pytestmark = requires_lock_recovery
 
 
 def _write_provider_process_state(
@@ -732,7 +735,7 @@ def test_stale_lock_takeover_rejects_linked_provider_process_state(
     state_path.replace(outside_path)
     try:
         if link_kind == "symlink":
-            state_path.symlink_to(outside_path)
+            symlink_or_skip(state_path, outside_path)
         else:
             os.link(outside_path, state_path)
     except OSError as exc:

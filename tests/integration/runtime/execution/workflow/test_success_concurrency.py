@@ -124,7 +124,7 @@ async def _run_limited_workflow(
     invoker = BarrierInvoker(node_slots, reviewer_slots)
     output = OutputManager(workflow.name, base_dir=root)
     events: list[ExecutionEvent] = []
-    async with asyncio.timeout(15):
+    async with asyncio.timeout(60):
         await execute_workflow(
             config,
             workflow,

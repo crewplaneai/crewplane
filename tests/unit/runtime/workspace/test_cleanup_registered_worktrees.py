@@ -20,12 +20,15 @@ from crewplane.runtime.workspace.filesystem import (
 )
 from crewplane.runtime.workspace.worktree import cleanup as worktree_cleanup
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import workspace_plan
 from tests.unit.runtime.workspace.cleanup_support import (
     cache_workspace_path,
     cleanup_git_repo,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_remove_workspace_path_does_not_chmod_hardlinked_files(

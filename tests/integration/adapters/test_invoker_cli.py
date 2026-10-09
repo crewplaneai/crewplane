@@ -18,6 +18,7 @@ from crewplane.adapters.invokers.cli_invoker.providers.codex import (
 from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS, ProviderKind
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix
 
 
 def test_create_invoker_returns_default_invoker() -> None:
@@ -166,6 +167,7 @@ def test_machine_readable_provider_capabilities_supply_decoder_and_extractor() -
         assert capability.usage_decoder is None
 
 
+@pytest.mark.usefixtures("posix_cli_plans")
 def test_gemini_and_kilo_plans_enable_machine_readable_output() -> None:
     with patch.dict(os.environ, {"PATH": ""}):
         gemini_plan = build_cli_invocation_plan(
@@ -220,6 +222,8 @@ def test_codex_capability_owns_one_shot_capacity_retry() -> None:
     assert CAPABILITIES[ProviderKind.GENERIC].one_shot_failure_retry is None
 
 
+@requires_posix
+@pytest.mark.usefixtures("posix_cli_plans")
 def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
     tmp_path: Path,
 ) -> None:
@@ -227,14 +231,13 @@ def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
     tool_dir = Path(tmp_dir) / "tools"
     tool_dir.mkdir()
     executable = tool_dir / "provider"
-    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     expected_executable = executable.resolve(strict=True).as_posix()
     workspace_dir = Path(tmp_dir) / "workspace"
     workspace_dir.mkdir()
     (workspace_dir / "provider").write_text(
-        "#!/bin/sh\nexit 99\n",
-        encoding="utf-8",
+        "#!/bin/sh\nexit 99\n", encoding="utf-8", newline="\n"
     )
 
     with patch.dict(os.environ, {"PATH": tool_dir.as_posix()}):
@@ -248,6 +251,7 @@ def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
     assert plan.cmd[0] == expected_executable
 
 
+@pytest.mark.usefixtures("posix_cli_plans")
 def test_invocation_plan_preserves_missing_bare_cli_executable() -> None:
     with patch.dict(os.environ, {"PATH": ""}):
         plan = build_cli_invocation_plan(
@@ -260,7 +264,11 @@ def test_invocation_plan_preserves_missing_bare_cli_executable() -> None:
     assert plan.cmd[0] == "missing-provider"
 
 
-def test_invocation_plan_preserves_relative_path_cli_executable(tmp_path: Path) -> None:
+@pytest.mark.usefixtures("posix_cli_plans")
+def test_invocation_plan_preserves_relative_path_cli_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     tmp_dir = mkdtemp(dir=tmp_path)
     tool_dir = Path(tmp_dir) / "tools"
     tool_dir.mkdir()
@@ -282,10 +290,11 @@ def test_invocation_plan_preserves_relative_path_cli_executable(tmp_path: Path) 
     assert plan.cmd[0] == relative_executable
 
 
+@pytest.mark.usefixtures("posix_cli_plans")
 @pytest.mark.parametrize("executable", ["tools/provider", r"tools\provider"])
 def test_invocation_plan_preserves_both_relative_path_separators(executable):
     with patch(
-        "crewplane.adapters.invokers.cli_invoker.commands.shutil.which"
+        "crewplane.adapters.invokers.cli_invoker.command_resolution.shutil.which"
     ) as which:
         plan = build_cli_invocation_plan(
             AgentConfig(cli_cmd=[executable]), None, "prompt", Path("output.md")

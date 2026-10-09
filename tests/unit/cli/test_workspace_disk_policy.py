@@ -9,7 +9,10 @@ import pytest
 from crewplane.cli.run.workspace import disk_policy as workspace_disk_policy
 from crewplane.cli.run.workspace import source_policy as policy
 from crewplane.core.config import Settings
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_source_policy import git_source_context
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_disk_fail_threshold_blocks_preflight(

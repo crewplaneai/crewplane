@@ -37,6 +37,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.workflow_runner_support import (
     mock_runner_config,
@@ -424,6 +425,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
+    @requires_workspace_support
     async def test_workspace_enabled_input_only_run_skips_managed_workspace(
         self,
     ) -> None:

@@ -17,6 +17,7 @@ from crewplane.artifacts.locks.manifest import (
     read_owner_manifest,
     safe_owner_manifest_path,
 )
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_SIGNATURE,
@@ -144,7 +145,7 @@ def test_containment_helpers_reject_escape_and_symlink(tmp_path: Path) -> None:
 
     linked = root / "linked"
     try:
-        linked.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(linked, outside, target_is_directory=True)
     except OSError:
         pytest.skip("symlink creation is unavailable")
     with pytest.raises(LockManifestError, match="contains a symlink"):

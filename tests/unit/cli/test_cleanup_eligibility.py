@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 import crewplane.cli.workspace_cleanup.eligibility as cleanup_eligibility
 from crewplane.cli.app import app
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     make_run_manifest,
     write_run_manifest,
@@ -19,6 +20,8 @@ from tests.unit.cli.cleanup_support import (
     resolve_workspace_cleanup_context,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_cleanup_workspaces_yes_retains_active_run_assets(tmp_path: Path) -> None:

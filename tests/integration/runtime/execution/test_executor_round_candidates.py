@@ -37,6 +37,7 @@ from crewplane.runtime.execution.review_loop.types import (
 )
 from crewplane.runtime.workspace.invocation import invocation_slug
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.integration.runtime.execution.review_loop_rounds_support import (
     make_review_node,
@@ -269,9 +270,11 @@ def test_executor_round_distinguishes_missing_output_from_unsafe_output(
         if output_state == "directory":
             call.output_file.mkdir()
         elif output_state == "dangling_symlink":
-            call.output_file.symlink_to(tmp_path / "missing-target")
+            symlink_or_skip(call.output_file, tmp_path / "missing-target")
         elif output_state in {"published", "unbound"}:
-            call.output_file.write_text("Candidate body", encoding="utf-8")
+            call.output_file.write_text(
+                "Candidate body", encoding="utf-8", newline="\n"
+            )
             if output_state == "published":
                 runtime_context.runtime_publications.publish(
                     call.output_file, file_size_and_sha256(call.output_file)

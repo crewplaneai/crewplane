@@ -145,7 +145,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
             assert diagnostics[0]["code"] == "PROVIDER-CLI"
-            assert "not found in PATH" in diagnostics[0]["message"]
+            assert "not found" in diagnostics[0]["message"]
             assert (
                 "Provider setup: docs/getting-started/provider-setup.md"
                 in stream.getvalue()

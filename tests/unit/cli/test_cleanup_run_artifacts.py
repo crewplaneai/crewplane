@@ -8,6 +8,7 @@ import pytest
 from crewplane.artifacts.manager import OutputManager
 from crewplane.cli.workspace_cleanup.run_artifacts import load_workspace_manifest
 from crewplane.observability.run_summary.workspace_readers import workspace_descriptor
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import make_run_manifest
 
 
@@ -54,7 +55,7 @@ def test_manifest_symlink_is_unsafe_for_cleanup_and_skipped_by_summary(tmp_path)
     path = output.write_run_manifest(manifest)
     target = tmp_path / "outside.json"
     path.rename(target)
-    path.symlink_to(target)
+    symlink_or_skip(path, target)
     loaded = load_workspace_manifest(
         output.stages_dir.parent.parent, output.run_key_name
     )

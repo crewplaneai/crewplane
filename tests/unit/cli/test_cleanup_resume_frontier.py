@@ -11,6 +11,7 @@ from crewplane.cli.app import app
 from crewplane.cli.workspace_cleanup.context import cleanup_repository_id
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -30,6 +31,8 @@ from tests.unit.cli.cleanup_support import (
     cleanup_project,
     run_cleanup_git,
 )
+
+pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize("moved_temporary_ref", [False, True])

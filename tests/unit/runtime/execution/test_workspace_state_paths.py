@@ -27,11 +27,14 @@ from crewplane.runtime.workspace.worktree.types import (
     WorktreeSourceRef,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
     workspace_plan,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_artifact_allowlist_empty_without_managed_workspace(

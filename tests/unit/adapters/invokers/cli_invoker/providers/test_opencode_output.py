@@ -15,6 +15,8 @@ from tests.helpers.opencode import (
     text_event,
 )
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 def extract(stdout: str, stderr: str = ""):
     return extract_opencode_output(CommandResult(0, stdout, stderr), None)
@@ -254,7 +256,9 @@ def test_top_level_error_after_text_prevents_publication():
 def test_captured_stdout_is_authoritative_and_borrowed(tmp_path, contents, expected):
     capture = tmp_path / "stdout.jsonl"
     capture.write_text(
-        contents + (stream({"type": "unknown"}) * 300 if contents.strip() else "")
+        contents + (stream({"type": "unknown"}) * 300 if contents.strip() else ""),
+        encoding="utf-8",
+        newline="\n",
     )
     before = capture.read_bytes()
     result = extract_opencode_output(

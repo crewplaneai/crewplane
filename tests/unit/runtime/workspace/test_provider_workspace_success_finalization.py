@@ -24,6 +24,7 @@ from crewplane.runtime.execution.runtime_context import (
     DeferredAsyncCleanupRegistry,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -34,6 +35,8 @@ from tests.unit.runtime.workspace.service_provider_invocation_support import (
     SlowSuccessfulWorkspace,
     wait_for_workspace_cancellation,
 )
+
+pytestmark = requires_workspace_support
 
 
 def test_workspace_success_finalization_waits_after_cancellation() -> None:

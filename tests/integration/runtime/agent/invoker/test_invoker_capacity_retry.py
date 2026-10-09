@@ -18,6 +18,8 @@ from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
     @pytest.fixture(autouse=True)

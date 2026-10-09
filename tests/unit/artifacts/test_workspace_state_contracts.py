@@ -12,6 +12,7 @@ from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_is_valid,
 )
 from crewplane.core.workspace.invocation_identity import invocation_slug
+from tests.helpers.platforms import requires_workspace_support
 from tests.unit.artifacts.workspace_state_contracts_support import (
     OID_C,
     OID_D,
@@ -19,6 +20,8 @@ from tests.unit.artifacts.workspace_state_contracts_support import (
     valid_snapshot_payload,
     valid_worktree_payload,
 )
+
+pytestmark = requires_workspace_support
 
 DELETE: Final = object()
 

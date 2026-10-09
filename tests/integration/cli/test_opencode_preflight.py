@@ -16,6 +16,8 @@ from crewplane.cli.onboarding.rendering import (
 from crewplane.cli.project_init import initialize_project_templates
 from crewplane.core.config import load_config
 
+pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
@@ -117,7 +119,9 @@ def test_invalid_resolved_models_fail_preflight(
             path.read_text().replace(
                 "cli_cmd: [opencode, run]",
                 f"cli_cmd: [opencode, run]\n    default_model: {json.dumps(model)}",
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
     else:
         path = project / "workflows/single-agent-review.task.md"
@@ -125,11 +129,15 @@ def test_invalid_resolved_models_fail_preflight(
             path.read_text().replace(
                 "providers: [opencode]",
                 f"providers: [{{provider: opencode, model: {json.dumps(model)}}}]",
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
     result = CliRunner().invoke(cli.app, arguments)
     assert result.exit_code != 0
-    assert "OpenCode option '--model' requires a nonblank value." in result.output
+    assert "OpenCode option '--model' requires a nonblank value." in " ".join(
+        result.output.split()
+    )
     assert "ses_private" not in result.output
     assert not list((project / "execution-results").glob("**/*.md"))
     assert not list((project / "execution-stages").glob("*/manifest.json"))
