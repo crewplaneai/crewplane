@@ -54,9 +54,14 @@ async def write_stdin(
 ) -> None:
     if stdin_data is None or process.stdin is None:
         return
-    process.stdin.write(stdin_data)
-    await process.stdin.drain()
-    process.stdin.close()
+    try:
+        process.stdin.write(stdin_data)
+        await process.stdin.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        # Early child exits must still allow output and exit-status collection.
+        pass
+    finally:
+        process.stdin.close()
 
 
 async def write_stdin_and_collect_output(

@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import replace
 from threading import Event, Thread
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -23,6 +23,8 @@ from crewplane.runtime.agent.process.streams import (
     signal_log_queue_complete,
     watch_log_writer_status,
     watch_process_idle_timeout,
+    write_stdin,
+    write_stdin_and_collect_output,
 )
 from tests.helpers.workspace_service import workspace_invocation_context
 
@@ -114,6 +116,76 @@ def test_completed_process_preserves_writer_error_and_drains_remaining_bytes() -
         assert raised.value is error
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("returncode", [0, 7])
+def test_early_exit_preserves_output_when_stdin_is_closed(returncode: int) -> None:
+    async def scenario() -> None:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sys; "
+            "sys.stdout.buffer.write(b'stdout line\\n'); "
+            "sys.stderr.buffer.write(b'stderr line\\n'); "
+            f"sys.exit({returncode})",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)
+            log = io.BytesIO()
+            capture = await asyncio.wait_for(
+                write_stdin_and_collect_output(process, b"prompt", log),
+                timeout=5,
+            )
+            try:
+                assert process.returncode == returncode
+                assert capture.stdout.path.read_bytes() == b"stdout line\n"
+                assert capture.stderr.path.read_bytes() == b"stderr line\n"
+                assert b"stdout line\n" in log.getvalue()
+                assert b"[stderr] stderr line\n" in log.getvalue()
+            finally:
+                capture.cleanup()
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("operation", ["write", "drain"])
+@pytest.mark.parametrize("error_type", [BrokenPipeError, ConnectionResetError])
+def test_write_stdin_tolerates_closed_pipe(
+    operation: str, error_type: type[OSError]
+) -> None:
+    process = Mock(
+        spec=asyncio.subprocess.Process, stdin=Mock(spec=asyncio.StreamWriter)
+    )
+    getattr(process.stdin, operation).side_effect = error_type("stdin closed")
+
+    asyncio.run(write_stdin(process, b"prompt"))
+
+    process.stdin.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("operation", ["write", "drain"])
+@pytest.mark.parametrize("error_type", [OSError, asyncio.CancelledError])
+def test_write_stdin_closes_pipe_and_preserves_other_errors(
+    operation: str, error_type: type[BaseException]
+) -> None:
+    process = Mock(
+        spec=asyncio.subprocess.Process, stdin=Mock(spec=asyncio.StreamWriter)
+    )
+    error = error_type("stdin failed")
+    getattr(process.stdin, operation).side_effect = error
+
+    with pytest.raises(error_type) as raised:
+        asyncio.run(write_stdin(process, b"prompt"))
+
+    assert raised.value is error
+    process.stdin.close.assert_called_once_with()
 
 
 def test_finished_stream_failure_propagates_after_both_tasks_settle() -> None:
