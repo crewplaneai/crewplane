@@ -313,7 +313,9 @@ def main() -> None:
     os.chdir(project)
     result = capture(project)
     args.output.resolve().write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
 

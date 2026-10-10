@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -148,3 +148,46 @@ def test_summary_normalization_preserves_bytes_around_parallel_rows(
     assert probe.normalized_summary(text, tmp_path, "run") == (
         "Parallel:\r\n- `fanout` / a\r\n- `fanout` / z\r\n\r\nOther\r\n"
     )
+
+
+@pytest.mark.parametrize("default_newline", ["\n", "\r\n"])
+def test_probe_writes_lf_json_without_changing_captured_newlines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, default_newline: str
+) -> None:
+    project = tmp_path / "project"
+    output = tmp_path / "capture.json"
+    payload = {"output": "café\r\ncontrol-Z\x1a\n"}
+    capture = Mock(return_value=payload)
+    write_text = Path.write_text
+
+    def write_with_platform_newline(
+        path: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        return write_text(
+            path,
+            data,
+            encoding,
+            errors,
+            default_newline if newline is None else newline,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        probe.sys,
+        "argv",
+        ["platform_boundary_probe", "--project", str(project), "--output", str(output)],
+    )
+    monkeypatch.setattr(probe, "capture", capture)
+    monkeypatch.setattr(Path, "write_text", write_with_platform_newline)
+
+    probe.main()
+
+    serialized = output.read_bytes()
+    assert b"\r" not in serialized
+    assert serialized.endswith(b"\n")
+    assert json.loads(serialized) == payload
+    capture.assert_called_once_with(project)
