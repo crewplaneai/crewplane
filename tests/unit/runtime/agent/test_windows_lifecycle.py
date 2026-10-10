@@ -12,12 +12,13 @@ from crewplane.architecture.contracts import InvocationContext
 from crewplane.architecture.ports.artifacts import ProviderProcessInvocation
 from crewplane.artifacts import OutputManager
 from crewplane.runtime.agent.invocation import command
-from crewplane.runtime.agent.process import windows_launch
+from crewplane.runtime.agent.process import posix_session, session, windows_launch
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     unconfirmed_process_cleanup,
 )
 from crewplane.runtime.agent.process.stream_capture import ProcessOutputCapture
+from tests.helpers.process_sessions import windows_session_stub
 
 
 @pytest.fixture
@@ -25,7 +26,9 @@ def launch(monkeypatch):
     job = Mock()
     job.active_process_count.return_value = 0
     monkeypatch.setattr(windows_launch, "WindowsJob", Mock(return_value=job))
-    return windows_launch.WindowsLaunch()
+    launch = windows_launch.WindowsLaunch()
+    launch.job = job
+    return launch
 
 
 def test_assignment_precedes_gate_and_preserves_environment(
@@ -110,11 +113,13 @@ def test_failed_startup_does_not_publish_exit_without_start(
         process.returncode = 1
 
     process.kill = Mock(side_effect=kill)
-    monkeypatch.setattr(command, "WindowsLaunch", Mock(return_value=launch))
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+        session, "process_session", Mock(return_value=windows_session_stub(launch))
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(
+        session, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+    )
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     if failure == "assignment":
         launch.job.assign.side_effect = OSError("assignment failed")
 
@@ -220,3 +225,36 @@ def test_wrapped_cancellation_keeps_cleanup_evidence(launch):
     evidence.__context__ = outer
     assert unconfirmed_process_cleanup(outer) is evidence
     assert unconfirmed_process_cleanup(ValueError("normal")) is None
+
+
+@pytest.mark.parametrize(
+    "failure", [OSError("job unavailable"), FileNotFoundError("job unavailable")]
+)
+def test_job_creation_failure_keeps_startup_classification_without_cleanup_evidence(
+    tmp_path, monkeypatch, failure
+):
+    monkeypatch.setattr(session, "process_session", windows_launch.WindowsLaunch)
+    monkeypatch.setattr(windows_launch, "WindowsJob", Mock(side_effect=failure))
+    spawn = AsyncMock(side_effect=AssertionError("must create job before spawning"))
+    monkeypatch.setattr(windows_launch.asyncio, "create_subprocess_exec", spawn)
+    events = Mock()
+    context = InvocationContext(
+        "node", "task", "generic", "executor", process_event_sink=events
+    )
+
+    async def check():
+        with pytest.raises(RuntimeError) as caught:
+            await command.run_command_once(
+                ["provider.exe"], None, None, False, None, tmp_path, context, None
+            )
+        assert str(caught.value) == (
+            "CLI executable not found: provider.exe"
+            if isinstance(failure, FileNotFoundError)
+            else "Execution error: job unavailable"
+        )
+        assert caught.value.__cause__ is failure
+        assert unconfirmed_process_cleanup(caught.value) is None
+
+    asyncio.run(check())
+    spawn.assert_not_called()
+    events.assert_not_called()

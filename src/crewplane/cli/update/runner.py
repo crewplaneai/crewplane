@@ -11,7 +11,7 @@ from typing import cast
 
 from rich.console import Console
 
-from crewplane.core.platform import is_native_windows
+from crewplane.core import platform
 
 from .detection import resolve_update_plan
 from .types import (
@@ -50,7 +50,7 @@ def update_crewplane(
     context: UpdateContext | None = None,
 ) -> int:
     """Delegate an update to the manager that owns the active installation."""
-    if is_native_windows():
+    if not platform.support_policy().native_self_update:
         raise UpdateError(
             "Native Windows self-update is unsupported. Update Crewplane through "
             "the pip or uv installation that owns it."

@@ -4,8 +4,8 @@ import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
+from crewplane.core import platform
 from crewplane.core.config import Config, Settings
-from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.core.workflow.validation.workspace import (
@@ -56,7 +56,7 @@ def collect_workspace_source_policy(
     if not settings.workspace.enabled:
         return WorkspacePolicyCheck()
     builder = WorkspacePolicyBuilder()
-    if is_native_windows():
+    if not platform.support_policy().managed_workspaces:
         builder.errors.append(WINDOWS_WORKSPACE_MESSAGE)
         return builder.result()
     if not workflow_has_selected_managed_workspaces(workflow, config):

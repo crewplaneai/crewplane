@@ -9,6 +9,7 @@ from typing import BinaryIO, cast
 
 from crewplane.architecture.contracts import InvocationDiagnosticSink
 
+from . import runner, streams
 from .drain import (
     PROCESS_GROUP_KILL_GRACE_SECONDS,
     PROCESS_GROUP_TERM_GRACE_SECONDS,
@@ -31,15 +32,20 @@ class WindowsLaunch:
     """
 
     def __init__(self) -> None:
-        """Create the Job Object before spawning any process."""
-        self.job = WindowsJob()
+        """Install ownership before startup acquires any native resources."""
+        self.job: WindowsJob | None = None
+        self.process_group_id: int | None = None
         self.process: asyncio.subprocess.Process | None = None
         self.assigned = False
         self.released = False
         self.cleanup_confirmed = False
 
     async def start(
-        self, command: list[str], cwd: Path, environment: dict[str, str] | None
+        self,
+        command: list[str],
+        cwd: Path,
+        environment: dict[str, str] | None,
+        stdin_data: bytes | None = None,
     ) -> asyncio.subprocess.Process:
         """Spawn a gated helper and assign it before returning.
 
@@ -47,6 +53,8 @@ class WindowsLaunch:
         in process for caller-owned draining without assigning or releasing it.
         Spawn failures take precedence over deferred cancellation.
         """
+        del stdin_data
+        self.job = WindowsJob()
         task = _spawn_helper(command, cwd, environment)
         cancellation = await _wait_for_owned_task(task)
         self.process = task.result()
@@ -150,8 +158,9 @@ class WindowsLaunch:
         )
 
     def _terminate_process_tree(self, process: asyncio.subprocess.Process) -> None:
-        if self.job.active_process_count():
-            self.job.terminate()
+        job = cast(WindowsJob, self.job)
+        if job.active_process_count():
+            job.terminate()
         if not self.assigned and process.returncode is None:
             process.kill()
 
@@ -160,7 +169,10 @@ class WindowsLaunch:
     ) -> bool:
         deadline = asyncio.get_running_loop().time() + timeout
         while asyncio.get_running_loop().time() < deadline:
-            if process.returncode is not None and self.job.active_process_count() == 0:
+            if (
+                process.returncode is not None
+                and cast(WindowsJob, self.job).active_process_count() == 0
+            ):
                 return True
             await asyncio.sleep(0.01)
         return False
@@ -183,7 +195,45 @@ class WindowsLaunch:
         Call after drain, including failed drain attempts. Native close errors
         propagate; capture-file ownership is unaffected.
         """
-        self.job.close()
+        if self.job is not None:
+            self.job.close()
+
+    async def drain_failed(self, diagnostics: InvocationDiagnosticSink | None) -> None:
+        await self.drain()
+        if self.process is not None:
+            await runner.reap_failed_process(self.process, None, diagnostics)
+            await streams.drain_process_pipes(self.process, diagnostics, None)
+
+    def can_report_completion(self, cleanup_confirmed: bool) -> bool:
+        return cleanup_confirmed and self.assigned
+
+    def prepare_finalization(
+        self, active_exception: BaseException | None, cleanup_confirmed: bool
+    ) -> None:
+        if self.job is not None and not cleanup_confirmed:
+            cleanup_error = self.cleanup_error(
+                "Windows provider cleanup was interrupted before confirmation."
+            )
+            if active_exception is not None:
+                active_exception.__cause__ = cleanup_error
+
+    def finalization_requires_capture_cleanup(
+        self, active_exception: BaseException | None
+    ) -> bool:
+        return self.job is not None or active_exception is None
+
+    def handle_finalization_error(
+        self, error: Exception, active_exception: BaseException | None
+    ) -> None:
+        if self.job is not None:
+            cleanup_error = self.cleanup_error(
+                f"Provider cleanup reporting failed: {error}"
+            )
+            if not isinstance(active_exception, asyncio.CancelledError):
+                raise cleanup_error from error
+            active_exception.__cause__ = cleanup_error
+        if active_exception is None:
+            raise error
 
 
 def _spawn_helper(

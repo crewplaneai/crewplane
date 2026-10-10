@@ -6,16 +6,12 @@ import pytest
 
 @pytest.fixture
 def posix_cli_plans(monkeypatch: pytest.MonkeyPatch) -> None:
-    from crewplane.adapters.invokers import cli
-    from crewplane.adapters.invokers.cli_invoker import (
-        capabilities,
-        command_resolution,
-        commands,
+    from crewplane.adapters.invokers.cli_invoker import command_strategy
+    from crewplane.adapters.invokers.cli_invoker.command_posix import (
+        PosixCommandStrategy,
     )
-    from crewplane.cli.onboarding import detection
 
-    for module in (cli, capabilities, command_resolution, commands, detection):
-        monkeypatch.setattr(module, "is_native_windows", lambda: False)
+    monkeypatch.setattr(command_strategy, "command_strategy", PosixCommandStrategy)
 
 
 @pytest.fixture(autouse=True)

@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from crewplane.adapters.invokers.cli import collect_cli_request_errors
+from crewplane.adapters.invokers.cli_invoker import command_strategy
 from crewplane.adapters.invokers.cli_invoker.capability import CliInvocationRequest
 from crewplane.adapters.invokers.cli_invoker.providers.deepseek import DEEPSEEK
 from crewplane.core.config import AgentConfig, Config
@@ -26,6 +27,7 @@ def request(command=None, environment=None, **config_values) -> CliInvocationReq
         environment={"DSH_PERMISSION_MODE": "danger-full-access"}
         if environment is None
         else environment,
+        command_strategy=command_strategy.command_strategy(),
     )
 
 

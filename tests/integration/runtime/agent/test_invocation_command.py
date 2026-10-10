@@ -69,7 +69,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "crewplane.runtime.agent.invocation.command.supports_posix_process_groups",
+            "crewplane.runtime.agent.process.posix_session.supports_posix_process_groups",
             return_value=False,
         ):
             result = await run_command_once(

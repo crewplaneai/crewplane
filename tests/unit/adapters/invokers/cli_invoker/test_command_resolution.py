@@ -4,10 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.command_resolution import (
-    ResolvedCommand,
-    resolve_command,
-)
+from crewplane.adapters.invokers.cli_invoker.command_posix import resolve_command
+from crewplane.adapters.invokers.cli_invoker.command_types import ResolvedCommand
 from tests.helpers.platforms import requires_posix
 
 pytestmark = [requires_posix, pytest.mark.usefixtures("posix_cli_plans")]

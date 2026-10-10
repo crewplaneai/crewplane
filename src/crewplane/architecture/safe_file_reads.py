@@ -4,39 +4,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager
 from pathlib import Path
 
-from .safe_files import (
-    contained_regular_file,
-    is_safe_relative_path,
-    is_single_link_regular_file,
-)
+from . import safe_file_operations
+from .safe_file_paths import is_safe_relative_path
 
 
-@contextmanager
-def open_regular_file(path: Path) -> Iterator[int]:
-    if os.name == "nt":
-        from .safe_files_windows import open_regular_file as open_windows_file
-
-        with open_windows_file(path) as descriptor:
-            yield descriptor
-        return
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_BINARY", 0)
-    )
-    descriptor = os.open(path, flags)
-    try:
-        if not is_single_link_regular_file(os.fstat(descriptor)):
-            raise ValueError(
-                f"Protected source must be a single-link regular file: {path}"
-            )
-        yield descriptor
-    finally:
-        os.close(descriptor)
+def open_regular_file(path: Path) -> AbstractContextManager[int]:
+    return safe_file_operations.safe_file_operations().open_regular_file(path)
 
 
 def stable_file_signature(
@@ -48,9 +24,7 @@ def stable_file_signature(
         metadata.st_ino,
         metadata.st_size,
         metadata.st_mtime_ns,
-        int(getattr(metadata, "st_birthtime_ns"))  # noqa: B009 - Windows-only stat field.
-        if os.name == "nt"
-        else metadata.st_ctime_ns,
+        safe_file_operations.safe_file_operations().signature_timestamp(metadata),
         metadata.st_nlink,
     )
 
@@ -66,31 +40,12 @@ def bounded_file_chunks(descriptor: int) -> Iterator[bytes]:
         raise ValueError("Source was truncated while reading protected file bytes.")
 
 
-@contextmanager
-def _open_destination(path: Path) -> Iterator[int]:
-    if os.name == "nt":
-        from .safe_files_windows import open_writable_file
-
-        with open_writable_file(path) as descriptor:
-            yield descriptor
-        return
-    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
-    try:
-        if not is_single_link_regular_file(os.fstat(descriptor)):
-            raise ValueError(
-                f"Copy destination is not a single-link regular file: {path}"
-            )
-        os.ftruncate(descriptor, 0)
-        yield descriptor
-    finally:
-        os.close(descriptor)
-
-
 def copy_regular_file(source: Path, destination: Path) -> None:
     with (
         open_regular_file(source) as descriptor,
-        _open_destination(destination) as target,
+        safe_file_operations.safe_file_operations().open_destination(
+            destination
+        ) as target,
     ):
         initial = stable_file_signature(os.fstat(descriptor))
         for chunk in bounded_file_chunks(descriptor):
@@ -112,10 +67,9 @@ def read_contained_bytes(
     if not is_safe_relative_path(relative_path):
         raise ValueError("Contained paths must be safe relative POSIX paths.")
     path = root.joinpath(*relative_path.split("/"))
-    if os.name != "nt" and contained_regular_file(root, relative_path) is None:
-        path.lstat()
-        raise ValueError(f"Contained source is missing or unsafe: {path}")
-    with open_regular_file(path) as descriptor:
+    with safe_file_operations.safe_file_operations().open_contained_file(
+        root, relative_path
+    ) as descriptor:
         initial = os.fstat(descriptor)
         limit = (
             initial.st_size if max_bytes is None else min(max_bytes, initial.st_size)

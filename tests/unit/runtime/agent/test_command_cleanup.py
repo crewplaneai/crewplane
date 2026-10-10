@@ -8,11 +8,18 @@ import pytest
 
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.runtime.agent.invocation import command
-from crewplane.runtime.agent.process import drain
+from crewplane.runtime.agent.process import (
+    drain,
+    posix_session,
+    runner,
+    session,
+    streams,
+)
 from crewplane.runtime.agent.process.stream_capture import (
     ProcessOutputCapture,
     ProcessStreamCapture,
 )
+from tests.helpers.process_sessions import windows_session_stub
 
 
 @pytest.mark.parametrize("stage", ["terminate", "pipes", "windows"])
@@ -45,13 +52,13 @@ def test_process_cleanup_finishes_before_cancellation_and_persistence(
         process.returncode = -9
 
     process.terminate, process.kill = terminate, kill
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(
         command.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
     )
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
     monkeypatch.setattr(
-        command, "write_stdin_and_collect_output", AsyncMock(side_effect=failure)
+        runner, "write_stdin_and_collect_output", AsyncMock(side_effect=failure)
     )
 
     def confirmed(*args):
@@ -97,9 +104,9 @@ def test_process_cleanup_finishes_before_cancellation_and_persistence(
             if drain_fails:
                 raise drain_error
 
-        monkeypatch.setattr(command, "drain_process_pipes", pipes)
+        monkeypatch.setattr(streams, "drain_process_pipes", pipes)
         monkeypatch.setattr(
-            command,
+            session,
             "sys",
             SimpleNamespace(
                 platform="win32" if stage == "windows" else "linux",
@@ -116,7 +123,11 @@ def test_process_cleanup_finishes_before_cancellation_and_persistence(
                 cleanup_error=Mock(return_value=drain_error),
                 close=Mock(side_effect=lambda: order.append("job-close")),
             )
-            monkeypatch.setattr(command, "WindowsLaunch", Mock(return_value=launch))
+            monkeypatch.setattr(
+                session,
+                "process_session",
+                Mock(return_value=windows_session_stub(launch)),
+            )
         task = asyncio.create_task(
             command.run_command_once(
                 ["provider"],
@@ -217,11 +228,13 @@ def test_windows_drain_failure_deletes_owned_captures_before_finalization(
         cleanup_error=Mock(return_value=drain_error),
         close=close_job,
     )
-    monkeypatch.setattr(command, "WindowsLaunch", Mock(return_value=launch))
     monkeypatch.setattr(
-        command, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+        session, "process_session", Mock(return_value=windows_session_stub(launch))
     )
-    monkeypatch.setattr(command, "supports_posix_process_groups", lambda: False)
+    monkeypatch.setattr(
+        session, "sys", SimpleNamespace(platform="win32", exception=sys.exception)
+    )
+    monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
     monkeypatch.setattr(
         command, "confirm_workspace_process_drain", Mock(side_effect=failure)
@@ -231,8 +244,8 @@ def test_windows_drain_failure_deletes_owned_captures_before_finalization(
         command, "record_unresolved_workspace_process_drain", unresolved
     )
     reaper, pipes = AsyncMock(), AsyncMock()
-    monkeypatch.setattr(command, "reap_failed_process", reaper)
-    monkeypatch.setattr(command, "drain_process_pipes", pipes)
+    monkeypatch.setattr(runner, "reap_failed_process", reaper)
+    monkeypatch.setattr(streams, "drain_process_pipes", pipes)
 
     async def check():
         with pytest.raises(

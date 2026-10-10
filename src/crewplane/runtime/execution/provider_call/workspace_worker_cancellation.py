@@ -8,7 +8,7 @@ from typing import Any
 
 from crewplane.runtime.workspace import mutator_fence, state
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
-from crewplane.runtime.workspace.snapshot_scan import WorkspaceSnapshotCancelled
+from crewplane.runtime.workspace.snapshot_scan_common import WorkspaceSnapshotCancelled
 
 from ..deferred_cleanup import DeferredAsyncCleanupRegistry, workspace_worker_task
 

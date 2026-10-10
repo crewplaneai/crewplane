@@ -19,10 +19,10 @@ from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.runtime.execution.activity.telemetry import ActivityTrackerSnapshot
 from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.invocation import invocation_slug, workspace_state_path
-from crewplane.runtime.workspace.snapshot_scan import (
+from crewplane.runtime.workspace.snapshot_scan import snapshot_entries
+from crewplane.runtime.workspace.snapshot_scan_common import (
     WorkspaceSnapshotError,
     WorkspaceSnapshotPolicy,
-    snapshot_entries,
 )
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
 

@@ -31,6 +31,7 @@ from crewplane.core.preflight.runtime_config import (
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import windows_support_policy
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -54,7 +55,9 @@ from tests.helpers.workspace_records import workspace_selection_record
 
 @pytest.mark.parametrize("status", ["failed", "cancelled", "succeeded"])
 def test_windows_unusable_history_starts_fresh(tmp_path, monkeypatch, status) -> None:
-    monkeypatch.setattr(resume_module, "is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
     observe = Mock(side_effect=AssertionError("Windows must not inspect checkpoints"))
     monkeypatch.setattr(resume_module, "project_fingerprint", observe)
     state_dir = tmp_path / ".crewplane"
@@ -78,7 +81,9 @@ def test_windows_unusable_history_starts_fresh(tmp_path, monkeypatch, status) ->
 def test_windows_checks_older_success_before_fresh_execution(
     tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(resume_module, "is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        "crewplane.core.platform.support_policy", windows_support_policy
+    )
     plan = make_plan()
     state_dir = tmp_path / ".crewplane"
     records = []
