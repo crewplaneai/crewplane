@@ -5,7 +5,7 @@ class Crewplane < Formula
   homepage "https://github.com/crewplaneai/crewplane"
   url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.3.7.tar.gz"
   version "0.3.7"
-  sha256 "20932d6e256c25c1fccf186b433a13f99e5ee137d2f3f5b7082115d0f9e5a013"
+  sha256 "bebb801344eee7daf85cc2b69036ee032f4a04a8186d431c0636f5f7524f4fb2"
   license "Apache-2.0"
   head "https://github.com/crewplaneai/crewplane.git", branch: "master"
 
