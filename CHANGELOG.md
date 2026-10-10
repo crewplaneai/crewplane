@@ -4,11 +4,16 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+
 ## [0.3.7] - 2026-10-09
 
 ### Added
 
 - Staged native Windows fresh project-root execution through pip/uv on local NTFS; native acceptance remains pending.
+
+### Fixed
+
+- Preserve provider output and exit status when a CLI exits before consuming its prompt.
 
 ## [0.3.6] - 2026-10-05
 
