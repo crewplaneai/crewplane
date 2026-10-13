@@ -159,7 +159,7 @@ def test_fatal_node_directory_drift_restores_unchanged_descendants(
     prior_state = review_state / "prior.state.json"
     prior_state.write_text('{"round": 0}\n', encoding="utf-8", newline="\n")
     untouched_script = review_state / "untouched.sh"
-    untouched_script.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
+    untouched_script.touch()
     untouched_script.chmod(0o754)
     original_script_mode = stat.S_IMODE(untouched_script.stat().st_mode)
     untouched_link = review_state / "untouched-link"
@@ -270,10 +270,7 @@ def test_drift_snapshots_reject_a_symlinked_root(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     linked_root = tmp_path / "linked-root"
-    try:
-        symlink_or_skip(linked_root, outside, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(linked_root, outside, target_is_directory=True)
 
     with pytest.raises(RuntimeError, match="must not be a symlink"):
         review_loop_drift_snapshots.snapshot_files(linked_root)

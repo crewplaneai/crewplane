@@ -144,10 +144,7 @@ def test_replace_contained_file_rejects_a_symlinked_destination_parent(
     root.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    try:
-        symlink_or_skip(root / "nested", outside, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(root / "nested", outside, target_is_directory=True)
     source = tmp_path / "private-output.md"
     source.write_text("private", encoding="utf-8")
 

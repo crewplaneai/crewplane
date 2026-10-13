@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 child = subprocess.Popen(
-    [sys.executable, "-c", "import time; time.sleep(60)"],
+    [sys.executable, str(Path(__file__).with_name("sleeping_process.py"))],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,

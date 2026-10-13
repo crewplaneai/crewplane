@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 import crewplane.runtime.workspace.cleanup as workspace_cleanup
 from crewplane.cli.app import app
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.unit.cli.cleanup_support import (
     cleanup_project,
     run_cleanup_git,
@@ -324,12 +324,9 @@ def test_cleanup_workspaces_rejects_dangling_cache_root_symlink(
         create_workspace=False,
     )
     cache_root = workspace_path.parents[3]
-    try:
-        cache_root.symlink_to(
-            tmp_path / "missing-cache-target", target_is_directory=True
-        )
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        cache_root, tmp_path / "missing-cache-target", target_is_directory=True
+    )
 
     result = CliRunner().invoke(
         app,

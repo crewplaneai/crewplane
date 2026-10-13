@@ -68,7 +68,6 @@ class ArtifactWritingRunner(FakeRunner):
 class SmokeRecordingRunner:
     def __init__(self) -> None:
         self.calls: list[RecordedCommand] = []
-        self.python = "/opt/crewplane-smoke/python"
         self.uv_bin = "/opt/crewplane-smoke/uv-bin"
 
     def run(
@@ -92,9 +91,7 @@ class SmokeRecordingRunner:
             )
         )
         stdout = ""
-        if command_tuple == current_python_command():
-            stdout = f"{self.python}\n"
-        elif command_tuple == ("uv", "tool", "dir", "--bin"):
+        if command_tuple == ("uv", "tool", "dir", "--bin"):
             stdout = f"{self.uv_bin}\n"
         return state.CommandResult(command_tuple, 0, stdout, "")
 
@@ -222,7 +219,6 @@ def test_pip_smoke_creates_venv_installs_offline_and_hands_off_cli(
 
     venv = temporary / "venv"
     assert runner.calls == [
-        command_call(current_python_command(), tmp_path),
         command_call((sys.executable, "-m", "venv", str(venv)), tmp_path),
         command_call(
             (
@@ -262,7 +258,6 @@ def test_uv_smoke_uses_isolated_home_and_hands_off_installed_cli(
     smoke._install_smoke_uv(context, runner)
 
     assert runner.calls == [
-        command_call(current_python_command(), tmp_path),
         command_call(
             (
                 "uv",
@@ -270,7 +265,7 @@ def test_uv_smoke_uses_isolated_home_and_hands_off_installed_cli(
                 "install",
                 "--force",
                 "--python",
-                runner.python,
+                sys.executable,
                 "--find-links",
                 str(smoke.wheelhouse(context)),
                 "--no-index",
@@ -308,14 +303,13 @@ def test_pipx_smoke_uses_isolated_directories_and_hands_off_installed_cli(
     smoke._install_smoke_pipx(context, runner)
 
     assert runner.calls == [
-        command_call(current_python_command(), tmp_path),
         command_call(
             (
                 "pipx",
                 "install",
                 "--force",
                 "--python",
-                runner.python,
+                sys.executable,
                 f"--pip-args=--no-index --find-links {smoke.wheelhouse(context)}",
                 f"crewplane=={context.version.project}",
             ),
@@ -346,7 +340,7 @@ def test_install_script_smoke_passes_complete_offline_environment(
         "CREWPLANE_VERSION": context.version.project,
         "CREWPLANE_INSTALL_FIND_LINKS": str(smoke.wheelhouse(context)),
         "CREWPLANE_INSTALL_NO_INDEX": "1",
-        "CREWPLANE_INSTALL_PYTHON": runner.python,
+        "CREWPLANE_INSTALL_PYTHON": sys.executable,
         "CREWPLANE_INSTALL_HOME": str(home),
         "HOME": str(home),
     }
@@ -354,7 +348,6 @@ def test_install_script_smoke_passes_complete_offline_environment(
     smoke._install_script_smoke(context, runner)
 
     assert runner.calls == [
-        command_call(current_python_command(), tmp_path),
         command_call(("sh", "install.sh"), tmp_path, env),
     ]
 
@@ -378,13 +371,12 @@ def test_npm_smoke_installs_tarball_offline_and_hands_off_installed_cli(
         "CREWPLANE_VERSION": context.version.project,
         "CREWPLANE_INSTALL_FIND_LINKS": str(smoke.wheelhouse(context)),
         "CREWPLANE_INSTALL_NO_INDEX": "1",
-        "CREWPLANE_INSTALL_PYTHON": runner.python,
+        "CREWPLANE_INSTALL_PYTHON": sys.executable,
     }
 
     smoke._npm_smoke(context, runner)
 
     assert runner.calls == [
-        command_call(current_python_command(), tmp_path),
         command_call(
             (
                 "npm",
@@ -447,10 +439,6 @@ def command_call(
         True,
         True,
     )
-
-
-def current_python_command() -> tuple[str, ...]:
-    return (sys.executable, "-c", "import sys; print(sys.executable)")
 
 
 def python_build_command() -> tuple[str, ...]:

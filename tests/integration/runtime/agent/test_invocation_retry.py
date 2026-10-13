@@ -6,6 +6,8 @@ from tempfile import mkdtemp
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
 from crewplane.adapters.invokers.cli_invoker.providers.codex import (
     CODEX_MODEL_CAPACITY_MESSAGE,
@@ -308,23 +310,35 @@ def test_codex_model_capacity_failure_bypasses_quota_retry() -> None:
     assert decision.quota_retry_count == 2
 
 
-def test_evaluate_quota_retry_schedules_retry_with_parsed_reset() -> None:
+@pytest.mark.parametrize(
+    ("reset", "minimum", "floor", "expected"),
+    [
+        pytest.param(
+            "Your quota will reset after 2s.", 0, 5, 7, id="parsed-reset-plus-floor"
+        ),
+        pytest.param(
+            "Your quota will reset after 2s.", 17, 5, 17, id="configured-minimum"
+        ),
+        pytest.param("Your quota will reset after 2s.", 0, 0, 2, id="no-floor"),
+        pytest.param("", 13, 5, 13, id="fixed-delay-fallback"),
+    ],
+)
+def test_evaluate_quota_retry_schedules_retry_with_parsed_reset(
+    reset, minimum, floor, expected
+) -> None:
     decision = evaluate_quota_retry(
         config=AgentConfig(
             cli_cmd=["gemini"],
             provider_kind="gemini",
             default_model="test",
-            quota_reached_retry_delay_seconds=0,
-            quota_reset_sleep_floor_seconds=5,
+            quota_reached_retry_delay_seconds=minimum,
+            quota_reset_sleep_floor_seconds=floor,
         ),
         cmd=["gemini"],
         quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
         result=CommandResult(
             returncode=0,
-            stdout_text=(
-                "You have exhausted your capacity on this model. "
-                "Your quota will reset after 2s."
-            ),
+            stdout_text=("You have exhausted your capacity on this model. " + reset),
             stderr_text="",
         ),
         quota_retry_started_at=None,
@@ -333,7 +347,7 @@ def test_evaluate_quota_retry_schedules_retry_with_parsed_reset() -> None:
 
     assert isinstance(decision, ScheduleQuotaRetry)
     assert decision.quota_retry_count == 1
-    assert decision.wait_seconds >= 7.0
+    assert decision.wait_seconds == pytest.approx(expected, abs=0.01)
     assert decision.notice.operation == "quota_retry_scheduled"
 
 
@@ -565,3 +579,39 @@ def test_evaluate_quota_retry_reads_retried_quota_marker_from_persisted_stream(
     assert isinstance(decision, ScheduleQuotaRetry)
     assert decision.quota_retry_count == 1
     assert decision.notice.operation == "quota_retry_scheduled"
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "spent", "ceiling", "message"),
+    [
+        pytest.param(17995, 0, None, "would exceed 5 hours", id="absolute-wait-guard"),
+        pytest.param(0, 20, 25, "configured wait ceiling", id="cumulative-wait-limit"),
+    ],
+)
+def test_quota_retry_rejects_wait_that_crosses_budget(
+    elapsed, spent, ceiling, message
+) -> None:
+    config = AgentConfig(
+        cli_cmd=["gemini"],
+        provider_kind="gemini",
+        quota_reached_retry_delay_seconds=10,
+        quota_retry_max_wait_seconds=ceiling,
+    )
+    with patch(
+        "crewplane.runtime.agent.invocation.retry.time.monotonic", return_value=elapsed
+    ):
+        decision = evaluate_quota_retry(
+            config=config,
+            cmd=["gemini"],
+            quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
+            result=CommandResult(
+                returncode=1,
+                stdout_text="You have exhausted your capacity on this model.",
+                stderr_text="",
+            ),
+            quota_retry_started_at=0,
+            quota_retry_count=1,
+            quota_retry_wait_seconds=spent,
+        )
+    assert isinstance(decision, QuotaRetryFailure)
+    assert message in decision.message

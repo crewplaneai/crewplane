@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -37,8 +36,6 @@ pytestmark = requires_workspace_support
 def test_worktree_protected_ref_scope_covers_exact_destination_refs(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -71,8 +68,6 @@ def test_worktree_protected_ref_scope_covers_exact_destination_refs(
 def test_worktree_reviewer_workspace_discards_drift_without_lineage(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -122,8 +117,6 @@ def test_worktree_reviewer_workspace_discards_drift_without_lineage(
 def test_worktree_reviewer_workspace_rejects_branch_attachment(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -173,8 +166,6 @@ def test_reviewer_integrity_mutation_fails_and_retains_evidence(
     mutation: str,
     error_message: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -262,8 +253,6 @@ def test_required_lineage_state_skips_disposable_reviewer_state(
 def test_worktree_workspace_rejects_source_tree_mismatch_before_checkout(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -307,12 +296,12 @@ def test_worktree_workspace_falls_back_to_explicit_lock(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     hook = repo / ".git" / "hooks" / "post-checkout"
     hook.write_text(
-        '#!/bin/sh\nprintf "hook changed\\n" > README.md\n', encoding="utf-8"
+        "#!/bin/sh\nprintf 'hook changed\\n' > README.md\n",
+        encoding="utf-8",
+        newline="\n",
     )
     hook.chmod(0o755)
     cache_root = tmp_path / "cache"

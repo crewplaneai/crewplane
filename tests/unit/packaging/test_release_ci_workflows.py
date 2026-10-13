@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 import yaml
@@ -13,7 +14,6 @@ from tests.unit.packaging.release_surfaces_support import (
     ROOT,
     read_text,
     repo_path,
-    write_executable,
 )
 
 
@@ -73,9 +73,14 @@ def test_ci_runs_full_suite_with_coverage_for_supported_python_versions() -> Non
     commands = [step.get("run", "") for step in job["steps"]]
     invocation = "uv run --locked --python ${{ matrix.python-version }} --extra dev"
     assert (
-        "uv sync --locked --python ${{ matrix.python-version }} --extra dev" in commands
+        "uv sync --locked --python ${{ matrix.python-version }} --extra dev --extra stress"
+        in commands
     )
-    assert f"{invocation} make test" in commands
+    assert (
+        f"{invocation} --extra stress python scripts/run_tests.py --profile "
+        + "${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }}"
+        in commands
+    )
     assert f"{invocation} crewplane --help" in commands
 
 
@@ -90,7 +95,7 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
         "uv sync --locked --python ${{ matrix.python-version }} --extra dev" in commands
     )
     assert (
-        "uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q"
+        "uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly"
         in commands
     )
     shuffled = nightly["jobs"]["shuffled-suite"]
@@ -100,11 +105,6 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
     ]
     focused = nightly["jobs"]["focused-race-loop"]
     assert focused["env"]["FOCUSED_RACE_ITERATIONS"] == "5"
-    assert focused["env"]["FOCUSED_RACE_SELECTION"] == (
-        "tests/integration/runtime/execution/workflow/test_sequential_parallel_reviewers.py"
-        "::ExecutorSequentialStageBasicsTests"
-        "::test_multi_provider_reviewers_run_in_parallel_within_local_round"
-    )
     assert shuffled["runs-on"] == focused["runs-on"] == "ubuntu-latest"
 
 
@@ -117,13 +117,29 @@ def test_nightly_canaries_run_configured_tests_and_propagate_failures(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     log = tmp_path / "invocations"
-    write_executable(
-        fake_bin / "uv",
-        '#!/bin/sh\nprintf "%s\\0" "$@" >> "$FAKE_UV_LOG"\n'
-        'printf "\\n" >> "$FAKE_UV_LOG"\nexit "$FAKE_UV_STATUS"\n',
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        dedent("""\
+            #!/bin/sh
+            printf '%s\\0' "$@" >> "$FAKE_UV_LOG"
+            printf '\\n' >> "$FAKE_UV_LOG"
+            exit "$FAKE_UV_STATUS"
+            """),
+        encoding="utf-8",
+        newline="\n",
     )
+    fake_uv.chmod(0o755)
     result = run_process(
-        ["bash", "-e", "-c", job["steps"][-1]["run"]],
+        [
+            "bash",
+            "-e",
+            "-c",
+            next(
+                step["run"]
+                for step in job["steps"]
+                if step.get("name", "").startswith("Run ")
+            ),
+        ],
         cwd=tmp_path,
         env={
             **os.environ,
@@ -139,26 +155,10 @@ def test_nightly_canaries_run_configured_tests_and_propagate_failures(
         line.rstrip("\0").split("\0") for line in log.read_text().splitlines()
     ]
     if job_id == "shuffled-suite":
-        expected = [
-            "python",
-            "-m",
-            "pytest",
-            "-p",
-            "randomly",
-            "--randomly-seed=123",
-            "-q",
-            "-ra",
-        ]
+        expected = ["python", "scripts/run_tests.py", "--profile", "nightly-shuffle"]
         assert len(invocations) == 1
     else:
-        expected = [
-            "python",
-            "-m",
-            "pytest",
-            "-q",
-            "-ra",
-            job["env"]["FOCUSED_RACE_SELECTION"],
-        ]
+        expected = ["python", "scripts/run_tests.py", "--profile", "race"]
         assert len(invocations) == (5 if exit_code == 0 else 1)
     for invocation in invocations:
         assert invocation[invocation.index("python") :] == expected
@@ -242,7 +242,9 @@ def test_weekly_uv_update_job_propagates_pull_request_query_failures(
     )
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
-    write_executable(fake_bin / "gh", "#!/bin/sh\nexit 42\n")
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text("#!/bin/sh\nexit 42\n", encoding="utf-8", newline="\n")
+    fake_gh.chmod(0o755)
     runner_temp = tmp_path / "runner-temp"
     runner_temp.mkdir()
     github_output = tmp_path / "github-output"
@@ -293,7 +295,7 @@ def test_windows_required_jobs_execute_suite_and_both_installed_wheels() -> None
     assert set(job["strategy"]["matrix"]["python-version"]) == {"3.13", "3.14"}
     commands = [step.get("run", "") for step in job["steps"]]
     prefix = "uv run --locked --python ${{ matrix.python-version }} --extra dev"
-    assert f"{prefix} python -m pytest -q --durations=20" in commands
+    assert f"{prefix} python scripts/run_tests.py --profile windows" in commands
     for installer in ("pip", "uv"):
         assert (
             f"{prefix} python tests/helpers/installed_wheel_smoke.py --installer {installer}"
@@ -301,3 +303,53 @@ def test_windows_required_jobs_execute_suite_and_both_installed_wheels() -> None
         )
     assert not job.get("continue-on-error")
     assert all("make " not in command for command in commands)
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "job_name"),
+    [
+        ("ci.yml", "test"),
+        ("ci.yml", "windows"),
+        ("ci.yml", "package"),
+        ("testpypi.yml", "build"),
+        ("nightly.yml", "cross-platform"),
+        ("nightly.yml", "shuffled-suite"),
+        ("nightly.yml", "focused-race-loop"),
+    ],
+)
+def test_all_test_lanes_upload_available_diagnostics_on_failure(
+    workflow_name, job_name
+) -> None:
+    steps = load_workflow(workflow_name)["jobs"][job_name]["steps"]
+    (upload,) = [
+        step for step in steps if step.get("with", {}).get("path") == "test-results/"
+    ]
+    assert upload["if"] == "${{ always() }}"
+    assert upload["with"]["if-no-files-found"] == "ignore"
+    assert upload["with"]["include-hidden-files"] == "true"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert all("python -m pytest" not in step.get("run", "") for step in steps)
+
+
+def test_testpypi_checks_full_suite_and_installed_artifact_before_upload() -> None:
+    workflow = load_workflow("testpypi.yml")
+    steps = workflow["jobs"]["build"]["steps"]
+    commands = [step.get("run", "") for step in steps]
+    suite = next(
+        i
+        for i, command in enumerate(commands)
+        if "scripts/run_tests.py --profile testpypi" in command
+    )
+    build = commands.index("uv build")
+    acceptance = next(
+        i
+        for i, command in enumerate(commands)
+        if "installed_wheel_smoke.py --installer pip" in command
+    )
+    upload = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("with", {}).get("path") == "dist/*"
+    )
+    assert suite < build < acceptance < upload
+    assert workflow["jobs"]["publish-testpypi"]["needs"] == "build"

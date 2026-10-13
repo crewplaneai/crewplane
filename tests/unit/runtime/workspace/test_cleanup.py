@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -25,7 +24,7 @@ from crewplane.runtime.workspace.worktree.ref_cleanup import (
     cleanup_plan_workspace_refs,
     delete_run_workspace_refs,
 )
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import workspace_plan
 from tests.unit.runtime.workspace.cleanup_support import (
     cache_workspace_path,
@@ -126,7 +125,7 @@ def test_cleanup_candidates_preserve_fixed_depth_order_and_exclude_links(
                 break
             link = ancestor.with_name(ancestor.name + "-link")
             if not link.is_symlink():
-                link.symlink_to(ancestor, target_is_directory=True)
+                symlink_or_skip(link, ancestor, target_is_directory=True)
         (path.parent / "not-a-directory").write_text("ignored")
     (cache / "snapshots" / "repo-empty").mkdir()
 
@@ -145,7 +144,7 @@ def test_cleanup_candidates_preserve_fixed_depth_order_and_exclude_links(
         family_path = cache / family
         outside = tmp_path / family
         family_path.rename(outside)
-        family_path.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(family_path, outside, target_is_directory=True)
         assert cleanup_candidates(cache) == tuple(
             (run_key, cache / relative)
             for run_key, relative in expected
@@ -180,10 +179,7 @@ def test_worktree_disk_usage_does_not_follow_symlinks(tmp_path: Path) -> None:
     workspace_path = tmp_path / "workspace"
     workspace_path.mkdir()
     link_path = workspace_path / "link.txt"
-    try:
-        link_path.symlink_to(outside)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(link_path, outside)
 
     assert (
         worktree_cleanup.worktree_disk_usage(workspace_path)
@@ -236,10 +232,7 @@ def test_cleanup_workspace_cache_ignores_symlink_candidates(tmp_path: Path) -> N
     (outside / "keep.txt").write_text("keep", encoding="utf-8")
     workspace_link = cache_workspace_path(tmp_path, "workspaces", "run-1", "linked")
     workspace_link.parent.mkdir(parents=True)
-    try:
-        workspace_link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_link, outside, target_is_directory=True)
 
     result = cleanup_workspace_cache(
         tmp_path,
@@ -260,10 +253,7 @@ def test_remove_workspace_path_unlinks_top_level_symlink_without_chmod_target(
     outside.mkdir()
     (outside / "keep.txt").write_text("keep", encoding="utf-8")
     workspace_link = tmp_path / "workspace"
-    try:
-        workspace_link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_link, outside, target_is_directory=True)
     chmod_targets: list[Path] = []
 
     def record_chmod(self: Path, mode: int) -> None:
@@ -426,8 +416,6 @@ def test_cleanup_workspace_cache_filters_current_repository_by_default(
 def test_delete_run_workspace_refs_preserves_unrecorded_run_refs(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     common_git_dir = repo / ".git"
     run_cleanup_git(repo, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
@@ -454,8 +442,6 @@ def test_delete_run_workspace_refs_preserves_unrecorded_run_refs(
 def test_cleanup_plan_workspace_refs_does_not_delete_unrecorded_refs(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     run_cleanup_git(
         repo,

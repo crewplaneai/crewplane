@@ -48,7 +48,7 @@ def audit_request(tmp_path: Path) -> AuditRoundRequest:
         executor, executor.task_id, "Candidate", node_dir / "candidate.md", None, 1
     )
     return AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,

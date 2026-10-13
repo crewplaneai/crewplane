@@ -122,10 +122,7 @@ def test_rejects_symlinked_status_artifact(tmp_path: Path) -> None:
     status_dir = stage_dir / "review-state"
     status_dir.mkdir()
     status_path = status_dir / "review-loop-status.json"
-    try:
-        symlink_or_skip(status_path, outside_status)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(status_path, outside_status)
 
     with pytest.raises(ReviewLoopStatusError, match="safe regular file"):
         resolve_review_loop_status("stage", stage_dir)

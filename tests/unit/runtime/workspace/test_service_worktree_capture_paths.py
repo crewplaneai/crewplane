@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -17,7 +16,7 @@ from crewplane.runtime.workspace.filesystem import (
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
@@ -33,8 +32,6 @@ pytestmark = requires_workspace_support
 def test_worktree_capture_rejects_replaced_workspace_root_symlink(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -64,11 +61,7 @@ def test_worktree_capture_rejects_replaced_workspace_root_symlink(
         source.run_base_commit,
     )
     remove_worktree_workspace(source, workspace_path)
-    try:
-        workspace_path.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        _remove_git_worktree_best_effort(repo, external_checkout)
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_path, outside, target_is_directory=True)
 
     try:
         with pytest.raises(RuntimeError, match="Workspace capture root"):
@@ -81,8 +74,6 @@ def test_worktree_capture_rejects_replaced_workspace_root_symlink(
 def test_worktree_capture_reports_unsafe_root_before_checkout_mismatch(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -115,8 +106,6 @@ def test_worktree_capture_reports_unsafe_root_before_checkout_mismatch(
 def test_worktree_capture_rejects_replaced_checkout_symlink(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -145,15 +134,11 @@ def test_worktree_capture_rejects_replaced_checkout_symlink(
     )
     remove_worktree_workspace(source, workspace_path)
     workspace_path.mkdir(parents=True)
-    try:
-        (workspace_path / "checkout").symlink_to(
-            external_checkout,
-            target_is_directory=True,
-        )
-    except OSError:
-        remove_workspace_path(workspace_path)
-        _remove_git_worktree_best_effort(repo, external_checkout)
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        workspace_path / "checkout",
+        external_checkout,
+        target_is_directory=True,
+    )
 
     try:
         with pytest.raises(RuntimeError, match="Workspace capture checkout"):
@@ -166,8 +151,6 @@ def test_worktree_capture_rejects_replaced_checkout_symlink(
 def test_worktree_capture_rejects_checkout_gitdir_for_external_worktree(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

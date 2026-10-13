@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import hashlib
+import weakref
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,6 +49,7 @@ def _recovery_payload(
 def test_stage_publications_retain_all_recovery_payloads(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     result_file = tmp_path / "result.md"
@@ -58,6 +61,7 @@ def test_stage_publications_retain_all_recovery_payloads(
     generated_file.write_bytes(b"generated")
     node_state_file.write_bytes(b"state")
     publications = RuntimePublicationRegistry()
+    request.addfinalizer(publications.close)
 
     def do_nothing(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -133,24 +137,45 @@ def test_stage_publications_retain_all_recovery_payloads(
     assert _recovery_payload(publications, findings_file) == b"findings"
     assert _recovery_payload(publications, node_state_file) == b"state"
     assert _recovery_payload(publications, generated_file) == b"generated"
-    publications.close()
 
 
+@pytest.mark.parametrize(
+    "finalize_unrelated", [False, True], ids=["owned-only", "unrelated-finalizer"]
+)
 def test_workflow_closes_runtime_publication_registry_when_cleanup_raises(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    finalize_unrelated: bool,
 ) -> None:
     closed_registries: list[RuntimePublicationRegistry] = []
+    owned_registry: RuntimePublicationRegistry | None = None
+    unrelated = RuntimePublicationRegistry()
+    unrelated.close()
+    unrelated_ref = weakref.ref(unrelated)
+    original_initialize = workflow_module.initialize_workflow_execution
+
+    def initialize(*args, **kwargs):
+        nonlocal owned_registry, unrelated
+        session = original_initialize(*args, **kwargs)
+        owned_registry = session.runtime_context.runtime_publications
+        if finalize_unrelated:
+            del unrelated
+            gc.collect()
+            assert unrelated_ref() is None
+        return session
+
     original_close = RuntimePublicationRegistry.close
 
     def record_close(registry: RuntimePublicationRegistry) -> None:
         original_close(registry)
-        closed_registries.append(registry)
+        if registry is owned_registry:
+            closed_registries.append(registry)
 
     def fail_cleanup(registry: GeneratedFileWorkspaceRegistry) -> None:
         del registry
         raise RuntimeError("cleanup exploded")
 
+    monkeypatch.setattr(workflow_module, "initialize_workflow_execution", initialize)
     monkeypatch.setattr(RuntimePublicationRegistry, "close", record_close)
     monkeypatch.setattr(GeneratedFileWorkspaceRegistry, "cleanup_all", fail_cleanup)
     output = OutputManager("Workflow", base_dir=tmp_path)

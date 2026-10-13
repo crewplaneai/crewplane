@@ -18,7 +18,7 @@ from crewplane.artifacts.workspace.node_state import (
 from crewplane.core.preflight.workspace.observability import node_workspace_descriptor
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.resume import (
     WORKTREE_CONTRACT_PAYLOAD,
     make_node_state,
@@ -235,13 +235,11 @@ def test_build_node_workspace_descriptor_rejects_symlinked_setup_parent(
     outside_setup.mkdir()
     (outside_setup / "setup.json").write_text("{}", encoding="utf-8")
     (outside_setup / "setup.log").write_text("setup\n", encoding="utf-8")
-    try:
-        (stage_dir / "workspace-setup").symlink_to(
-            outside_setup,
-            target_is_directory=True,
-        )
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        stage_dir / "workspace-setup",
+        outside_setup,
+        target_is_directory=True,
+    )
     payload = _workspace_state_payload(plan, bundle_payload)
     payload["setup"] = {
         "metadata_path": "workspace-setup/setup.json",
@@ -305,7 +303,7 @@ def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
     if symlink:
         target = tmp_path / "original-node-state.json"
         node_manifest_path.rename(target)
-        node_manifest_path.symlink_to(target)
+        symlink_or_skip(node_manifest_path, target)
     state_payload["workspace"]["retention"] = "deleted"
     state_payload["workspace"]["retained_reason"] = None
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")

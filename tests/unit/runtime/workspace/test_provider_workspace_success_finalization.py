@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -406,8 +405,6 @@ async def _run_generated_file_snapshot_defers_after_cancellation_timeout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     monkeypatch.setattr(
         provider_invocation_generated_files_module,
         "WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS",

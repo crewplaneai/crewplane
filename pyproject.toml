@@ -23,6 +23,7 @@ dev = [
     "packaging>=24.0",
     "pytest>=9.1",
     "pytest-cov>=7.0",
+    "pytest-xdist>=3.8",
     "ruff>=0.6",
     "twine>=6.0",
     "types-PyYAML>=6.0.12",
@@ -82,11 +83,17 @@ addopts = [
 ]
 strict_config = true
 strict_markers = true
+markers = [
+    "race: deterministic regression for a controlled concurrency or cancellation interleaving",
+]
 strict_parametrization_ids = true
 collect_imported_tests = false
 empty_parameter_set_mark = "fail_at_collect"
 tmp_path_retention_policy = "failed"
 filterwarnings = ["error"]
+
+[tool.coverage.run]
+patch = ["subprocess"]
 
 [tool.mypy]
 python_version = "3.13"

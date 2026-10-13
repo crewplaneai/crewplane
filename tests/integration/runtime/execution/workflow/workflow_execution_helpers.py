@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from threading import Event
@@ -8,6 +9,7 @@ from rich.console import Console
 
 from crewplane.architecture.contracts import (
     AgentInvoker,
+    InvocationContext,
     LogPresentationDescriptor,
     NodeArtifactRequest,
     ObserverCapabilities,
@@ -227,6 +229,9 @@ async def execute_workflow(
         resumed_node_ids=resumed_node_ids,
     )
 
+    if isinstance(invoker, ScriptedAgentInvoker):
+        invoker.assert_consumed()
+
 
 async def execute_sequential_stage(
     config: Config,
@@ -245,6 +250,9 @@ async def execute_sequential_stage(
         telemetry=telemetry,
     )
 
+    if isinstance(invoker, ScriptedAgentInvoker):
+        invoker.assert_consumed()
+
 
 async def execute_parallel_stage(
     config: Config,
@@ -262,6 +270,9 @@ async def execute_parallel_stage(
         invoker=invoker,
         telemetry=telemetry,
     )
+
+    if isinstance(invoker, ScriptedAgentInvoker):
+        invoker.assert_consumed()
 
 
 class OptionalOutputInvoker(NoPresentationInvoker):
@@ -469,47 +480,71 @@ class FailingLogOutputManager(OutputManager):
         )
 
 
-class TaskOutputInvoker(NoPresentationInvoker):
+@dataclass(frozen=True)
+class InvocationKey:
+    node_id: str
+    task_id: str
+    audit_round_num: int | None = None
+    round_num: int | None = 1
+    attempt_num: int = 1
+
+    @classmethod
+    def from_context(cls, context: InvocationContext) -> "InvocationKey":
+        return cls(
+            context.node_id,
+            context.task_id,
+            context.audit_round_num,
+            context.round_num,
+            context.attempt_num,
+        )
+
+
+class ScriptedAgentInvoker(NoPresentationInvoker):
     def __init__(
         self,
-        outputs_by_task_id: dict[str, str],
-        gates_by_task_id: dict[str, asyncio.Event] | None = None,
+        responses: dict[InvocationKey, str],
+        gates: dict[InvocationKey, asyncio.Event] | None = None,
     ) -> None:
-        self.outputs_by_task_id = outputs_by_task_id
-        self.gates_by_task_id = gates_by_task_id or {}
+        self.responses = dict(responses)
+        self.gates = gates or {}
         self.calls: list[dict[str, str | int | None]] = []
 
     async def invoke(
         self,
-        config: AgentConfig,  # noqa: ARG002 - Required by test double or callback signature.
-        model: str,  # noqa: ARG002 - Required by test double or callback signature.
-        prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
+        config: AgentConfig,
+        model: str,
+        prompt: str,
         output_file: Path,
-        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
-        log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
-        invocation_context=None,  # type: ignore[no-untyped-def]
+        cwd: Path,
+        log_file: Path | None = None,
+        invocation_context: InvocationContext | None = None,
     ) -> None:
+        del config, cwd, log_file
         assert invocation_context is not None
-        task_id = invocation_context.task_id
+        key = InvocationKey.from_context(invocation_context)
+        assert key in self.responses, f"Unexpected invocation: {key}"
+        content = self.responses.pop(key)
         self.calls.append(
             {
-                "node_id": invocation_context.node_id,
-                "task_id": task_id,
+                "model": model,
+                "prompt": prompt,
+                "output_file": str(output_file),
+                "node_id": key.node_id,
+                "task_id": key.task_id,
+                "provider": invocation_context.provider,
                 "role": invocation_context.role,
-                "round_num": invocation_context.round_num,
+                "audit_round_num": key.audit_round_num,
+                "round_num": key.round_num,
+                "attempt_num": key.attempt_num,
             }
         )
-        gate = self.gates_by_task_id.get(task_id)
+        gate = self.gates.get(key)
         if gate is not None:
-            try:
-                await asyncio.wait_for(gate.wait(), timeout=1.0)
-            except TimeoutError as exc:
-                raise AssertionError(
-                    f"Task {task_id!r} was not released by its causal gate."
-                ) from exc
-        assert task_id in self.outputs_by_task_id, f"Unexpected task: {task_id}"
-        content = self.outputs_by_task_id[task_id]
+            await asyncio.wait_for(gate.wait(), timeout=10)
         output_file.write_text(content, encoding="utf-8", newline="\n")
+
+    def assert_consumed(self) -> None:
+        assert not self.responses, f"Unconsumed invocations: {list(self.responses)}"
 
 
 class ParallelReviewerBarrierInvoker(NoPresentationInvoker):

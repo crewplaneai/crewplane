@@ -38,8 +38,6 @@ pytestmark = requires_workspace_support
 def test_reuse_cache_node_cleanup_updates_all_reused_state_paths(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -86,8 +84,6 @@ def test_reuse_cache_cleanup_all_retains_lease_after_terminal_publish_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)

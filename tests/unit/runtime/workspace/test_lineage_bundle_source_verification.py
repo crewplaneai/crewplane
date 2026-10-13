@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,8 +37,6 @@ pytestmark = requires_workspace_support
 def test_worktree_workspace_imports_depth_three_full_bundle_chain(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -122,8 +119,6 @@ def test_worktree_workspace_imports_depth_three_full_bundle_chain(
 def test_verify_source_commit_available_uses_bundles_for_source_verification(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -186,8 +181,6 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
 def test_verify_project_source_does_not_mutate_repository_refs(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / "README.md").write_text("current base\n", encoding="utf-8")
     run_git_text(repo, "add", "README.md")

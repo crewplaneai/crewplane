@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -39,8 +38,6 @@ def test_fresh_worktree_terminal_failure_removes_checkout_when_cache_exists(
     tmp_path: Path,
     terminal_status: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -80,8 +77,6 @@ def test_reused_worktree_terminal_failure_defers_shared_checkout_cleanup(
     terminal_status: str,
     unresolved_drain: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -160,8 +155,6 @@ def test_reused_worktree_cleanup_retry_updates_current_generation_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = two_node_lineage_plan(repo, tmp_path / "cache")
     output = workspace_output_manager(tmp_path, repo)
@@ -231,8 +224,6 @@ def test_reused_worktree_cleanup_retry_updates_current_generation_state(
 
 
 def test_reuse_cache_eviction_paths_do_not_rewrite_state(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

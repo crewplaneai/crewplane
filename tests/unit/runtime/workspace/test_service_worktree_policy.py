@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -37,8 +36,6 @@ def test_worktree_capture_rejects_common_policy_file_drift(
     content: str,
     message: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -83,8 +80,6 @@ def test_worktree_capture_rejects_common_object_behavior_drift(
     drift_kind: str,
     message: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -135,8 +130,6 @@ def test_worktree_capture_rejects_common_object_behavior_drift(
 def test_worktree_capture_allows_sibling_result_ref_updates(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -177,8 +170,6 @@ def test_worktree_capture_allows_sibling_result_ref_updates(
 def test_worktree_capture_allows_unprotected_branch_ref_updates(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -211,8 +202,6 @@ def test_worktree_capture_allows_unprotected_branch_ref_updates(
 def test_worktree_capture_rejects_ignored_gitattributes_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitignore")
@@ -248,8 +237,6 @@ def test_worktree_capture_rejects_ignored_gitattributes_drift(
 def test_worktree_capture_rejects_gitignore_that_hides_result_files(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -283,8 +270,6 @@ def test_worktree_capture_allows_setup_virtual_environment(
     tmp_path: Path,
     stage_ignored_policy: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text(".venv/\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitignore")
@@ -327,8 +312,6 @@ def test_worktree_capture_allows_setup_virtual_environment(
 def test_worktree_capture_rejects_self_hidden_nested_gitignore(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(repo, tmp_path / "cache", False, kind="worktree")
     output = workspace_output_manager(tmp_path, repo)
@@ -356,8 +339,6 @@ def test_worktree_capture_rejects_tracked_gitignore_drift_in_ignored_directory(
     tmp_path: Path,
     delete_policy: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text("ignored/\n", encoding="utf-8")
     (repo / "ignored").mkdir()
@@ -388,8 +369,6 @@ def test_worktree_capture_rejects_tracked_gitignore_drift_in_ignored_directory(
 def test_worktree_capture_rejects_attributes_for_new_files(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitattributes").write_text("*.txt text=auto\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitattributes")

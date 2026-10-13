@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -61,8 +60,6 @@ def test_provider_invocation_setup_failure_prevents_provider_call(
 
 
 def test_worktree_retry_reset_reruns_selected_setup(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(
@@ -71,10 +68,9 @@ def test_worktree_retry_reset_reruns_selected_setup(tmp_path: Path) -> None:
             [
                 sys.executable,
                 "-c",
-                (
-                    "from pathlib import Path; "
-                    "Path('setup-marker.txt').write_text('ready')"
-                ),
+                "import sys; from pathlib import Path; "
+                "Path('setup-marker.txt').write_text(sys.argv[1], encoding='utf-8')",
+                "ready",
             ]
         ],
     )
@@ -112,8 +108,6 @@ def test_worktree_retry_setup_rejects_identity_change_at_state_update(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = plan_with_setup(
         workspace_plan(
@@ -122,7 +116,7 @@ def test_worktree_retry_setup_rejects_identity_change_at_state_update(
             cleanup_on_success=False,
             kind="worktree",
         ),
-        [[sys.executable, "-c", "pass"]],
+        [[sys.executable, "-c", "import sys; sys.exit(int(sys.argv[1]))", "0"]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_node_dir(node_artifact_request("implement"))
@@ -177,8 +171,6 @@ def test_provider_invocation_skips_unselected_setup_profile_for_snapshot(
 async def _run_provider_invocation_runs_selected_worktree_setup_before_provider(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(
@@ -194,10 +186,9 @@ async def _run_provider_invocation_runs_selected_worktree_setup_before_provider(
             [
                 sys.executable,
                 "-c",
-                (
-                    "from pathlib import Path; "
-                    "Path('setup-marker.txt').write_text('ready')"
-                ),
+                "import sys; from pathlib import Path; "
+                "Path('setup-marker.txt').write_text(sys.argv[1], encoding='utf-8')",
+                "ready",
             ]
         ],
     )
@@ -242,13 +233,11 @@ async def _run_provider_invocation_runs_selected_worktree_setup_before_provider(
 async def _run_provider_invocation_setup_failure_prevents_provider_call(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(
         workspace_plan(repo, cache_root, cleanup_on_success=True, kind="worktree"),
-        [[sys.executable, "-c", "import sys; sys.exit(7)"]],
+        [[sys.executable, "-c", "import sys; sys.exit(int(sys.argv[1]))", "7"]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_node_dir(node_artifact_request("implement"))
@@ -291,8 +280,6 @@ async def _run_provider_invocation_setup_failure_prevents_provider_call(
 async def _run_provider_invocation_skips_unselected_setup_profile_for_snapshot(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_available_setup_profile(
@@ -308,10 +295,9 @@ async def _run_provider_invocation_skips_unselected_setup_profile_for_snapshot(
             [
                 sys.executable,
                 "-c",
-                (
-                    "from pathlib import Path; "
-                    "Path('setup-marker.txt').write_text('unexpected')"
-                ),
+                "import sys; from pathlib import Path; "
+                "Path('setup-marker.txt').write_text(sys.argv[1], encoding='utf-8')",
+                "unexpected",
             ]
         ],
     )

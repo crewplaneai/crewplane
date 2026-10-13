@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,6 +30,8 @@ def python_files(root: Path) -> tuple[Path, ...]:
     return tuple(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
 
 
+# Checkout source is immutable for one pytest invocation; callers never mutate ASTs.
+@cache
 def parse_python(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 

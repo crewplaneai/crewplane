@@ -144,10 +144,7 @@ def test_containment_helpers_reject_escape_and_symlink(tmp_path: Path) -> None:
         ensure_no_symlink_manifest_components(root, outside / "run.json")
 
     linked = root / "linked"
-    try:
-        symlink_or_skip(linked, outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(linked, outside, target_is_directory=True)
     with pytest.raises(LockManifestError, match="contains a symlink"):
         ensure_no_symlink_manifest_components(root, linked / "run.json")
     assert path_has_symlink_component(linked / "run.json")

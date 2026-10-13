@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -49,8 +48,6 @@ def supports_distinct_names(
 def test_worktree_retry_reset_rejects_own_protected_ref_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -99,8 +96,6 @@ def test_worktree_retry_reset_rejects_own_protected_ref_drift(
 def test_worktree_retry_reset_ignores_sibling_runtime_ref_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -136,8 +131,6 @@ def test_worktree_retry_reset_ignores_sibling_runtime_ref_drift(
 def test_worktree_capture_ignores_sibling_runtime_ref_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -180,8 +173,6 @@ def test_worktree_capture_ignores_sibling_runtime_ref_drift(
 def test_worktree_retry_reset_allows_unprotected_user_branch_updates(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -214,8 +205,6 @@ def test_worktree_retry_reset_allows_unprotected_user_branch_updates(
 def test_worktree_retry_reset_rejects_common_config_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -274,8 +263,6 @@ def test_common_git_config_rejected_keys_inspects_local_config_without_includes(
 def test_worktree_capture_rejects_own_protected_ref_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -325,8 +312,6 @@ def test_worktree_capture_rejects_own_protected_ref_drift(
 def test_worktree_capture_rejects_branch_attachment_without_head_movement(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -362,8 +347,6 @@ def test_worktree_capture_rejects_branch_attachment_without_head_movement(
 def test_worktree_capture_rejects_case_colliding_result_paths(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -397,8 +380,6 @@ def test_worktree_capture_rejects_case_colliding_result_paths(
 def test_worktree_capture_rejects_unicode_colliding_result_paths(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -432,8 +413,6 @@ def test_worktree_capture_rejects_unicode_colliding_result_paths(
 def test_worktree_capture_rejects_common_config_drift(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(

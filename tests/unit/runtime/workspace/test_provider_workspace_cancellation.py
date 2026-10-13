@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -44,6 +43,7 @@ from tests.helpers.workspace_service import (
 )
 from tests.unit.runtime.workspace.service_provider_invocation_support import (
     exception_notes_contain,
+    owned_workspace_task,
 )
 
 pytestmark = requires_workspace_support
@@ -67,6 +67,7 @@ def test_provider_invocation_cancellation_preserves_cancel_when_mark_cancelled_f
     )
 
 
+@pytest.mark.race
 def test_workspace_preparation_cancellation_marks_workspace_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -79,6 +80,7 @@ def test_workspace_preparation_cancellation_marks_workspace_state(
     )
 
 
+@pytest.mark.race
 def test_workspace_preparation_cancellation_preserves_cancel_when_mark_cancelled_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -150,8 +152,6 @@ async def _run_provider_invocation_cancellation_preserves_cancel_when_mark_cance
 async def _run_provider_invocation_cancellation_marks_workspace_state(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
@@ -202,8 +202,6 @@ async def _run_workspace_preparation_cancellation_marks_workspace_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
@@ -275,24 +273,26 @@ async def _run_workspace_preparation_cancellation_marks_workspace_state(
     )
 
     cleanup_registry = DeferredAsyncCleanupRegistry()
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    assert await asyncio.to_thread(started.wait, 2)
-    task.cancel()
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        ),
+        cleanup_registry,
+        (release,),
+    ) as task:
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-    state = read_json_object(state_path)
-    assert state["status"] == "cancelled"
-    assert state["child_process_environment"]["applied"] is False
-    assert state["workspace"]["retention"] == "deleted"
-    assert not workspace_path.exists()
+        state = read_json_object(state_path)
+        assert state["status"] == "cancelled"
+        assert state["child_process_environment"]["applied"] is False
+        assert state["workspace"]["retention"] == "deleted"
+        assert not workspace_path.exists()
 
 
 async def _run_workspace_preparation_cancellation_preserves_cancel_when_mark_cancelled_fails(
@@ -345,24 +345,26 @@ async def _run_workspace_preparation_cancellation_preserves_cancel_when_mark_can
     )
 
     cleanup_registry = DeferredAsyncCleanupRegistry()
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    assert await asyncio.to_thread(started.wait, 2)
-    task.cancel()
-    release.set()
-    with pytest.raises(asyncio.CancelledError) as exc_info:
-        await task
+        ),
+        cleanup_registry,
+        (release,),
+    ) as task:
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await task
 
-    assert exception_notes_contain(
-        exc_info.value,
-        "Workspace preparation cancellation handling failed: "
-        "workspace mark_cancelled boom",
-    )
+        assert exception_notes_contain(
+            exc_info.value,
+            "Workspace preparation cancellation handling failed: "
+            "workspace mark_cancelled boom",
+        )
 
 
 class CancelledInvoker:

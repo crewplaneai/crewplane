@@ -4,6 +4,8 @@ import json
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from itertools import count
 from pathlib import Path
 from threading import BoundedSemaphore, Event, Lock
 from typing import NoReturn, cast
@@ -27,7 +29,7 @@ from crewplane.runtime.workspace.snapshot import (
 )
 from crewplane.runtime.workspace.snapshot_scan_common import WorkspaceSnapshotPolicy
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -54,8 +56,6 @@ def artifact_store_without_project_root() -> ArtifactStorePort:
 def test_prepare_snapshot_workspace_materializes_writable_state(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
@@ -110,9 +110,11 @@ def test_prepare_snapshot_workspace_materializes_writable_state(
 @pytest.mark.parametrize(
     "policy",
     [
-        WorkspaceSnapshotPolicy(max_entries=1),
-        WorkspaceSnapshotPolicy(max_file_bytes=1),
-        WorkspaceSnapshotPolicy(max_elapsed_seconds=0.000_001),
+        pytest.param(WorkspaceSnapshotPolicy(max_entries=1), id="entry-limit"),
+        pytest.param(WorkspaceSnapshotPolicy(max_file_bytes=1), id="byte-limit"),
+        pytest.param(
+            WorkspaceSnapshotPolicy(max_elapsed_seconds=1), id="elapsed-limit"
+        ),
     ],
 )
 def test_snapshot_reporting_limits_still_terminalize_and_cleanup(
@@ -129,14 +131,15 @@ def test_snapshot_reporting_limits_still_terminalize_and_cleanup(
         workspace_invocation_context(),
     )
     (prepared.cwd / "reporting-limit.txt").write_text("limit", encoding="utf-8")
+    if policy.max_elapsed_seconds == 1:
+        policy = replace(policy, clock=count(0, 2).__next__)
+
+    def snapshot_policy(cancel_requested=None) -> WorkspaceSnapshotPolicy:
+        return replace(policy, cancel_requested=cancel_requested)
+
     monkeypatch.setattr(
         "crewplane.runtime.workspace.prepared_workspace.WorkspaceSnapshotPolicy",
-        lambda cancel_requested=None: WorkspaceSnapshotPolicy(
-            max_entries=policy.max_entries,
-            max_file_bytes=policy.max_file_bytes,
-            max_elapsed_seconds=policy.max_elapsed_seconds,
-            cancel_requested=cancel_requested,
-        ),
+        snapshot_policy,
     )
 
     prepared.mark_succeeded()
@@ -153,8 +156,6 @@ def test_snapshot_reporting_limits_still_terminalize_and_cleanup(
 def test_snapshot_workspace_materializes_only_project_subtree(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     project_root = repo / "project"
     sibling_root = repo / "sibling"
@@ -195,8 +196,6 @@ def test_snapshot_workspace_materializes_only_project_subtree(
 
 
 def test_snapshot_workspace_discards_provider_mutation(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -235,8 +234,6 @@ def test_snapshot_workspace_discards_provider_mutation(tmp_path: Path) -> None:
 def test_snapshot_workspace_retry_reset_restores_initial_checkout(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -265,8 +262,6 @@ def test_snapshot_workspace_retry_reset_restores_initial_checkout(
 def test_snapshot_retry_reset_rejects_replaced_workspace_parent(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -286,10 +281,7 @@ def test_snapshot_retry_reset_rejects_replaced_workspace_parent(
     external_checkout.mkdir()
     (external_checkout / "keep.txt").write_text("keep\n", encoding="utf-8")
     shutil.rmtree(workspace_path)
-    try:
-        workspace_path.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_path, outside, target_is_directory=True)
 
     with pytest.raises(RuntimeError, match="Snapshot workspace retry reset failed"):
         prepared.invocation_context.retry_reset()
@@ -303,8 +295,6 @@ def test_snapshot_workspace_final_state_rejects_state_identity_mutation(
     tmp_path: Path,
     mutation_kind: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -357,8 +347,6 @@ def test_disabled_workspace_uses_project_root(tmp_path: Path) -> None:
 def test_project_root_workspace_policy_uses_plan_project_root(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False)
     node = plan.nodes[0]
@@ -401,8 +389,6 @@ def test_materialization_limit_serializes_snapshot_creation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)

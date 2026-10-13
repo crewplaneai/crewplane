@@ -12,7 +12,7 @@ from crewplane.core.workflow.models import (
 from crewplane.core.workspace import (
     git_reads as workspace_git_file_reads,
 )
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
@@ -193,10 +193,7 @@ def test_workspace_dynamic_file_locator_does_not_follow_checkout_symlink(
 ) -> None:
     outside = tmp_path.parent / f"{tmp_path.name}-outside"
     outside.mkdir()
-    try:
-        (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlinks are unavailable: {exc}")
+    symlink_or_skip(tmp_path / "linked", outside, target_is_directory=True)
     workflow = WorkflowPlan(
         name="workspace dynamic locator",
         worktrees={"primary": {"kind": "worktree"}},

@@ -61,7 +61,7 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -116,7 +116,7 @@ def test_parallel_reviewer_sessions_share_recovery_baseline(
         fake_guard,
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -160,7 +160,7 @@ def test_parallel_reviewer_success_is_persisted_before_peer_failure(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -212,7 +212,7 @@ def test_parallel_reviewer_defect_propagates_with_continue_on_failure(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -276,7 +276,7 @@ def test_expected_reviewer_execution_failures_respect_continue_on_failure(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -321,7 +321,7 @@ def test_multiple_reviewer_invocation_failures_raise_typed_node_failure(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,

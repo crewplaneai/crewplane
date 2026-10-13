@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shlex
 import sys
@@ -177,47 +178,51 @@ def test_pytest_isolation_and_plugin_dependencies() -> None:
     assert has_lower_bound(pytest_requirement)
     assert "9.0" not in pytest_requirement.specifier
     assert "pytest-randomly" in parse_requirement_map(optional["stress"])
+    assert "pytest-xdist" in parse_requirement_map(optional["dev"])
+    assert pyproject["tool"]["coverage"]["run"]["patch"] == ["subprocess"]
 
 
-def test_make_test_runs_full_suite_and_separate_coverage_gates() -> None:
+def test_make_test_runs_full_suite_and_separate_coverage_gates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAKEFLAGS", "-- TEST_PROFILE=nightly")
+    monkeypatch.setenv("TEST_PROFILE", "pr-314")
+    monkeypatch.setenv("TEST_ARGS", "--workers 3")
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "MAKEFLAGS",
+            "MAKEOVERRIDES",
+            "MAKELEVEL",
+            "MFLAGS",
+            "TEST_PROFILE",
+            "TEST_ARGS",
+            "STATEMENT_COVERAGE_FLOOR",
+            "BRANCH_COVERAGE_FLOOR",
+        }
+    }
     result = run_process(
-        [
-            "make",
-            "--no-print-directory",
-            "-n",
-            "test",
-            "HAVE_UV=0",
-            f"PYTHON={sys.executable}",
-        ],
+        ["make", "--no-print-directory", "-n", "test", f"PYTHON={sys.executable}"],
         cwd=ROOT,
+        env=environment,
         check=True,
     )
     commands = [shlex.split(line) for line in result.stdout.splitlines()]
-    pytest_command = next(command for command in commands if "pytest" in command)
-    assert {
-        "--cov=crewplane",
-        "--cov-branch",
-        "--cov-report=",
-        "--cov-fail-under=0",
-    } <= set(pytest_command)
-    assert pytest_command[pytest_command.index("-p") + 1] == "pytest_cov"
-    assert pytest_command.count("-m") == 1
-    assert "-k" not in pytest_command
-    assert not any(token.startswith("tests/") for token in pytest_command)
-    assert any(
-        command[-4:] == ["coverage", "report", "--show-missing", "--skip-covered"]
-        for command in commands
-    )
-    assert any(
-        command[-4:] == ["coverage", "json", "-o", ".coverage.json"]
-        for command in commands
-    )
-    gate = next(
-        command for command in commands if "scripts/check_coverage.py" in command
-    )
-    assert gate[gate.index("scripts/check_coverage.py") + 1] == ".coverage.json"
-    assert int(gate[gate.index("--statements") + 1]) >= 96
-    assert int(gate[gate.index("--branches") + 1]) >= 90
+    (command,) = commands
+    assert command[:4] == ["uv", "run", "--locked", "--extra"]
+    assert "scripts/run_tests.py" in command
+    assert command[command.index("--profile") + 1] == "local"
+    assert "-k" not in command
+    assert not any(token.startswith("tests/") for token in command)
+    assert int(command[command.index("--statement-floor") + 1]) == 96
+    assert int(command[command.index("--branch-floor") + 1]) == 90
+    makefile = read_text("Makefile")
+    assert "HAVE_UV" not in makefile
+    assert "pip install -e" not in makefile
+    assert "uv sync --locked" in makefile
+    assert "$(COVERAGE_REPORT)" in makefile
 
 
 def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:

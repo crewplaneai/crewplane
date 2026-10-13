@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import sys
 from contextlib import suppress
 from pathlib import Path
@@ -69,8 +68,6 @@ async def _run_worktree_retry_reset_cancellation_terminates_retry_setup(
 ) -> None:
     if os.name != "posix":
         pytest.skip("process-group cleanup is POSIX-only")
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(
@@ -143,8 +140,6 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
 ) -> None:
     if os.name != "posix":
         pytest.skip("process-group cleanup is POSIX-only")
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(

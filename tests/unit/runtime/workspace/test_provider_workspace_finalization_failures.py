@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
 from threading import Event, Timer
 
@@ -35,7 +36,6 @@ from crewplane.runtime.workspace import (
 )
 from crewplane.runtime.workspace.mutator_fence import workspace_mutator_is_fenced
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
-from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
@@ -52,7 +52,11 @@ from tests.unit.runtime.workspace.service_provider_invocation_support import (
     SlowSuccessfulWorkspace,
     SuccessfulRuntimeInvoker,
     exception_notes_contain,
+    owned_workspace_task,
     wait_for_workspace_cancellation,
+)
+from tests.unit.runtime.workspace.service_provider_setup_invocation_support import (
+    remove_remaining_worktree,
 )
 
 pytestmark = requires_workspace_support
@@ -159,31 +163,33 @@ async def _run_workspace_success_finalization_owns_worker_when_fence_write_fails
         "crewplane.runtime.workspace.state.mutate_workspace_state",
         fail_state_mutation,
     )
-    task = asyncio.create_task(
-        finalize_successful_workspace(request, workspace, True, None)
-    )
-    assert await asyncio.to_thread(workspace.started.wait, 2)
-    task.cancel()
+    async with owned_workspace_task(
+        finalize_successful_workspace(request, workspace, True, None),
+        runtime_context.deferred_workspace_cleanups,
+        (workspace.release,),
+    ) as task:
+        assert await asyncio.to_thread(workspace.started.wait, 2)
+        task.cancel()
 
-    try:
-        with pytest.raises(WorkspaceFinalizationDeferredCancellation) as exc_info:
-            await task
-        assert isinstance(exc_info.value.__cause__, asyncio.CancelledError)
-        assert exception_notes_contain(
-            exc_info.value.__cause__,
-            "Workspace success finalizer fence persistence failed: disk full",
-        )
-        assert len(runtime_context.deferred_workspace_cleanups.tasks) == 1
-        assert len(runtime_context.deferred_workspace_cleanups.protected_tasks) == 1
-        assert workspace_mutator_is_fenced(state_path)
-    finally:
-        workspace.release.set()
+        try:
+            with pytest.raises(WorkspaceFinalizationDeferredCancellation) as exc_info:
+                await task
+            assert isinstance(exc_info.value.__cause__, asyncio.CancelledError)
+            assert exception_notes_contain(
+                exc_info.value.__cause__,
+                "Workspace success finalizer fence persistence failed: disk full",
+            )
+            assert len(runtime_context.deferred_workspace_cleanups.tasks) == 1
+            assert len(runtime_context.deferred_workspace_cleanups.protected_tasks) == 1
+            assert workspace_mutator_is_fenced(state_path)
+        finally:
+            workspace.release.set()
 
-    errors = await runtime_context.deferred_workspace_cleanups.drain(1.0)
+        errors = await runtime_context.deferred_workspace_cleanups.drain(1.0)
 
-    assert errors == ()
-    assert workspace.finished.is_set()
-    assert not workspace_mutator_is_fenced(state_path)
+        assert errors == ()
+        assert workspace.finished.is_set()
+        assert not workspace_mutator_is_fenced(state_path)
 
 
 async def _run_workspace_success_finalizer_fence_persistence_does_not_block_event_loop(
@@ -248,55 +254,73 @@ async def _run_workspace_success_finalizer_fence_persistence_does_not_block_even
     )
     observer = asyncio.create_task(observe_persistence_start())
     fallback = Timer(2.0, release_from_fallback_thread)
-    task = asyncio.create_task(
-        finalize_successful_workspace(request, workspace, True, None)
-    )
-    assert await asyncio.to_thread(workspace.started.wait, 2)
-    fallback.start()
-    task.cancel()
-
     try:
-        with pytest.raises(WorkspaceFinalizationDeferredCancellation):
-            await task
-        await asyncio.wait_for(event_loop_progressed.wait(), timeout=5)
-        assert not fallback_released.is_set()
-        assert len(runtime_context.deferred_workspace_cleanups.protected_tasks) == 2
+        async with owned_workspace_task(
+            finalize_successful_workspace(request, workspace, True, None),
+            runtime_context.deferred_workspace_cleanups,
+            (
+                release_persistence,
+                workspace.release,
+            ),
+        ) as task:
+            assert await asyncio.to_thread(workspace.started.wait, 2)
+            fallback.start()
+            task.cancel()
+
+            try:
+                with pytest.raises(WorkspaceFinalizationDeferredCancellation):
+                    await task
+                await asyncio.wait_for(event_loop_progressed.wait(), timeout=5)
+                assert not fallback_released.is_set()
+                assert (
+                    len(runtime_context.deferred_workspace_cleanups.protected_tasks)
+                    == 2
+                )
+            finally:
+                release_persistence.set()
+                workspace.release.set()
+
+            errors = await runtime_context.deferred_workspace_cleanups.drain(2.0)
+
+            assert errors == ()
+            assert workspace.finished.is_set()
+            assert not workspace_mutator_is_fenced(state_path)
+
     finally:
         release_persistence.set()
         workspace.release.set()
         fallback.cancel()
-        fallback.join(timeout=5)
-        await observer
-
-    errors = await runtime_context.deferred_workspace_cleanups.drain(2.0)
-
-    assert errors == ()
-    assert workspace.finished.is_set()
-    assert not workspace_mutator_is_fenced(state_path)
+        if fallback.ident is not None:
+            fallback.join(timeout=5)
+            assert not fallback.is_alive()
+        observer.cancel()
+        await asyncio.gather(observer, return_exceptions=True)
 
 
 async def _run_workspace_success_finalization_preserves_cancel_on_failure() -> None:
     workspace = FailingSlowSuccessfulWorkspace()
     cleanup_registry = DeferredAsyncCleanupRegistry()
-    task = asyncio.create_task(
-        mark_workspace_succeeded(workspace, True, cleanup_registry)
-    )
-    assert await asyncio.to_thread(workspace.started.wait, 2)
+    async with owned_workspace_task(
+        mark_workspace_succeeded(workspace, True, cleanup_registry),
+        cleanup_registry,
+        (workspace.release,),
+    ) as task:
+        assert await asyncio.to_thread(workspace.started.wait, 2)
 
-    task.cancel()
-    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
-    workspace.release.set()
+        task.cancel()
+        await wait_for_workspace_cancellation(workspace.cancel_requested_check)
+        workspace.release.set()
 
-    with pytest.raises(asyncio.CancelledError) as exc_info:
-        await task
-    assert workspace.finished.is_set()
-    assert workspace.cancel_requested is True
-    assert exception_notes_contain(
-        exc_info.value,
-        "Workspace success finalization after cancellation failed: "
-        "workspace mark_succeeded boom",
-    )
-    assert cleanup_registry.tasks == set()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await task
+        assert workspace.finished.is_set()
+        assert workspace.cancel_requested is True
+        assert exception_notes_contain(
+            exc_info.value,
+            "Workspace success finalization after cancellation failed: "
+            "workspace mark_succeeded boom",
+        )
+        assert cleanup_registry.tasks == set()
 
 
 async def _run_lifecycle_cancellation_after_finalization_failure_records_terminal_state(
@@ -360,7 +384,7 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
         fake_prepare,
     )
 
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         run_provider_call(
             ProviderCallRequest(
                 runtime_context=runtime_context,
@@ -377,22 +401,24 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
                 telemetry=None,
             ),
             display=ProviderCallDisplay(telemetry=None),
-        )
-    )
-    assert await asyncio.to_thread(workspace.started.wait, 2)
+        ),
+        runtime_context.deferred_workspace_cleanups,
+        (workspace.release,),
+    ) as task:
+        assert await asyncio.to_thread(workspace.started.wait, 2)
 
-    task.cancel()
-    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
-    workspace.release.set()
+        task.cancel()
+        await wait_for_workspace_cancellation(workspace.cancel_requested_check)
+        workspace.release.set()
 
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    state = read_json_object(state_path)
-    assert workspace.finished.is_set()
-    assert workspace.terminal_cleanup_cancel_requested is False
-    assert state["status"] == "cancelled"
-    assert state["workspace"]["retention"] == "deleted"
-    assert not workspace_path.exists()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        state = read_json_object(state_path)
+        assert workspace.finished.is_set()
+        assert workspace.terminal_cleanup_cancel_requested is False
+        assert state["status"] == "cancelled"
+        assert state["workspace"]["retention"] == "deleted"
+        assert not workspace_path.exists()
 
 
 async def _run_worktree_finalization_failure_cleans_uncontended_cancelled_workspace(
@@ -412,71 +438,70 @@ async def _run_worktree_finalization_failure_cleans_uncontended_cancelled_worksp
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
     )
-    assert prepared.workspace_path is not None
-    assert prepared.state_path is not None
-    source = plan.workspace_source
-    assert source is not None
-    started = Event()
-    release = Event()
-    cancel_requested_check: Callable[[], bool] | None = None
+    with ExitStack() as cleanup:
+        cleanup.callback(remove_remaining_worktree, plan, prepared.workspace_path)
+        assert prepared.workspace_path is not None
+        assert prepared.state_path is not None
+        source = plan.workspace_source
+        assert source is not None
+        started = Event()
+        release = Event()
+        cancel_requested_check: Callable[[], bool] | None = None
 
-    def fail_success_finalization(
-        workspace: PreparedWorkspace,
-        child_environment_applied: bool | None = None,
-        defer_cleanup: bool = False,
-        cancel_requested: Callable[[], bool] | None = None,
-    ) -> None:
-        del child_environment_applied, defer_cleanup
-        nonlocal cancel_requested_check
-        assert workspace is prepared
-        cancel_requested_check = cancel_requested
-        started.set()
-        assert release.wait(2)
-        raise RuntimeError("workspace mark_succeeded boom")
+        def fail_success_finalization(
+            workspace: PreparedWorkspace,
+            child_environment_applied: bool | None = None,
+            defer_cleanup: bool = False,
+            cancel_requested: Callable[[], bool] | None = None,
+        ) -> None:
+            del child_environment_applied, defer_cleanup
+            nonlocal cancel_requested_check
+            assert workspace is prepared
+            cancel_requested_check = cancel_requested
+            started.set()
+            assert release.wait(2)
+            raise RuntimeError("workspace mark_succeeded boom")
 
-    monkeypatch.setattr(
-        PreparedWorkspace,
-        "mark_succeeded",
-        fail_success_finalization,
-    )
-    runtime_context = CompiledRuntimeContext(
-        plan=plan,
-        secret_context=SecretContext(),
-    )
-    request = ProviderCallRequest(
-        runtime_context=runtime_context,
-        output=output,
-        node_id="implement",
-        provider=plan.nodes[0].provider_records[0],
-        task_id="alpha",
-        audit_round_num=None,
-        round_num=1,
-        prompt="done",
-        output_file=node_dir / "alpha_round1.md",
-        role_label=ProviderRole.EXECUTOR,
-        invoker=object(),
-        telemetry=None,
-    )
-
-    try:
-        task = asyncio.create_task(
-            finalize_successful_workspace(request, prepared, None, None)
+        monkeypatch.setattr(
+            PreparedWorkspace,
+            "mark_succeeded",
+            fail_success_finalization,
         )
-        assert await asyncio.to_thread(started.wait, 2)
-        task.cancel()
-        await wait_for_workspace_cancellation(cancel_requested_check)
-        release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        runtime_context = CompiledRuntimeContext(
+            plan=plan,
+            secret_context=SecretContext(),
+        )
+        request = ProviderCallRequest(
+            runtime_context=runtime_context,
+            output=output,
+            node_id="implement",
+            provider=plan.nodes[0].provider_records[0],
+            task_id="alpha",
+            audit_round_num=None,
+            round_num=1,
+            prompt="done",
+            output_file=node_dir / "alpha_round1.md",
+            role_label=ProviderRole.EXECUTOR,
+            invoker=object(),
+            telemetry=None,
+        )
 
-        state = read_json_object(prepared.state_path)
-        assert state["status"] == "cancelled"
-        assert state["workspace"]["retention"] == "deleted"
-        assert not prepared.workspace_path.exists()
-    finally:
-        release.set()
-        if prepared.workspace_path.exists():
-            remove_worktree_workspace(source, prepared.workspace_path)
+        async with owned_workspace_task(
+            finalize_successful_workspace(request, prepared, None, None),
+            runtime_context.deferred_workspace_cleanups,
+            (release,),
+        ) as task:
+            assert await asyncio.to_thread(started.wait, 2)
+            task.cancel()
+            await wait_for_workspace_cancellation(cancel_requested_check)
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            state = read_json_object(prepared.state_path)
+            assert state["status"] == "cancelled"
+            assert state["workspace"]["retention"] == "deleted"
+            assert not prepared.workspace_path.exists()
 
 
 class FailingSlowSuccessfulWorkspace(SlowSuccessfulWorkspace):

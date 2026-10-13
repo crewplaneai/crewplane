@@ -92,10 +92,7 @@ def test_symlink_node_state_file_is_not_reusable(tmp_path) -> None:
     node_state_dir = source.run_dir / "manifests" / "nodes"
     node_state_dir.mkdir(parents=True)
     symlink_path = node_state_dir / build_node_state_filename("a")
-    try:
-        symlink_or_skip(symlink_path, external_state_path)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(symlink_path, external_state_path)
 
     frontier = validate_resume_frontier(source, make_plan())
 
@@ -114,14 +111,11 @@ def test_symlink_node_state_directory_is_not_reusable(tmp_path) -> None:
     node_state_parent = source.run_dir / "manifests"
     node_state_parent.mkdir(exist_ok=True)
     symlink_path = node_state_parent / "nodes"
-    try:
-        symlink_or_skip(
-            symlink_path,
-            external_state_path.parent,
-            target_is_directory=True,
-        )
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(
+        symlink_path,
+        external_state_path.parent,
+        target_is_directory=True,
+    )
 
     frontier = validate_resume_frontier(source, make_plan())
 

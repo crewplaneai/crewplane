@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
-
-import pytest
 
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.service import MaterializationLimiter
@@ -28,8 +25,6 @@ pytestmark = requires_workspace_support
 def test_three_node_same_worktree_chain_emits_additive_state_and_bundles(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = three_node_lineage_plan(repo, cache_root)

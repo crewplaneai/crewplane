@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -47,8 +46,6 @@ def test_fulfill_branch_exports_rejects_bundle_metadata_mismatch(
     metadata_override: dict[str, object],
     message: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -79,8 +76,6 @@ def test_fulfill_branch_exports_rejects_bundle_metadata_mismatch(
 def test_fulfill_branch_exports_rejects_result_tree_mismatch_before_branch_ref(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -121,8 +116,6 @@ def test_fulfill_branch_exports_rejects_foreign_checkpoint_identity(
     identity_field: str,
     foreign_value: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/foreign")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -184,8 +177,6 @@ def test_fulfill_branch_exports_rejects_foreign_checkpoint_identity(
 def test_fulfill_branch_exports_rejects_foreign_live_repository_identity(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/foreign-live")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -225,8 +216,6 @@ def test_fulfill_branch_exports_rejects_foreign_live_repository_identity(
 def test_fulfill_branch_exports_imports_missing_result_from_bundle(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -259,8 +248,6 @@ def test_fulfill_branch_exports_imports_missing_result_from_bundle(
 def test_fulfill_branch_exports_rejects_prerequisite_bundle_chain(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")

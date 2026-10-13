@@ -24,6 +24,8 @@ When changing behavior, preserve these properties:
 
 Consult documentation relevant to the task:
 
+- [Test guidance](tests/AGENTS.md): required when creating, changing, or reviewing
+  tests, fixtures, test helpers, or test automation, including under `scripts/`
 - [README.md](README.md): product orientation
 - [DEVELOPMENT.md](DEVELOPMENT.md): setup, validation, release, and maintenance procedures
 - [Module and test map](DEVELOPMENT.md#module-and-test-map): implementation entry points and affected tests
@@ -33,6 +35,8 @@ Consult documentation relevant to the task:
 ## Coding Standards
 
 - Keep modules cohesive and boundaries explicit.
+- Apply established software design principles and patterns within the existing architecture to produce cohesive, loosely coupled, readable, and testable implementations. Use a pattern when it clarifies responsibilities or addresses a concrete source of complexity.
+- Design for documented extension needs and expected workloads: keep supported changes local, dependencies and resource ownership explicit, and resource use bounded. Keep abstractions proportional to the task.
 - Keep provider-specific invocation transport inside invoker adapters or adapter-owned invoker capability modules. Runtime execution should consume provider-agnostic invoker contracts and should not infer provider behavior from executable names, CLI flags, output formats, quota text, or usage text.
 - Do not introduce hidden cross-node state. Downstream behavior should continue to derive from workflow definitions, config, and artifact files.
 - Do not weaken template path restrictions casually. `{{file:path}}` is intentionally bounded to the project root unless explicitly allowlisted through `allowed_template_paths`.

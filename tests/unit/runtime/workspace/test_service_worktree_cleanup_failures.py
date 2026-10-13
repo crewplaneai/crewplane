@@ -43,8 +43,6 @@ def test_terminal_cleanup_failure_persists_cleanup_diagnostic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
@@ -88,8 +86,6 @@ def test_worktree_success_cleanup_retries_state_after_physical_removal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -163,8 +159,6 @@ def test_worktree_workspace_provisioning_cleanup_failure_notes_primary_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -216,8 +210,6 @@ def test_partial_worktree_failure_publishes_terminal_state_before_removal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -296,8 +288,6 @@ def test_partial_worktree_failure_before_exact_claim_is_retained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -347,8 +337,6 @@ def test_worktree_capture_cleans_result_refs_when_bundle_export_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -389,8 +377,6 @@ def test_worktree_capture_cleans_result_refs_when_state_recording_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

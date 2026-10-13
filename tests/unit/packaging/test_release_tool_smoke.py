@@ -5,9 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-import yaml
 
-from crewplane.cli.templates import CONFIG_TEMPLATE, render_template_content
 from scripts.release import retry, smoke, state
 from tests.helpers.platforms import requires_posix
 from tests.unit.packaging.release_tool_support import write_minimal_repo
@@ -63,80 +61,22 @@ class BrewSmokeRunner:
         return state.CommandResult(command_tuple, 0, "", "")
 
 
-class InstalledCliRecordingRunner:
-    def __init__(self, version: str) -> None:
-        self.version = version
-        self.calls: list[tuple[tuple[str, ...], Path]] = []
+def test_installed_cli_smoke_invokes_shared_assertions(tmp_path: Path) -> None:
+    from tests.unit.packaging.release_tool_support import FakeRunner
 
-    def run(
-        self,
-        command,
-        cwd: Path,
-        env=None,
-        timeout=None,
-        capture_output: bool = True,
-        check: bool = True,
-    ) -> state.CommandResult:
-        del env, timeout, capture_output, check
-        command_tuple = tuple(command)
-        self.calls.append((command_tuple, cwd))
-        if command_tuple[-1:] == ("init",):
-            state_dir = cwd / ".crewplane"
-            state_dir.mkdir()
-            template = CONFIG_TEMPLATE.read_text(encoding="utf-8")
-            (state_dir / "config.yml").write_text(
-                render_template_content(template), encoding="utf-8"
-            )
-        stdout = (
-            f"crewplane {self.version}\n"
-            if command_tuple[-1:] == ("--version",)
-            else ""
-        )
-        return state.CommandResult(command_tuple, 0, stdout, "")
-
-
-def test_installed_cli_smoke_exercises_a_workflow(tmp_path: Path) -> None:
     write_minimal_repo(tmp_path)
     context = state.read_release_context(tmp_path)
-    runner = InstalledCliRecordingRunner(context.version.project)
+    runner = FakeRunner()
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     executable = tmp_path / "bin" / "crewplane"
-
     smoke.exercise_installed_cli(context, runner, executable, scratch)
-
-    project = scratch / "project"
-    assert [call for call, cwd in runner.calls if cwd == project] == [
-        (str(executable), "init"),
-        (str(executable), "validate"),
-        (str(executable), "run", "--no-live"),
-    ]
-
-
-def test_installed_cli_smoke_preserves_scaffolded_config(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.yml"
-    template = CONFIG_TEMPLATE.read_text(encoding="utf-8")
-    config_path.write_text(render_template_content(template), encoding="utf-8")
-    expected_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    invoker_options = expected_config["settings"]["integrations"]["invoker"]["options"]
-    invoker_options["delay_seconds"] = 0
-    invoker_options["observation_delay_seconds"] = 0
-
-    smoke.write_mock_config(config_path)
-
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert config == expected_config
-
-
-def test_installed_cli_smoke_rejects_non_mock_scaffold(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.yml"
-    config_path.write_text(
-        "settings:\n  integrations:\n    invoker:\n      implementation: cli\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(state.ReleaseError, match="does not define the mock invoker"):
-        smoke.write_mock_config(config_path)
+    command = runner.commands[-1]
+    assert "installed_package_assertions.py" in " ".join(command)
+    assert command[command.index("--cli") + 1] == str(executable)
+    assert command[command.index("--python") + 1] == str(executable.parent / "python")
+    assert command[command.index("--expected-version") + 1] == context.version.project
+    assert command[command.index("--checkout") + 1] == str(context.root)
 
 
 @requires_posix

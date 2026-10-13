@@ -98,10 +98,7 @@ def test_audit_round_dir_rejects_symlinked_round_directory(tmp_path: Path) -> No
     outside = tmp_path / "outside"
     outside.mkdir()
     round_dir = tmp_path / "review-audit-round-2"
-    try:
-        symlink_or_skip(round_dir, outside, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(round_dir, outside, target_is_directory=True)
 
     with pytest.raises(ValueError, match="real directory"):
         audit_round_dir(tmp_path, 2, 2)

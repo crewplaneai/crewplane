@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Coroutine
+from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Event
+from typing import Any
 
 from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.runtime.execution.runtime_context import DeferredAsyncCleanupRegistry
 
 
 class SlowSuccessfulWorkspace:
@@ -83,3 +86,27 @@ class SuccessfulRuntimeInvoker:
 
 def exception_notes_contain(exc: BaseException, expected: str) -> bool:
     return any(expected in note for note in getattr(exc, "__notes__", ()))
+
+
+@asynccontextmanager
+async def owned_workspace_task(
+    operation: Coroutine[Any, Any, object],
+    registry: DeferredAsyncCleanupRegistry,
+    gates: tuple[Event | asyncio.Event, ...],
+) -> AsyncIterator[asyncio.Task[object]]:
+    task = asyncio.create_task(operation)
+    try:
+        yield task
+    finally:
+        for gate in gates:
+            gate.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 10)
+        await registry.drain(10)
+        protected = tuple(registry.protected_tasks)
+        if protected:
+            await asyncio.wait_for(
+                asyncio.gather(*protected, return_exceptions=True), 10
+            )
+        assert not registry.has_unfinished_protected_tasks

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,10 +31,15 @@ from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.isolated_git import run_git, run_git_text
+from tests.helpers.isolated_git import require_git, run_git, run_git_text
 
 
 def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
+    require_git(
+        dict(os.environ),
+        os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        os.environ.get("GIT_FLOOR_BIN"),
+    )
     repo = tmp_path / "repo"
     repo.mkdir()
     init_args = (

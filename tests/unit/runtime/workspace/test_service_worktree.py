@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -84,8 +83,6 @@ def test_worktree_success_requires_capture_metadata(tmp_path: Path) -> None:
 def test_worktree_workspace_captures_result_commit_and_bundle(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -148,8 +145,6 @@ def test_worktree_workspace_captures_result_commit_and_bundle(
 def test_worktree_setup_allows_large_ignored_files(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text("weights/\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitignore")
@@ -198,8 +193,6 @@ def test_worktree_setup_allows_large_ignored_files(
 def test_worktree_result_capture_uses_temporary_index(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -231,8 +224,6 @@ def test_worktree_capture_rejects_filesystem_race_after_private_staging(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -278,8 +269,6 @@ def test_worktree_capture_rejects_filesystem_race_after_private_staging(
 def test_worktree_capture_excludes_new_ignored_file_force_added_by_provider(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text("ignored-output/\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitignore")
@@ -331,8 +320,6 @@ def test_worktree_capture_excludes_new_ignored_file_force_added_by_provider(
 def test_worktree_generated_file_snapshot_uses_git_change_baseline(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     (repo / ".gitignore").write_text("ignored-output/\n", encoding="utf-8")
     run_git_text(repo, "add", ".gitignore")
@@ -382,8 +369,6 @@ def test_worktree_generated_file_snapshot_uses_git_change_baseline(
 def test_worktree_retry_reset_restores_attempt_baseline(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(

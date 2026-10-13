@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from time import monotonic, time
 
 from crewplane.architecture.contracts import ObserverCapabilities
@@ -287,6 +288,21 @@ class SimulatedTmuxRuntime:
     @right_pane_height.setter
     def right_pane_height(self, value: int) -> None:
         self.client.right_pane_height = value
+
+    @contextmanager
+    def running(self, context: RunContext) -> Iterator[SimulatedTmuxRuntime]:
+        try:
+            self.start(context)
+            yield self
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        try:
+            self.stop(RunResult(status="succeeded"))
+        finally:
+            if self.lifecycle.last_session is not None:
+                self.cleanup_preserved_runtime()
 
     def start(self, context: RunContext) -> None:
         self.runtime.start(context)

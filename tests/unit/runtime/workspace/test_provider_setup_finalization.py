@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import sys
+from collections.abc import Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from threading import Event
 
@@ -34,7 +35,6 @@ from crewplane.runtime.workspace.setup import (
     WorkspaceSetupError,
 )
 from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
-from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.workspace_service import (
@@ -45,8 +45,12 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+from tests.unit.runtime.workspace.service_provider_invocation_support import (
+    owned_workspace_task,
+)
 from tests.unit.runtime.workspace.service_provider_setup_invocation_support import (
     plan_with_setup,
+    remove_remaining_worktree,
     start_git_metadata_lock_holder,
     stop_git_metadata_lock_holder,
 )
@@ -54,12 +58,18 @@ from tests.unit.runtime.workspace.service_provider_setup_invocation_support impo
 pytestmark = requires_workspace_support
 
 
+@pytest.fixture
+def cleanup_stack(monkeypatch: pytest.MonkeyPatch) -> Iterator[ExitStack]:
+    del monkeypatch  # Restore patches only after dependent resources are closed.
+    with ExitStack() as stack:
+        yield stack
+
+
 def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
+    cleanup_stack: ExitStack,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")
@@ -69,11 +79,13 @@ def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
     )
+    cleanup_stack.callback(remove_remaining_worktree, plan, prepared.workspace_path)
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
     lock_path = Path(source.common_git_dir) / "crewplane" / "workspace.lock"
     holder = start_git_metadata_lock_holder(lock_path)
+    cleanup_stack.callback(stop_git_metadata_lock_holder, holder)
     monkeypatch.setattr(
         provider_invocation_generated_files_module,
         "WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS",
@@ -108,18 +120,20 @@ def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
     )
 
     async def cancel_finalizer() -> tuple[Exception, ...]:
-        task = asyncio.create_task(
-            finalize_successful_workspace(request, prepared, None, None)
-        )
-        assert await asyncio.to_thread(lock_poll_started.wait, 10)
-        task.cancel()
-        try:
-            with pytest.raises(WorkspaceFinalizationDeferredCancellation):
-                await asyncio.wait_for(task, timeout=10)
-            assert not release_lock_poll.is_set()
-        finally:
-            release_lock_poll.set()
-        return await runtime_context.deferred_workspace_cleanups.drain(10)
+        async with owned_workspace_task(
+            finalize_successful_workspace(request, prepared, None, None),
+            runtime_context.deferred_workspace_cleanups,
+            (release_lock_poll,),
+        ) as task:
+            assert await asyncio.to_thread(lock_poll_started.wait, 10)
+            task.cancel()
+            try:
+                with pytest.raises(WorkspaceFinalizationDeferredCancellation):
+                    await asyncio.wait_for(task, timeout=10)
+                assert not release_lock_poll.is_set()
+            finally:
+                release_lock_poll.set()
+            return await runtime_context.deferred_workspace_cleanups.drain(10)
 
     try:
         cleanup_errors = asyncio.run(cancel_finalizer())
@@ -131,28 +145,25 @@ def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
         )
     finally:
         release_lock_poll.set()
-        stop_git_metadata_lock_holder(holder)
-        if prepared.workspace_path.exists():
-            remove_worktree_workspace(source, prepared.workspace_path)
 
 
 def test_worktree_setup_failure_records_retained_when_cleanup_fails(
+    cleanup_stack: ExitStack,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = plan_with_setup(
         workspace_plan(repo, cache_root, cleanup_on_success=True, kind="worktree"),
-        [[sys.executable, "-c", "import sys; sys.exit(7)"]],
+        [[sys.executable, "-c", "import sys; sys.exit(int(sys.argv[1]))", "7"]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_node_dir(node_artifact_request("implement"))
 
     def fail_cleanup(source: object, workspace_path: Path, git_dir: Path) -> None:
         del source, git_dir
+        cleanup_stack.callback(remove_remaining_worktree, plan, workspace_path)
         assert workspace_path.exists()
         raise RuntimeError("cleanup denied")
 
@@ -182,11 +193,10 @@ def test_worktree_setup_failure_records_retained_when_cleanup_fails(
 
 
 def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
+    cleanup_stack: ExitStack,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True, kind="worktree")
@@ -200,6 +210,7 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
 
     def fail_cleanup(source: object, workspace_path: Path, git_dir: Path) -> None:
         del source, git_dir
+        cleanup_stack.callback(remove_remaining_worktree, plan, workspace_path)
         assert workspace_path.exists()
         raise RuntimeError("cleanup denied")
 
@@ -236,11 +247,10 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
 
 
 def test_worktree_preparation_cancellation_persists_cleanup_diagnostic(
+    cleanup_stack: ExitStack,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -256,6 +266,7 @@ def test_worktree_preparation_cancellation_persists_cleanup_diagnostic(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
     )
+    cleanup_stack.callback(remove_remaining_worktree, plan, prepared.workspace_path)
     assert prepared.workspace_path is not None
     assert prepared.state_path is not None
 
@@ -291,15 +302,13 @@ def test_worktree_preparation_cancellation_persists_cleanup_diagnostic(
             "Workspace cleanup after preparation cancellation failed: cleanup denied"
         ),
     }
-    remove_worktree_workspace(source, prepared.workspace_path)
 
 
 def test_worktree_preparation_retains_when_process_drain_is_unresolved(
+    cleanup_stack: ExitStack,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -319,6 +328,9 @@ def test_worktree_preparation_retains_when_process_drain_is_unresolved(
         trusted_state_payload: dict[str, object],
     ) -> None:
         del request, cwd, checkout_root, trusted_state_payload
+        cleanup_stack.callback(
+            remove_remaining_worktree, plan, preparation_plan.planned_workspace_path
+        )
         record_workspace_process_drain(
             preparation_plan.state_path,
             "unresolved",
@@ -360,4 +372,3 @@ def test_worktree_preparation_retains_when_process_drain_is_unresolved(
 
     source = plan.workspace_source
     assert source is not None
-    remove_worktree_workspace(source, workspace_path)

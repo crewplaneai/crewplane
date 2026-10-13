@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS, require_git
 
 
 def cache_workspace_path(tmp_path: Path, family: str, run_key: str, name: str) -> Path:
@@ -11,6 +12,11 @@ def cache_workspace_path(tmp_path: Path, family: str, run_key: str, name: str) -
 
 
 def cleanup_git_repo(tmp_path: Path) -> Path:
+    require_git(
+        dict(os.environ),
+        os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        os.environ.get("GIT_FLOOR_BIN"),
+    )
     repo = tmp_path / "repo"
     repo.mkdir()
     run_cleanup_git(repo, "init")

@@ -320,10 +320,7 @@ def test_event_reader_returns_empty_for_missing_or_symlinked_logs(
     source_path = tmp_path / "source.ndjson"
     link_path = tmp_path / "link.ndjson"
     source_path.write_text(json.dumps(invocation_record()), encoding="utf-8")
-    try:
-        symlink_or_skip(link_path, source_path)
-    except OSError:
-        pytest.skip("symlinks are unavailable")
+    symlink_or_skip(link_path, source_path)
 
     assert read_event_log(missing_path) == []
     assert read_event_log(link_path) == []

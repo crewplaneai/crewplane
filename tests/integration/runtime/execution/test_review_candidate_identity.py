@@ -54,7 +54,7 @@ def request_for(tmp_path: Path, managed: bool = True) -> ExecutorRoundRequest:
                 )
             }
         )
-    context = make_round_runtime_context()
+    context = make_round_runtime_context(tmp_path)
     context.plan = context.plan.model_copy(update={"project_root": str(tmp_path)})
     executor = provider("exec", ProviderRole.EXECUTOR, "alpha")
     node_dir = output.create_node_dir(node_artifact_request(node.id))
@@ -342,3 +342,44 @@ def test_project_scan_failure_preserves_review_limits_and_unavailable_identity(
         5.0,
     )
     assert {".git", ".venv"} <= policy.excluded_roots
+
+
+@pytest.mark.parametrize("builder", ["round", "drift"])
+def test_runtime_builders_fingerprint_only_the_owned_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, builder: str
+) -> None:
+    from crewplane.runtime.execution.review_loop import candidate_identity
+    from tests.integration.runtime.execution.review_loop_drift_support import (
+        make_drift_request,
+    )
+
+    project = tmp_path / "owned"
+    project.mkdir()
+    (project / "input.txt").write_text("first", encoding="utf-8")
+    unrelated = tmp_path / "unrelated-cwd"
+    unrelated.mkdir()
+    monkeypatch.chdir(unrelated)
+    request = request_for(project, managed=False)
+    if builder == "drift":
+        drift_request, _, _ = make_drift_request(project)
+        request = replace(request, runtime_context=drift_request.runtime_context)
+    roots = []
+    original = candidate_identity.project_fingerprint
+
+    def capture_root(root, artifact_roots):
+        roots.append(root)
+        return original(root, artifact_roots)
+
+    monkeypatch.setattr(candidate_identity, "project_fingerprint", capture_root)
+    try:
+        before = asyncio.run(observe_project(request))
+        (unrelated / "outside.txt").write_text("must not affect fingerprint")
+        assert asyncio.run(observe_project(request)).fingerprint == before.fingerprint
+        (project / "input.txt").write_text("second", encoding="utf-8")
+        assert asyncio.run(observe_project(request)).fingerprint != before.fingerprint
+        assert before.fingerprint is not None
+        assert roots == [project.resolve()] * 3
+        assert Path(request.runtime_context.plan.context_root) == project
+        assert Path(request.runtime_context.plan.manifest_root).is_relative_to(project)
+    finally:
+        request.runtime_context.runtime_publications.close()

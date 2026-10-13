@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -48,8 +47,6 @@ pytestmark = requires_workspace_support
 def test_preview_branch_exports_rejects_result_ref_that_is_not_a_commit(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/preview")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -126,8 +123,6 @@ def test_checkpoint_from_record_accepts_valid_required_fields(
 def test_fulfill_branch_exports_from_history_writes_duplicate_skip_record(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/history")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -163,8 +158,6 @@ def test_fulfill_branch_exports_from_history_writes_duplicate_skip_record(
 def test_fulfill_branch_exports_rejects_unresolved_workspace_mutator(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/unresolved-mutator")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -242,8 +235,6 @@ def test_history_fulfillment_recovers_prepared_export_when_policy_is_disabled(
     expected_preview_branch_exists_after: bool,
     prepared_origin: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     enabled_plan = branch_export_plan(
         repo,
@@ -369,8 +360,6 @@ def test_history_fulfillment_preserves_invalid_terminal_evidence_across_retries(
     tmp_path: Path,
     corrupt_checkpoint: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/invalid-record")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -429,8 +418,6 @@ def test_history_fulfillment_preserves_invalid_terminal_evidence_across_retries(
 def test_fulfill_branch_exports_verifies_exact_branch_for_resumed_node(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/resumed-exact")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -473,8 +460,6 @@ def test_history_fulfillment_audits_exact_branch_race_from_locked_decision(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/raced-exact")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -529,8 +514,6 @@ def test_history_fulfillment_does_not_create_branch_that_disappears_after_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/disappeared")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")

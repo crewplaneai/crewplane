@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -70,8 +69,6 @@ def test_validate_result_tree_rejects_gitlinks(tmp_path: Path) -> None:
 def test_validate_result_tree_rejects_reserved_paths_under_project_root(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     reserved_path = repo / "packages" / "app" / ".crewplane" / "execution-results"
     reserved_path.mkdir(parents=True)
@@ -84,8 +81,6 @@ def test_validate_result_tree_rejects_reserved_paths_under_project_root(
 
 
 def test_validate_result_tree_rejects_missing_blob_object(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     missing_oid = "f" * 40
     tree = (

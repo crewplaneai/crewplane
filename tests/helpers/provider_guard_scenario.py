@@ -45,12 +45,10 @@ def main() -> None:
         output=output,
         runtime_publications=RuntimePublicationRegistry(),
     )
-    command = [sys.executable, "-c", "import time; time.sleep(60)"]
+    fixtures = Path(__file__).resolve().parents[1] / "fixtures/processes"
+    command = [sys.executable, str(fixtures / "sleeping_process.py")]
     if mode == "descendant":
-        fixture = (
-            Path(__file__).resolve().parents[1]
-            / "fixtures/processes/provider_descendant.py"
-        )
+        fixture = fixtures / "provider_descendant.py"
         command = [
             sys.executable,
             str(fixture),

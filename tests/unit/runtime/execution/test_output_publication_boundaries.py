@@ -29,12 +29,7 @@ def test_binding_rejects_unavailable_or_shared_output(
         target = tmp_path / "target"
         target.write_bytes(b"keep")
         if kind == "symlink":
-            try:
-                symlink_or_skip(source, target)
-            except OSError as error:
-                if getattr(error, "winerror", None) == 1314:
-                    pytest.skip("Windows fixture requires symlink creation privilege")
-                raise
+            symlink_or_skip(source, target)
         else:
             source.hardlink_to(target)
     with pytest.raises(
@@ -134,12 +129,7 @@ def test_publication_rejects_unsafe_destination_directories(
     if kind == "file":
         destination_dir.write_bytes(b"keep")
     elif kind == "symlink":
-        try:
-            symlink_or_skip(destination_dir, tmp_path, target_is_directory=True)
-        except OSError as error:
-            if getattr(error, "winerror", None) == 1314:
-                pytest.skip("Windows fixture requires symlink creation privilege")
-            raise
+        symlink_or_skip(destination_dir, tmp_path, target_is_directory=True)
     registry = RuntimePublicationRegistry()
     try:
         with pytest.raises(

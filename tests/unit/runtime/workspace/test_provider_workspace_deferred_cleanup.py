@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -33,10 +32,14 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+from tests.unit.runtime.workspace.service_provider_invocation_support import (
+    owned_workspace_task,
+)
 
 pytestmark = requires_workspace_support
 
 
+@pytest.mark.race
 def test_workspace_preparation_cancellation_is_bounded(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -46,6 +49,7 @@ def test_workspace_preparation_cancellation_is_bounded(
     )
 
 
+@pytest.mark.race
 def test_workspace_preparation_deferred_cleanup_is_drained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -55,6 +59,7 @@ def test_workspace_preparation_deferred_cleanup_is_drained(
     )
 
 
+@pytest.mark.race
 def test_workspace_preparation_deferred_cleanup_reports_prepare_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -67,6 +72,7 @@ def test_workspace_preparation_deferred_cleanup_reports_prepare_failure(
     )
 
 
+@pytest.mark.race
 def test_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -79,10 +85,12 @@ def test_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
     )
 
 
+@pytest.mark.race
 def test_deferred_cleanup_registry_cancels_pending_task_after_timeout() -> None:
     asyncio.run(_run_deferred_cleanup_registry_cancels_pending_task_after_timeout())
 
 
+@pytest.mark.race
 def test_deferred_cleanup_registry_keeps_protected_pending_task_after_timeout() -> None:
     asyncio.run(
         _run_deferred_cleanup_registry_keeps_protected_pending_task_after_timeout()
@@ -136,31 +144,31 @@ async def _run_workspace_preparation_cancellation_is_bounded(
     )
 
     cleanup_registry = DeferredAsyncCleanupRegistry()
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    try:
-        assert await asyncio.to_thread(started.wait, 10)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, timeout=10)
-        assert cleanup_registry.has_unfinished_protected_tasks
-        assert not release.is_set()
-    finally:
-        release.set()
-        await cleanup_registry.drain(10.0)
+        ),
+        cleanup_registry,
+        (release,),
+    ) as task:
+        try:
+            assert await asyncio.to_thread(started.wait, 10)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=10)
+            assert cleanup_registry.has_unfinished_protected_tasks
+            assert not release.is_set()
+        finally:
+            release.set()
+            await cleanup_registry.drain(10.0)
 
 
 async def _run_workspace_preparation_deferred_cleanup_is_drained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
@@ -252,34 +260,36 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
         findings_enabled=False,
     )
 
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    assert await asyncio.to_thread(started.wait, 2)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert state_path.exists() is False
+        ),
+        cleanup_registry,
+        (release,),
+    ) as task:
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert state_path.exists() is False
 
-    timeout_errors = await cleanup_registry.drain(0)
-    assert state_path.exists() is False
-    assert workspace_path.exists()
-    assert len(timeout_errors) == 1
-    assert isinstance(timeout_errors[0], TimeoutError)
-    assert cleanup_registry.tasks == set()
+        timeout_errors = await cleanup_registry.drain(0)
+        assert state_path.exists() is False
+        assert workspace_path.exists()
+        assert len(timeout_errors) == 1
+        assert isinstance(timeout_errors[0], TimeoutError)
+        assert cleanup_registry.tasks == set()
 
-    release.set()
-    assert await asyncio.to_thread(cancelled_marked.wait, 2)
+        release.set()
+        assert await asyncio.to_thread(cancelled_marked.wait, 2)
 
-    state = read_json_object(state_path)
-    assert state["status"] == "cancelled"
-    assert state["child_process_environment"]["applied"] is False
-    assert state["workspace"]["retention"] == "deleted"
-    assert not workspace_path.exists()
+        state = read_json_object(state_path)
+        assert state["status"] == "cancelled"
+        assert state["child_process_environment"]["applied"] is False
+        assert state["workspace"]["retention"] == "deleted"
+        assert not workspace_path.exists()
 
 
 async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
@@ -334,24 +344,26 @@ async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
         findings_enabled=False,
     )
 
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    assert await asyncio.to_thread(started.wait, 2)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        ),
+        cleanup_registry,
+        (release,),
+    ) as task:
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-    release.set()
-    errors = await cleanup_registry.drain(2.0)
+        release.set()
+        errors = await cleanup_registry.drain(2.0)
 
-    assert len(errors) == 1
-    assert isinstance(errors[0], RuntimeError)
-    assert str(errors[0]) == "workspace prepare boom"
+        assert len(errors) == 1
+        assert isinstance(errors[0], RuntimeError)
+        assert str(errors[0]) == "workspace prepare boom"
 
 
 async def _run_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
@@ -437,31 +449,36 @@ async def _run_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
         findings_enabled=False,
     )
 
-    task = asyncio.create_task(
+    async with owned_workspace_task(
         prepare_workspace_with_cancellation(
             request,
             invocation_context,
             cleanup_registry,
-        )
-    )
-    assert await asyncio.to_thread(prepare_started.wait, 2)
-    task.cancel()
-    release_prepare.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert await asyncio.to_thread(mark_started.wait, 2)
-    assert cleanup_registry.tasks
-    assert workspace_path.exists()
+        ),
+        cleanup_registry,
+        (
+            release_prepare,
+            release_mark,
+        ),
+    ) as task:
+        assert await asyncio.to_thread(prepare_started.wait, 2)
+        task.cancel()
+        release_prepare.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await asyncio.to_thread(mark_started.wait, 2)
+        assert cleanup_registry.tasks
+        assert workspace_path.exists()
 
-    release_mark.set()
-    errors = await cleanup_registry.drain(2.0)
+        release_mark.set()
+        errors = await cleanup_registry.drain(2.0)
 
-    assert errors == ()
-    state = read_json_object(state_path)
-    assert state["status"] == "cancelled"
-    assert state["child_process_environment"]["applied"] is False
-    assert state["workspace"]["retention"] == "deleted"
-    assert not workspace_path.exists()
+        assert errors == ()
+        state = read_json_object(state_path)
+        assert state["status"] == "cancelled"
+        assert state["child_process_environment"]["applied"] is False
+        assert state["workspace"]["retention"] == "deleted"
+        assert not workspace_path.exists()
 
 
 async def _run_deferred_cleanup_registry_cancels_pending_task_after_timeout() -> None:
@@ -480,20 +497,25 @@ async def _run_deferred_cleanup_registry_cancels_pending_task_after_timeout() ->
             raise
 
     cleanup_registry.register(cleanup())
+    pending = tuple(cleanup_registry.tasks)
+    try:
+        timeout_errors = await cleanup_registry.drain(0.01)
+        await asyncio.sleep(0)
 
-    timeout_errors = await cleanup_registry.drain(0.01)
-    await asyncio.sleep(0)
+        assert len(timeout_errors) == 1
+        assert isinstance(timeout_errors[0], TimeoutError)
+        assert cleanup_registry.tasks == set()
+        release.set()
+        errors = await cleanup_registry.drain(1.0)
 
-    assert len(timeout_errors) == 1
-    assert isinstance(timeout_errors[0], TimeoutError)
-    assert cleanup_registry.tasks == set()
-    release.set()
-    errors = await cleanup_registry.drain(1.0)
-
-    assert errors == ()
-    assert cleanup_registry.tasks == set()
-    assert cleaned is False
-    assert cancelled is True
+        assert errors == ()
+        assert cleanup_registry.tasks == set()
+        assert cleaned is False
+        assert cancelled is True
+    finally:
+        release.set()
+        await cleanup_registry.drain(10)
+        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 10)
 
 
 async def _run_deferred_cleanup_registry_keeps_protected_pending_task_after_timeout() -> (
@@ -516,17 +538,22 @@ async def _run_deferred_cleanup_registry_keeps_protected_pending_task_after_time
             raise
 
     cleanup_registry.register(cleanup(), cancel_on_timeout=False)
+    pending = tuple(cleanup_registry.tasks)
+    try:
+        timeout_errors = await cleanup_registry.drain(0)
 
-    timeout_errors = await cleanup_registry.drain(0)
+        assert len(timeout_errors) == 1
+        assert isinstance(timeout_errors[0], TimeoutError)
+        assert cleanup_registry.tasks == set()
+        release.set()
+        await asyncio.wait_for(finished.wait(), 1.0)
 
-    assert len(timeout_errors) == 1
-    assert isinstance(timeout_errors[0], TimeoutError)
-    assert cleanup_registry.tasks == set()
-    release.set()
-    await asyncio.wait_for(finished.wait(), 1.0)
-
-    assert cleaned is True
-    assert cancelled is False
+        assert cleaned is True
+        assert cancelled is False
+    finally:
+        release.set()
+        await cleanup_registry.drain(10)
+        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), 10)
 
 
 class SlowMarkCancelledWorkspace(PreparedWorkspace):
@@ -562,3 +589,42 @@ class SlowMarkCancelledWorkspace(PreparedWorkspace):
             child_environment_applied,
             cancel_requested,
         )
+
+
+@pytest.mark.parametrize("boundary", ["acquired", "running"])
+@pytest.mark.race
+def test_workspace_scenario_drains_owned_workers_when_body_fails(boundary) -> None:
+    async def scenario() -> None:
+        from crewplane.runtime.execution.deferred_cleanup import workspace_worker_task
+
+        started, release, finished = Event(), Event(), Event()
+        registry = DeferredAsyncCleanupRegistry()
+
+        def worker() -> None:
+            started.set()
+            assert release.wait(10)
+            finished.set()
+
+        async def operation() -> None:
+            task = workspace_worker_task(worker)
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+
+                async def finish() -> None:
+                    await task
+
+                registry.register(finish(), cancel_on_timeout=False)
+                raise
+
+        with pytest.raises(RuntimeError, match="injected"):
+            async with owned_workspace_task(operation(), registry, (release,)):
+                if boundary == "running":
+                    assert await asyncio.to_thread(started.wait, 2)
+                raise RuntimeError("injected body failure")
+        assert not registry.tasks
+        assert not registry.has_unfinished_protected_tasks
+        if started.is_set():
+            assert finished.is_set()
+
+    asyncio.run(scenario())

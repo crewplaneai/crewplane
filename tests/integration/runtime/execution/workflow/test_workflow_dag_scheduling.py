@@ -1,3 +1,6 @@
+import asyncio
+import hashlib
+import json
 import unittest
 from pathlib import Path
 from tempfile import mkdtemp
@@ -11,6 +14,7 @@ from crewplane.architecture.contracts import (
     build_result_filename,
 )
 from crewplane.artifacts import OutputManager
+from crewplane.artifacts.naming import node_state_relative_path
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import (
     DependencyEdge,
@@ -42,7 +46,9 @@ from crewplane.runtime.execution.consensus import (
 from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     GraphDependencyOrderInvoker,
+    InvocationKey,
     MockAgentInvoker,
+    ScriptedAgentInvoker,
     execute_workflow,
 )
 from tests.integration.runtime.signature_support import build_agent_signature
@@ -170,12 +176,29 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
-        invoker = MockAgentInvoker(outputs=["auth-out", "billing-out", "summary-out"])
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey("backend.auth", "alpha_executor_0"): "auth-out",
+                InvocationKey("backend.billing", "beta_executor_0"): "billing-out",
+                InvocationKey("summary.final", "gamma_executor_0"): "summary-out",
+            }
+        )
         output = OutputManager(workflow.name, base_dir=tmp_path)
 
         await execute_workflow(config, workflow, output, invoker=invoker)
 
-        summary_call = invoker.calls[2]
+        for node_id, task_id, expected in (
+            ("backend.auth", "alpha_executor_0", "auth-out"),
+            ("backend.billing", "beta_executor_0", "billing-out"),
+            ("summary.final", "gamma_executor_0", "summary-out"),
+        ):
+            assert_named_output(output, node_id, task_id, expected)
+            call = next(call for call in invoker.calls if call["node_id"] == node_id)
+            assert call["task_id"] == task_id
+            assert call["provider"] == task_id.split("_", 1)[0]
+        summary_call = next(
+            call for call in invoker.calls if call["node_id"] == "summary.final"
+        )
         self.assertIn("auth-out", summary_call["prompt"])
         self.assertIn("billing-out", summary_call["prompt"])
         self.assertEqual(len(invoker.calls), 3)
@@ -356,8 +379,14 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
-        invoker = MockAgentInvoker(
-            outputs=["01234567890123456789", "beta-out", "gamma-out"]
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey(
+                    "node.source", "alpha_executor_0"
+                ): "01234567890123456789",
+                InvocationKey("node.parallel", "beta_executor_0"): "beta-out",
+                InvocationKey("node.parallel", "gamma_executor_1"): "gamma-out",
+            }
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)
         events: list[ExecutionEvent] = []
@@ -397,7 +426,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(len(invoker.calls), 3)
-        self.assertIn("01234567890123456789", invoker.calls[1]["prompt"])
+        for task_id, expected in (
+            ("beta_executor_0", "beta-out"),
+            ("gamma_executor_1", "gamma-out"),
+        ):
+            assert_named_output(output, "node.parallel", task_id, expected)
+            call = next(call for call in invoker.calls if call["task_id"] == task_id)
+            assert "01234567890123456789" in call["prompt"]
 
     async def test_downstream_prompt_uses_findings_artifact(self) -> None:
         tmp_dir = mkdtemp(dir=self.tmp_path)
@@ -570,3 +605,44 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(RuntimeError, "findings block"):
             await execute_workflow(config, workflow, output, invoker=invoker)
+
+
+def assert_named_output(
+    output: OutputManager, node_id: str, task_id: str, expected: str
+) -> None:
+    stage_output = output.stages_dir / node_id / f"{task_id}_round1.md"
+    assert stage_output.read_text(encoding="utf-8") == expected, "misattributed output"
+    filename = build_result_filename(node_id)
+    payload = (output.results_dir / filename).read_bytes()
+    assert expected in payload.decode("utf-8")
+    state = json.loads(
+        (output.stages_dir / node_state_relative_path(node_id)).read_text()
+    )
+    assert state["node_id"] == node_id
+    assert state["run_id"] == output.run_id
+    (descriptor,) = (item for item in state["artifacts"] if item["kind"] == "output")
+    assert descriptor == {
+        "kind": "output",
+        "relative_path": filename,
+        "size_bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def test_named_artifact_assertions_reject_swapped_responses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = ScriptedAgentInvoker.__init__
+
+    def swapped_responses(self, responses, gates=None):
+        responses = dict(responses)
+        auth = InvocationKey("backend.auth", "alpha_executor_0")
+        billing = InvocationKey("backend.billing", "beta_executor_0")
+        responses[auth], responses[billing] = responses[billing], responses[auth]
+        original(self, responses, gates)
+
+    monkeypatch.setattr(ScriptedAgentInvoker, "__init__", swapped_responses)
+    scenario = WorkflowDagSchedulingTests("test_summary_node_waits_for_dependencies")
+    scenario.tmp_path = tmp_path
+    with pytest.raises(AssertionError, match="misattributed output"):
+        asyncio.run(scenario.test_summary_node_waits_for_dependencies())

@@ -8,28 +8,21 @@ NPM_PUBLISH_OTP ?=
 NPM_DIST_TAG_OTP ?=
 NPM_PUBLISH_ARGS ?=
 UV_BOOTSTRAP_VERSION ?= latest
-HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
 PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
 PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || printf '%s\n' __PACKAGE_NAME_LOOKUP_FAILED__)
 ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)
 $(error failed to derive package name from pyproject.toml)
 endif
 
-ifeq ($(HAVE_UV),1)
-INSTALL_CMD = uv sync --extra dev
+TEST_PROFILE ?= local
+TEST_ARGS ?=
+COVERAGE_REPORT ?=
+TEST_EXTRAS = --extra dev $(if $(filter pr-313 nightly-shuffle,$(TEST_PROFILE)),--extra stress,)
+INSTALL_CMD = uv sync --locked $(TEST_EXTRAS)
 UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)
-RUN_PYTHON = uv run --extra dev python
-RUN_PYTEST = uv run --extra dev python -m pytest -q
-RUN_RUFF = uv run --extra dev python -m ruff
-RUN_MYPY = uv run --extra dev python -m mypy
-else
-INSTALL_CMD = $(PYTHON) -m pip install -e '.[dev]'
-UNINSTALL_CMD = $(PYTHON) -m pip uninstall $(PACKAGE_NAME)
-RUN_PYTHON = $(PYTHON)
-RUN_PYTEST = $(PYTHON) -m pytest -q
-RUN_RUFF = $(PYTHON) -m ruff
-RUN_MYPY = $(PYTHON) -m mypy
-endif
+RUN_PYTHON = uv run --locked $(TEST_EXTRAS) python
+RUN_RUFF = $(RUN_PYTHON) -m ruff
+RUN_MYPY = $(RUN_PYTHON) -m mypy
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
@@ -49,7 +42,7 @@ help:
 		'Development:' \
 		'  setup              Install editable dev environment' \
 		'  test               Run pytest with statement and branch coverage gates' \
-		'  coverage-check    Check independent floors in .coverage.json' \
+		'  coverage-check    Check floors in an explicit COVERAGE_REPORT' \
 		'  typecheck          Check strict typing for the package and fixtures' \
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
@@ -95,15 +88,12 @@ setup:
 uninstall:
 	$(UNINSTALL_CMD)
 
-# Report in fresh interpreters to avoid native crashes after the test suite.
 test:
-	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report= --cov-fail-under=0
-	$(RUN_PYTHON) -m coverage report --show-missing --skip-covered
-	$(RUN_PYTHON) -m coverage json -o .coverage.json
-	$(MAKE) coverage-check
+	$(RUN_PYTHON) scripts/run_tests.py --profile $(TEST_PROFILE) --statement-floor $(STATEMENT_COVERAGE_FLOOR) --branch-floor $(BRANCH_COVERAGE_FLOOR) $(TEST_ARGS)
 
 coverage-check:
-	$(RUN_PYTHON) scripts/check_coverage.py .coverage.json --statements $(STATEMENT_COVERAGE_FLOOR) --branches $(BRANCH_COVERAGE_FLOOR)
+	@test -n "$(COVERAGE_REPORT)" || (printf '%s\n' 'Set COVERAGE_REPORT to a test-results/<invocation>/coverage.json file.'; exit 1)
+	$(RUN_PYTHON) scripts/check_coverage.py "$(COVERAGE_REPORT)" --statements $(STATEMENT_COVERAGE_FLOOR) --branches $(BRANCH_COVERAGE_FLOOR)
 
 # Keep the full production package and repository typecheck fixtures under
 # strict mypy coverage.

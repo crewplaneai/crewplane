@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
-
-import pytest
 
 from crewplane.runtime.workspace import PreparedWorkspace, prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import (
@@ -24,8 +21,6 @@ from tests.helpers.workspace_service import (
 
 
 def prepared_lineage_workspace(tmp_path: Path) -> tuple[Path, PreparedWorkspace]:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

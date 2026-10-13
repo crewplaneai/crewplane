@@ -9,7 +9,7 @@ Use this document for local setup, repository layout, repeatable development wor
 ## Prerequisites
 
 - Python 3.13+
-- `uv` (recommended)
+- `uv` (required for maintained development and test commands)
 - `pip` (required)
 - Node.js 18+ and `npm` when working on the npm wrapper
 
@@ -32,13 +32,15 @@ cd crewplane
 make setup
 ```
 
-`make setup` installs the project in editable mode with development dependencies.
+`make setup` installs the editable project and development dependencies from
+`uv.lock`. For shuffled profiles (`pr-313` and `nightly-shuffle`), run
+`make setup TEST_PROFILE=pr-313` to include the `stress` extra.
 
 ## Local Workflows
 
 ```bash
 make test         # full suite with separate statement and branch coverage floors
-make coverage-check # check the existing .coverage.json without rerunning tests
+make coverage-check COVERAGE_REPORT='test-results/<invocation>/coverage.json'
 make typecheck    # strict type checking for package and fixtures
 make lint         # project-env ruff check src tests scripts
 make format       # modifies files: ruff import fixes + format src tests scripts
@@ -59,14 +61,37 @@ needs correction; it modifies files and is separate from the validation gate.
 
 ### Test suite contract
 
-`make test` enforces the statement and branch coverage floors defined in the
-[Makefile](Makefile).
+Local, CI, nightly, and release validation share test execution and package
+acceptance checks; use the profiles and package commands below to reproduce the
+relevant checks locally.
 
-Workspace-enabled Git tests require Git 2.34.1 or newer.
+By default, `make test` and `make check` run the full suite with minimum coverage
+of 96% statements and 90% branches. Use `--coverage off` for
+[focused test runs](#testing-expectations).
 
-Nightly CI covers Linux and macOS on Python 3.13 and 3.14, shuffles the full
-suite with a reproducible seed, and repeats the focused reviewer-parallelism
-regression in fresh processes.
+Git fixtures require Git 2.34.1 or newer. Dependent tests skip locally if it is
+unavailable; CI profiles fail. Set `CREWPLANE_REQUIRED_GIT=1` to require it locally.
+
+Select a CI profile with `make test TEST_PROFILE=pr-313`, or force serial execution
+with `make test TEST_ARGS='--workers 0'`. Use `make test TEST_ARGS=--help` for all
+profiles and options.
+
+Each run prints its `test-results/<profile>-<id>/` directory and a reproduction
+command, also saved in `metadata.json`. Check `pytest.log` for failures and reproduce
+with the same Python version, locked dependencies, and platform. To recheck coverage,
+use the `make coverage-check` command above with that run's directory name.
+
+For packaging changes, build and validate the development artifacts:
+
+```bash
+make package-build
+uv run --locked --extra dev twine check dist/*
+make wheel-typecheck
+make install-smoke
+```
+
+Use `make package-check` after [release preparation](#1-prepare-and-validate),
+when the Homebrew formula checksum has been regenerated for the source archive.
 
 ## Repository Automation
 
@@ -158,7 +183,7 @@ crewplane/
 │       ├── observability/  # Runtime event model, layout/rendering, tmux dashboard
 │       └── example_templates/
 ├── tests/
-├── docs/                   # Public usage docs plus architecture decision records
+├── docs/                   # User and architecture documentation
 ├── pyproject.toml
 ├── Makefile
 ├── AGENTS.md
@@ -167,18 +192,14 @@ crewplane/
 
 ## Version Sources
 
-`pyproject.toml` owns the package distribution version. That version identifies installable releases and should change for every published release.
-
-The authored Python schema version lives in `src/crewplane/version.py`. Generated templates render schema values from that constant. Bump it when supported user-authored config or workflow files change incompatibly. Backward-compatible additions, bug fixes, documentation updates, ordinary package releases, and public-alpha persisted run-artifact hard breaks do not require a schema version bump.
-
-See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentation-drift-reduction.md) for the version source-of-truth decision.
-
-| Version | Governs | Bump When |
+| Source | Governs | When to change |
 | --- | --- | --- |
-| `pyproject.toml` `project.version` | installable package release | every published release |
-| `SCHEMA_VERSION` | current config files, workflow files, and preflight execution-plan artifacts | supported user-authored schema changes incompatibly |
+| `project.version` in `pyproject.toml` | Installable package version | Every published release |
+| `SCHEMA_VERSION` in `src/crewplane/version.py` | Config, workflow, and preflight plan schemas | Incompatible changes to supported user-authored config or workflows |
 
-During the public-alpha `0.x` period, support the current schema only. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
+Generated templates use `SCHEMA_VERSION`. Ordinary releases and backward-compatible
+changes do not require a schema bump. During public alpha (`0.x`), support only the
+current schema; persisted run artifacts are disposable and need no migrations.
 
 ## Release Workflow
 
@@ -325,6 +346,10 @@ constraints live in [AGENTS.md](AGENTS.md#change-guidance).
 - New behavior must include tests.
 - Bug fixes must include regression tests.
 - Keep tests deterministic and filesystem-local.
+- Mark individual tests with `@pytest.mark.race` when they exercise a specific
+  concurrency or cancellation interleaving and assert the affected invariant.
+  Use controlled synchronization and bounded cleanup. Run them with
+  `make test TEST_PROFILE=race`; nightly CI repeats this selection five times.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
 - Production code and typing fixtures must pass strict mypy via `make typecheck`;
   CI also validates the built wheel's public typing.
@@ -333,9 +358,9 @@ constraints live in [AGENTS.md](AGENTS.md#change-guidance).
 Examples of focused test runs:
 
 ```bash
-uv run --extra dev python -m pytest -q tests/integration/cli/test_workflow_discovery_and_init.py
-uv run --extra dev python -m pytest -q tests/unit/core/workflow_composition tests/unit/core/workflow_validation
-uv run --extra dev python -m pytest -q tests/integration/adapters/mock_invoker tests/integration/architecture/test_container.py
+uv run --locked --extra dev python scripts/run_tests.py --profile local --coverage off tests/integration/cli/test_workflow_discovery_and_init.py
+uv run --locked --extra dev python scripts/run_tests.py --profile local --coverage off tests/unit/core/workflow_composition tests/unit/core/workflow_validation
+uv run --locked --extra dev python scripts/run_tests.py --profile local --coverage off tests/integration/adapters/mock_invoker tests/integration/architecture/test_container.py
 ```
 
 ## Mock Invoker Local Validation
@@ -382,13 +407,8 @@ in the handoff.
 
 ## Architecture References
 
-Crewplane follows a blackboard architecture: providers coordinate through durable
-artifacts on disk rather than shared in-memory state. Artifacts include Markdown
-outputs, JSON state, and Git bundles for workspace handoffs.
-
-- [docs/architecture/modular-orchestration-architecture.md](docs/architecture/modular-orchestration-architecture.md)
-- [docs/architecture/adr/0001-ports-adapters-runtime-integrations.md](docs/architecture/adr/0001-ports-adapters-runtime-integrations.md)
-- [docs/architecture/index.md](docs/architecture/index.md)
+See the [architecture guide](docs/architecture/index.md) for module boundaries and
+runtime contracts.
 
 ## Adapter Authoring
 

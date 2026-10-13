@@ -27,7 +27,8 @@ from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     BlockingSnapshotObserver,
     GatedModelInvoker,
-    TaskOutputInvoker,
+    InvocationKey,
+    ScriptedAgentInvoker,
     execute_workflow,
     review_output,
 )
@@ -198,10 +199,14 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        invoker = TaskOutputInvoker(
-            outputs_by_task_id={
-                "exec_executor_0": "review-loop executor output",
-                "review_reviewer_0": review_output(verdict="NO_FINDINGS"),
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey(
+                    "review.node", "exec_executor_0"
+                ): "review-loop executor output",
+                InvocationKey("review.node", "review_reviewer_0"): review_output(
+                    verdict="NO_FINDINGS"
+                ),
             },
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)
@@ -280,14 +285,20 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         release_review_executor = asyncio.Event()
-        invoker = TaskOutputInvoker(
-            outputs_by_task_id={
-                "exec_executor_0": "review-loop executor output",
-                "review_reviewer_0": review_output(verdict="NO_FINDINGS"),
-                "aux_executor_0": "auxiliary output",
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey(
+                    "review.node", "exec_executor_0"
+                ): "review-loop executor output",
+                InvocationKey("review.node", "review_reviewer_0"): review_output(
+                    verdict="NO_FINDINGS"
+                ),
+                InvocationKey("aux.node", "aux_executor_0"): "auxiliary output",
             },
-            gates_by_task_id={
-                "exec_executor_0": release_review_executor,
+            gates={
+                InvocationKey(
+                    "review.node", "exec_executor_0"
+                ): release_review_executor,
             },
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)

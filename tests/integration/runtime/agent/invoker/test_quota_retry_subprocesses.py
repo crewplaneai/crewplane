@@ -14,13 +14,11 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
-)
 from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
+from tests.helpers.fixture_files import copy_fixture
 
 pytestmark = pytest.mark.usefixtures("posix_cli_plans")
 
@@ -34,26 +32,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
         tmp_dir = mkdtemp(dir=self.tmp_path)
         tmp_path = Path(tmp_dir)
         state_file = tmp_path / "state.txt"
-        script_path = tmp_path / "quota_script.py"
-
-        script_path.write_text(
-            "\n".join(
-                [
-                    "import os",
-                    "import sys",
-                    "from pathlib import Path",
-                    "",
-                    "state_path = Path(os.environ['STATE_FILE'])",
-                    "count = int(state_path.read_text()) if state_path.exists() else 0",
-                    "count += 1",
-                    "state_path.write_text(str(count))",
-                    "if count < 3:",
-                    "    print('usage limit reached')",
-                    "    sys.exit(0)",
-                    "print('ok')",
-                    "",
-                ]
-            )
+        script_path = copy_fixture(
+            "providers/quota_until_clear.py", tmp_path / "quota_script.py"
         )
 
         original_state = os.environ.get("STATE_FILE")
@@ -88,25 +68,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
         tmp_dir = mkdtemp(dir=self.tmp_path)
         tmp_path = Path(tmp_dir)
         state_file = tmp_path / "state.txt"
-        script_path = tmp_path / "gemini_quota_once.py"
-        script_path.write_text(
-            "\n".join(
-                [
-                    "import os",
-                    "import sys",
-                    "from pathlib import Path",
-                    "",
-                    "state_path = Path(os.environ['STATE_FILE'])",
-                    "count = int(state_path.read_text()) if state_path.exists() else 0",
-                    "count += 1",
-                    "state_path.write_text(str(count))",
-                    "if count < 2:",
-                    "    print('You have exhausted your capacity on this model. Your quota will reset after 2s.')",
-                    "    sys.exit(0)",
-                    'print(\'{"response":"ok"}\')',
-                ]
-            ),
-            encoding="utf-8",
+        script_path = copy_fixture(
+            "providers/gemini_quota_once.py", tmp_path / "gemini_quota_once.py"
         )
 
         original_state = os.environ.get("STATE_FILE")
@@ -145,112 +108,6 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleep_mock.await_count, 1)
         sleep_seconds = float(sleep_mock.await_args.args[0])
         self.assertAlmostEqual(sleep_seconds, 7.0, delta=0.2)
-
-    async def test_quota_retry_respects_configured_minimum_delay(self) -> None:
-        tmp_dir = mkdtemp(dir=self.tmp_path)
-        tmp_path = Path(tmp_dir)
-        state_file = tmp_path / "state.txt"
-        script_path = tmp_path / "gemini_quota_once_min_delay.py"
-        script_path.write_text(
-            "\n".join(
-                [
-                    "import os",
-                    "import sys",
-                    "from pathlib import Path",
-                    "",
-                    "state_path = Path(os.environ['STATE_FILE'])",
-                    "count = int(state_path.read_text()) if state_path.exists() else 0",
-                    "count += 1",
-                    "state_path.write_text(str(count))",
-                    "if count < 2:",
-                    "    print('You have exhausted your capacity on this model. Your quota will reset after 2s.')",
-                    "    sys.exit(0)",
-                    'print(\'{"response":"ok"}\')',
-                ]
-            ),
-            encoding="utf-8",
-        )
-
-        original_state = os.environ.get("STATE_FILE")
-        os.environ["STATE_FILE"] = str(state_file)
-        try:
-            config = AgentConfig(
-                cli_cmd=[sys.executable, str(script_path)],
-                default_model="test",
-                model_arg=None,
-                provider_kind="gemini",
-                quota_reached_retry_delay_seconds=30,
-                quota_reset_sleep_floor_seconds=5,
-            )
-            output_file = tmp_path / "output.txt"
-            sleep_mock = AsyncMock()
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.sleep",
-                sleep_mock,
-            ):
-                await invoke_agent(
-                    config,
-                    "test-model",
-                    "prompt",
-                    output_file,
-                    output_file.parent,
-                    plan_builder=build_cli_invocation_plan,
-                )
-        finally:
-            if original_state is None:
-                os.environ.pop("STATE_FILE", None)
-            else:
-                os.environ["STATE_FILE"] = original_state
-
-        self.assertEqual(output_file.read_text(encoding="utf-8").strip(), "ok")
-        self.assertEqual(state_file.read_text(encoding="utf-8").strip(), "2")
-        self.assertEqual(sleep_mock.await_count, 1)
-        sleep_seconds = float(sleep_mock.await_args.args[0])
-        self.assertAlmostEqual(sleep_seconds, 30.0, delta=0.2)
-
-    async def test_quota_retry_fails_fast_when_parsed_reset_exceeds_five_hours(
-        self,
-    ) -> None:
-        tmp_dir = mkdtemp(dir=self.tmp_path)
-        tmp_path = Path(tmp_dir)
-        script_path = tmp_path / "gemini_long_quota.py"
-        script_path.write_text(
-            "print('You have exhausted your capacity on this model. Your quota will reset after 6h.')\n",
-            encoding="utf-8",
-        )
-
-        config = AgentConfig(
-            cli_cmd=[sys.executable, str(script_path)],
-            default_model="test",
-            model_arg=None,
-            provider_kind="gemini",
-            quota_reached_retry_delay_seconds=0,
-            quota_reset_sleep_floor_seconds=5,
-        )
-        output_file = tmp_path / "output.txt"
-        sleep_mock = AsyncMock()
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.loop.sleep",
-                sleep_mock,
-            ),
-            self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught,
-        ):
-            await invoke_agent(
-                config,
-                "test-model",
-                "prompt",
-                output_file,
-                output_file.parent,
-                plan_builder=build_cli_invocation_plan,
-            )
-        self.assertIsInstance(caught.exception, InvocationFailureError)
-        failure = caught.exception
-        assert isinstance(failure, InvocationFailureError)
-        self.assertEqual(failure.kind, "quota_or_rate_limit")
-        self.assertEqual(failure.phase, "provider_transport")
-        self.assertFalse(output_file.exists())
-        self.assertEqual(sleep_mock.await_count, 0)
 
     async def test_gemini_internal_quota_exhaustion_retries_outer_window(
         self,
@@ -510,107 +367,3 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleep_mock.await_count, 1)
         self.assertEqual(float(sleep_mock.await_args.args[0]), 300.0)
         self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
-
-    async def test_quota_retry_uses_fixed_delay_when_reset_not_parseable(self) -> None:
-        tmp_dir = mkdtemp(dir=self.tmp_path)
-        tmp_path = Path(tmp_dir)
-        state_file = tmp_path / "state.txt"
-        script_path = tmp_path / "quota_no_reset_once.py"
-        script_path.write_text(
-            "\n".join(
-                [
-                    "import os",
-                    "import sys",
-                    "from pathlib import Path",
-                    "",
-                    "state_path = Path(os.environ['STATE_FILE'])",
-                    "count = int(state_path.read_text()) if state_path.exists() else 0",
-                    "count += 1",
-                    "state_path.write_text(str(count))",
-                    "if count < 2:",
-                    "    print('usage limit reached')",
-                    "    sys.exit(0)",
-                    "print('ok')",
-                ]
-            ),
-            encoding="utf-8",
-        )
-
-        original_state = os.environ.get("STATE_FILE")
-        os.environ["STATE_FILE"] = str(state_file)
-        try:
-            config = AgentConfig(
-                cli_cmd=[sys.executable, str(script_path)],
-                default_model="test",
-                model_arg=None,
-                quota_reached_on_contains=["usage limit reached"],
-                quota_reached_retry_delay_seconds=13,
-            )
-            output_file = tmp_path / "output.txt"
-            sleep_mock = AsyncMock()
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.sleep",
-                sleep_mock,
-            ):
-                await invoke_agent(
-                    config,
-                    "test-model",
-                    "prompt",
-                    output_file,
-                    output_file.parent,
-                    plan_builder=build_cli_invocation_plan,
-                )
-        finally:
-            if original_state is None:
-                os.environ.pop("STATE_FILE", None)
-            else:
-                os.environ["STATE_FILE"] = original_state
-
-        self.assertEqual(output_file.read_text(encoding="utf-8").strip(), "ok")
-        self.assertEqual(sleep_mock.await_count, 1)
-        self.assertEqual(float(sleep_mock.await_args.args[0]), 13.0)
-
-    async def test_quota_retry_guard_rejects_wait_that_crosses_five_hours(self) -> None:
-        tmp_dir = mkdtemp(dir=self.tmp_path)
-        tmp_path = Path(tmp_dir)
-        script_path = tmp_path / "quota_short_reset.py"
-        script_path.write_text(
-            "print('You have exhausted your capacity on this model. Your quota will reset after 4s.')\n",
-            encoding="utf-8",
-        )
-
-        config = AgentConfig(
-            cli_cmd=[sys.executable, str(script_path)],
-            default_model="test",
-            model_arg=None,
-            provider_kind="gemini",
-            quota_reached_retry_delay_seconds=0,
-            quota_reset_sleep_floor_seconds=5,
-        )
-        output_file = tmp_path / "output.txt"
-        sleep_mock = AsyncMock()
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.loop.sleep",
-                sleep_mock,
-            ),
-            patch(
-                "crewplane.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
-                return_value=False,
-            ),
-            patch(
-                "crewplane.runtime.agent.invocation.retry.quota_retry_guard_will_exhaust",
-                return_value=True,
-            ),
-            self.assertRaisesRegex(RuntimeError, "would exceed 5 hours"),
-        ):
-            await invoke_agent(
-                config,
-                "test-model",
-                "prompt",
-                output_file,
-                output_file.parent,
-                plan_builder=build_cli_invocation_plan,
-            )
-        self.assertFalse(output_file.exists())
-        self.assertEqual(sleep_mock.await_count, 0)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -41,8 +40,6 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
     symlink_manifest,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -114,8 +111,6 @@ def test_fulfill_branch_exports_verifies_source_chain_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -157,8 +152,6 @@ def test_fulfill_branch_exports_keeps_import_ref_until_branch_creation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -225,8 +218,6 @@ def test_fulfill_branch_exports_keeps_import_ref_until_branch_creation(
 def test_fulfill_branch_exports_rejects_existing_exact_branch_without_record(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -270,8 +261,6 @@ def test_fulfill_branch_exports_rejects_existing_exact_branch_without_record(
 def test_fulfill_branch_exports_refuses_existing_mismatched_branch(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -313,8 +302,6 @@ def test_fulfill_branch_exports_refuses_existing_mismatched_branch(
 def test_fulfill_branch_exports_reconciles_recorded_branch_state(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -368,8 +355,6 @@ def test_fulfill_branch_exports_reconciles_recorded_branch_state(
 def test_fulfill_branch_exports_records_failed_replay_after_branch_moves(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -409,8 +394,6 @@ def test_fulfill_branch_exports_records_failed_replay_after_branch_moves(
 def test_fulfill_branch_exports_records_failed_replay_after_symbolic_replacement(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -449,8 +432,6 @@ def test_fulfill_branch_exports_records_failed_replay_after_symbolic_replacement
 
 
 def test_fulfill_branch_exports_rejects_invalid_branch_name(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(
         repo,
@@ -486,8 +467,6 @@ def test_fulfill_branch_exports_rejects_invalid_branch_name(tmp_path: Path) -> N
 def test_fulfill_branch_exports_validates_generated_branch_name(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name=None).model_copy(
         update={"workflow_name": "Workspace / Feature: thing"}
