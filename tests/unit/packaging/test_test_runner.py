@@ -336,7 +336,7 @@ def test_runner_header_preserves_unicode_command_and_launches_pytest(
     def successful_run(command, cwd, environment, log, *args):
         del cwd, environment, args
         commands.append(command)
-        log.write_text("passed: ☃\n", encoding="utf-8")
+        log.write_bytes("passed: ☃\n".encode())
         return test_process.ProcessOutcome(0, 0)
 
     monkeypatch.setattr(run_tests, "ROOT", root)

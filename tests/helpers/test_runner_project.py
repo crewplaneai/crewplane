@@ -5,7 +5,8 @@ import shutil
 import signal
 import subprocess
 import sys
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from tests.helpers.fixture_files import copy_fixture
@@ -44,6 +45,12 @@ def runner_environment() -> dict[str, str]:
 
 
 def run_fixture(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    with launch_fixture(script, *args) as process:
+        return wait_for_fixture(process, script.parent.parent)
+
+
+@contextmanager
+def launch_fixture(script: Path, *args: str) -> Iterator[subprocess.Popen[str]]:
     command = [
         sys.executable,
         str(script),
@@ -65,26 +72,36 @@ def run_fixture(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     ) as process:
         try:
-            stdout, stderr = process.communicate(timeout=60)
-        except subprocess.TimeoutExpired as error:
-            with suppress(ProcessLookupError):
-                process.send_signal(
-                    signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
-                )
-            try:
-                stdout, stderr = process.communicate(timeout=15)
-            except subprocess.TimeoutExpired:
-                kill_active_process_groups(script.parent.parent)
-                process.kill()
-                stdout, stderr = process.communicate(timeout=5)
-            error.output, error.stderr = stdout, stderr
-            raise
+            yield process
         finally:
             if process.poll() is None:
                 kill_active_process_groups(script.parent.parent)
                 process.kill()
                 process.wait(timeout=5)
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def wait_for_fixture(
+    process: subprocess.Popen[str],
+    root: Path,
+    timeout: float = 60,
+    shutdown_timeout: float = 15,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        with suppress(ProcessLookupError):
+            process.send_signal(
+                signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
+            )
+        try:
+            stdout, stderr = process.communicate(timeout=shutdown_timeout)
+        except subprocess.TimeoutExpired:
+            kill_active_process_groups(root)
+            process.kill()
+            stdout, stderr = process.communicate(timeout=5)
+        error.output, error.stderr = stdout, stderr
+        raise
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
 
 def kill_active_process_groups(root: Path) -> None:

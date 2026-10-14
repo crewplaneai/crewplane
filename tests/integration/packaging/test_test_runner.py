@@ -6,7 +6,8 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from textwrap import dedent
 from unittest.mock import Mock
@@ -18,9 +19,11 @@ from tests.helpers.installed_package_assertions import process_running
 from tests.helpers.platforms import requires_posix
 from tests.helpers.test_runner_project import (
     kill_active_process_groups,
+    launch_fixture,
     run_fixture,
     runner_environment,
     runner_project,
+    wait_for_fixture,
 )
 
 
@@ -183,18 +186,7 @@ def test_runner_timeout_terminates_ignoring_child_and_reaps_parent(
 ) -> None:
     script = runner_project(tmp_path)
     copy_fixture("test_runner/blocking_tree.py", tmp_path / "test_example.py")
-    (tmp_path / "conftest.py").write_text(
-        dedent("""\
-            import os
-            from pathlib import Path
-
-            def pytest_sessionstart() -> None:
-                Path(f"session-{os.getpid()}.pid").write_text(
-                    str(os.getpid()), encoding="utf-8"
-                )
-            """),
-        encoding="utf-8",
-    )
+    copy_fixture("test_runner/session_receipts.py", tmp_path / "conftest.py")
     if os.name == "nt":
         # Withhold cooperative console shutdown to exercise real Job escalation.
         script = copy_fixture(
@@ -286,105 +278,108 @@ def test_runner_reaps_isolated_providers_after_worker_crash(
                     os.killpg(int(receipt.read_text()), signal.SIGKILL)
 
 
-@requires_posix
-@pytest.mark.parametrize("workers", [0, 2], ids=["serial", "parallel"])
-@pytest.mark.parametrize(
-    "responsive", [True, False], ids=["graceful-shutdown", "forced-shutdown"]
-)
-def test_outer_fixture_timeout_terminates_launcher_pytest_and_children(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    workers: int,
-    responsive: bool,
-) -> None:
+@pytest.fixture
+def blocking_runner(tmp_path: Path) -> Iterator[Path]:
     script = runner_project(tmp_path)
     copy_fixture("test_runner/blocking_tree.py", tmp_path / "test_example.py")
-    (tmp_path / "conftest.py").write_text(
-        dedent("""\
-            import os
-            from pathlib import Path
-
-            def pytest_sessionstart() -> None:
-                Path(f"session-{os.getpid()}.pid").write_text(
-                    str(os.getpid()), encoding="utf-8"
-                )
-            """),
-        encoding="utf-8",
-    )
-    if not responsive:
-        script = copy_fixture(
-            "test_runner/unresponsive_runner.py",
-            script.with_name("unresponsive_runner.py"),
-        )
-
-    launchers = []
-
-    class TimeoutWhenReady(subprocess.Popen):
-        timeout_triggered = False
-
-        def communicate(self, input=None, timeout=None):
-            if not self.timeout_triggered:
-                launchers.append(self)
-                deadline = time.monotonic() + 15
-                while not (tmp_path / "child.pid").exists():
-                    assert self.poll() is None
-                    assert time.monotonic() < deadline
-                    time.sleep(0.05)
-                self.timeout_triggered = True
-                timeout = 0.1
-            elif not responsive:
-                timeout = 0.1
-            return super().communicate(input=input, timeout=timeout)
-
-    monkeypatch.setattr(subprocess, "Popen", TimeoutWhenReady)
+    copy_fixture("test_runner/session_receipts.py", tmp_path / "conftest.py")
     try:
-        with pytest.raises(subprocess.TimeoutExpired) as captured:
-            run_fixture(script, "--workers", str(workers), "--shutdown-timeout", "0.3")
-        (launcher,) = launchers
-        assert launcher.returncode is not None
-        assert captured.value.stdout
-        sessions = list(tmp_path.glob("session-*.pid"))
-        assert len(sessions) == (3 if workers else 1)
-        for pid_file in [*sessions, tmp_path / "child.pid"]:
-            pid = int(pid_file.read_text())
-            deadline = time.monotonic() + 5
-            while not process_stopped(pid):
-                assert time.monotonic() < deadline
-                time.sleep(0.05)
-        (diagnostics,) = (tmp_path / "test-results").iterdir()
-        assert (diagnostics / "metadata.json").is_file()
-        assert (diagnostics / "pytest.log").is_file()
-        assert not list(diagnostics.glob("*.active-pid"))
-        if responsive:
-            outcome = json.loads((diagnostics / "outcome.json").read_text())
-            assert outcome["pytest"]["interrupted"] is True
-            assert outcome["pytest"]["forced"] is True
+        yield script
     finally:
-        for pid_file in tmp_path.glob("session-*.pid"):
-            with suppress(ProcessLookupError):
-                group_id = os.getpgid(int(pid_file.read_text()))
+        kill_active_process_groups(tmp_path)
+        for receipt in [*tmp_path.glob("session-*.pid"), tmp_path / "child.pid"]:
+            with suppress(FileNotFoundError, ProcessLookupError):
+                group_id = os.getpgid(int(receipt.read_text()))
                 assert group_id != os.getpgrp()
                 os.killpg(group_id, signal.SIGKILL)
 
 
-@pytest.fixture
-def interruptible_runner(tmp_path: Path) -> Path:
-    script = runner_project(tmp_path)
-    (tmp_path / "test_example.py").write_text(
-        dedent("""\
-            import time
-            from pathlib import Path
+def wait_for_receipt(
+    launcher: subprocess.Popen[str] | subprocess.Popen[bytes], receipt: Path
+) -> None:
+    deadline = time.monotonic() + 15
+    while not receipt.exists():
+        assert launcher.poll() is None, (
+            f"launcher exited before {receipt.name} was ready"
+        )
+        assert time.monotonic() < deadline, f"{receipt.name} did not become ready"
+        time.sleep(0.05)
 
-            def test_block() -> None:
-                Path("ready").touch()
-                time.sleep(60)
-            """),
-        encoding="utf-8",
+
+def assert_process_stopped(pid: int) -> None:
+    deadline = time.monotonic() + 5
+    while not process_stopped(pid):
+        assert time.monotonic() < deadline, f"process {pid} survived shutdown"
+        time.sleep(0.05)
+
+
+def assert_runner_tree_stopped(root: Path, workers: int) -> None:
+    sessions = list(root.glob("session-*.pid"))
+    assert len(sessions) == (3 if workers else 1)
+    for receipt in [*sessions, root / "child.pid"]:
+        assert_process_stopped(int(receipt.read_text()))
+
+
+@requires_posix
+@pytest.mark.parametrize("workers", [0, 2], ids=["serial", "parallel"])
+def test_outer_fixture_timeout_interrupts_responsive_launcher(
+    tmp_path: Path, blocking_runner: Path, workers: int
+) -> None:
+    with launch_fixture(
+        blocking_runner, "--workers", str(workers), "--shutdown-timeout", "0.3"
+    ) as launcher:
+        wait_for_receipt(launcher, tmp_path / "child.pid")
+        with pytest.raises(subprocess.TimeoutExpired) as captured:
+            wait_for_fixture(launcher, tmp_path, timeout=0.1)
+        assert launcher.returncode is not None
+        assert captured.value.stdout
+        assert_runner_tree_stopped(tmp_path, workers)
+        (diagnostics,) = (tmp_path / "test-results").iterdir()
+        assert (diagnostics / "metadata.json").is_file()
+        assert (diagnostics / "pytest.log").is_file()
+        assert not list(diagnostics.glob("*.active-pid"))
+        outcome = json.loads((diagnostics / "outcome.json").read_text())
+        assert outcome["pytest"]["interrupted"] is True
+        assert outcome["pytest"]["forced"] is True
+
+
+@requires_posix
+@pytest.mark.parametrize("workers", [0, 2], ids=["serial", "parallel"])
+def test_outer_fixture_timeout_kills_unresponsive_launcher(
+    tmp_path: Path, blocking_runner: Path, workers: int
+) -> None:
+    script = copy_fixture(
+        "test_runner/unresponsive_runner.py",
+        blocking_runner.with_name("unresponsive_runner.py"),
     )
-    return script
+    with launch_fixture(
+        script, "--workers", str(workers), "--shutdown-timeout", "0.3"
+    ) as launcher:
+        wait_for_receipt(launcher, tmp_path / "child.pid")
+        with pytest.raises(subprocess.TimeoutExpired) as captured:
+            wait_for_fixture(launcher, tmp_path, timeout=0.1, shutdown_timeout=0.1)
+        assert launcher.returncode == -signal.SIGKILL
+        assert captured.value.stdout
+        assert_runner_tree_stopped(tmp_path, workers)
+        (diagnostics,) = (tmp_path / "test-results").iterdir()
+        assert (diagnostics / "metadata.json").is_file()
+        assert (diagnostics / "pytest.log").is_file()
+        assert not list(diagnostics.glob("*.active-pid"))
 
 
-def interrupt_runner(script: Path) -> int:
+@pytest.fixture
+def interruptible_runner(tmp_path: Path) -> Iterator[Path]:
+    script = runner_project(tmp_path)
+    copy_fixture("test_runner/interruptible_case.py", tmp_path / "test_example.py")
+    copy_fixture("test_runner/session_receipts.py", tmp_path / "conftest.py")
+    try:
+        yield script
+    finally:
+        kill_active_process_groups(tmp_path)
+
+
+@contextmanager
+def launch_interruption_fixture(script: Path) -> Iterator[subprocess.Popen[bytes]]:
     root = script.parent.parent
     command = [
         sys.executable,
@@ -394,7 +389,7 @@ def interrupt_runner(script: Path) -> int:
         "--shutdown-timeout",
         "1",
     ]
-    with (root / "launcher.log").open("w") as output:
+    with (root / "launcher.log").open("w", encoding="utf-8") as output:
         process = subprocess.Popen(
             command,
             cwd=root,
@@ -404,15 +399,7 @@ def interrupt_runner(script: Path) -> int:
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         try:
-            deadline = time.monotonic() + 15
-            while not (root / "ready").exists():
-                assert process.poll() is None
-                assert time.monotonic() < deadline
-                time.sleep(0.05)
-            process.send_signal(
-                signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
-            )
-            return process.wait(timeout=15)
+            yield process
         finally:
             kill_active_process_groups(root)
             if process.poll() is None:
@@ -420,59 +407,46 @@ def interrupt_runner(script: Path) -> int:
             process.wait(timeout=5)
 
 
+def interrupt_runner(
+    launcher: subprocess.Popen[bytes], ready_receipt: Path, timeout: float = 15
+) -> int:
+    wait_for_receipt(launcher, ready_receipt)
+    launcher.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+    return launcher.wait(timeout=timeout)
+
+
 def test_runner_interrupt_preserves_diagnostics(
     tmp_path: Path, interruptible_runner: Path
 ) -> None:
-    assert interrupt_runner(interruptible_runner) != 0
+    with launch_interruption_fixture(interruptible_runner) as launcher:
+        assert interrupt_runner(launcher, tmp_path / "ready") != 0
 
     (diagnostics,) = (tmp_path / "test-results").iterdir()
     outcome = json.loads((diagnostics / "outcome.json").read_text())
     assert outcome["pytest"]["interrupted"] is True
     assert (diagnostics / "pytest.log").is_file()
+    assert (tmp_path / "launcher.log").stat().st_size > 0
 
 
 @requires_posix
 def test_interruption_fixture_timeout_cleans_pytest_group(
-    tmp_path: Path, interruptible_runner: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, interruptible_runner: Path
 ) -> None:
     script = copy_fixture(
         "test_runner/unresponsive_runner.py",
         interruptible_runner.with_name("unresponsive_runner.py"),
     )
-    (tmp_path / "conftest.py").write_text(
-        dedent("""\
-            import os
-            from pathlib import Path
+    with (
+        pytest.raises(subprocess.TimeoutExpired),
+        launch_interruption_fixture(script) as launcher,
+    ):
+        interrupt_runner(launcher, tmp_path / "ready", timeout=0.1)
 
-            def pytest_sessionstart() -> None:
-                Path("session.pid").write_text(str(os.getpid()), encoding="utf-8")
-            """),
-        encoding="utf-8",
-    )
-    launchers = []
-
-    class TimeoutOnInterrupt(subprocess.Popen):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            launchers.append(self)
-
-        def wait(self, timeout=None):
-            return super().wait(timeout=0.1 if timeout == 15 else timeout)
-
-    monkeypatch.setattr(subprocess, "Popen", TimeoutOnInterrupt)
-    try:
-        with pytest.raises(subprocess.TimeoutExpired):
-            interrupt_runner(script)
-        (launcher,) = launchers
-        assert launcher.returncode is not None
-        pid = int((tmp_path / "session.pid").read_text())
-        deadline = time.monotonic() + 5
-        while not process_stopped(pid):
-            assert time.monotonic() < deadline
-            time.sleep(0.05)
-        (diagnostics,) = (tmp_path / "test-results").iterdir()
-        assert not list(diagnostics.glob("*.active-pid"))
-        assert (diagnostics / "metadata.json").is_file()
-        assert (diagnostics / "pytest.log").is_file()
-    finally:
-        kill_active_process_groups(tmp_path)
+    assert launcher.returncode == -signal.SIGKILL
+    (session,) = tmp_path.glob("session-*.pid")
+    assert_process_stopped(int(session.read_text()))
+    (diagnostics,) = (tmp_path / "test-results").iterdir()
+    assert not list(diagnostics.glob("*.active-pid"))
+    assert (diagnostics / "metadata.json").is_file()
+    assert (diagnostics / "pytest.log").is_file()
+    assert (tmp_path / "launcher.log").stat().st_size > 0

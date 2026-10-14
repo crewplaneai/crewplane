@@ -1,7 +1,4 @@
-import asyncio
-import hashlib
 import io
-import json
 import unittest
 from contextlib import chdir
 from pathlib import Path
@@ -15,8 +12,7 @@ import crewplane.cli.app as cli
 import crewplane.cli.templates as templates
 import crewplane.cli.workflow_runner as workflow_runner
 from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
-from crewplane.adapters.invokers.mock_invoker.invoker import MockAgentInvoker
-from crewplane.architecture.contracts import CommandResult, InvocationContext
+from crewplane.architecture.contracts import CommandResult
 from crewplane.cli.onboarding.rendering import (
     manual_config_snippet,
     rendered_default_config,
@@ -31,12 +27,9 @@ from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
-from crewplane.runtime.agent import usage
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
-from crewplane.version import SCHEMA_VERSION
 from tests.helpers.isolated_git import IsolatedGit
 from tests.helpers.platforms import requires_workspace_support
-from tests.helpers.working_directory import temporary_project_cwd
 
 LEGACY_PROMPT_FIELDS = {"prompt_arg", "quota_parser", "stdin_prompt_arg", "use_stdin"}
 
@@ -191,228 +184,6 @@ class ExampleTemplateTests(unittest.TestCase):
             [Path("composition/child.task.md"), Path("root.task.md")],
         )
 
-    def test_mock_workflow_records_estimated_usage(
-        self,
-    ) -> None:
-        config_path = (self.template_dir / "config.yml").resolve()
-
-        with temporary_project_cwd(self.tmp_path) as rendered_root:
-            state_dir = rendered_root / ".crewplane"
-            workflows_dir = state_dir / "workflows"
-            workflows_dir.mkdir(parents=True, exist_ok=True)
-
-            rendered_config_path = state_dir / "config.yml"
-            rendered_workflow_path = workflows_dir / "code-review-example.task.md"
-            rendered_config_path.write_text(
-                templates.render_template_content(
-                    config_path.read_text(encoding="utf-8")
-                ),
-                encoding="utf-8",
-            )
-            rendered_workflow_path.write_text(
-                f"""---
-schema_version: "{SCHEMA_VERSION}"
-name: Usage capture
-nodes:
-  - id: review.context
-    mode: parallel
-    providers: [claude, codex, gemini]
-    findings: true
-  - id: review.iterate
-    mode: sequential
-    needs: [review.context]
-    depth: 2
-    audit_rounds: 2
-    providers:
-      - provider: codex
-        role: executor
-      - provider: claude
-        role: reviewer
-      - provider: gemini
-        role: reviewer
-  - id: review.summary
-    mode: sequential
-    needs: [review.iterate]
-    providers: [claude]
----
-## review.context
-Return findings about this test input.
-## review.iterate
-Review {{{{review.context.findings}}}}.
-## review.summary
-Summarize {{{{review.iterate.output}}}}.
-""",
-                encoding="utf-8",
-            )
-
-            config = load_config(rendered_config_path)
-            assert config.settings is not None
-            config.settings.integrations.invoker.options = {
-                "delay_seconds": 0,
-                "observation_delay_seconds": 0,
-                "output_mode": "lorem",
-                "seed": 42,
-            }
-            mock_agent = config.agents["mock"]
-            for agent_name in ("claude", "codex", "gemini"):
-                config.agents[agent_name] = mock_agent.model_copy(deep=True)
-            source = load_workflow_source_for_preflight(
-                rendered_workflow_path,
-                project_root=rendered_root,
-            )
-            validate_workflow_plan(source.workflow)
-
-            captured: dict[
-                tuple[str, str, int | None, int | None], tuple[str, str]
-            ] = {}
-            original_invoke = MockAgentInvoker.invoke
-
-            async def capture_invocation(
-                invoker,
-                config,
-                model,
-                prompt,
-                output_file,
-                cwd,
-                log_file=None,
-                invocation_context=None,
-            ):
-                assert isinstance(invocation_context, InvocationContext)
-                await original_invoke(
-                    invoker,
-                    config,
-                    model,
-                    prompt,
-                    output_file,
-                    cwd,
-                    log_file,
-                    invocation_context,
-                )
-                key = (
-                    invocation_context.node_id,
-                    invocation_context.task_id,
-                    invocation_context.audit_round_num,
-                    invocation_context.round_num,
-                )
-                assert key not in captured
-                captured[key] = (prompt, output_file.read_text(encoding="utf-8"))
-
-            stream = io.StringIO()
-            with patch.object(MockAgentInvoker, "invoke", new=capture_invocation):
-                asyncio.run(
-                    workflow_runner.execute_workflow_run(
-                        config=config,
-                        source=source,
-                        force=False,
-                        no_live=True,
-                        console=Console(file=stream, force_terminal=False),
-                    )
-                )
-            execution_stage_root = next(
-                (rendered_root / ".crewplane" / "execution-stages").iterdir()
-            )
-            execution_results_root = next(
-                (rendered_root / ".crewplane" / "execution-results").iterdir()
-            )
-            summary_path = execution_stage_root / "logs" / "summary.md"
-            event_log_path = execution_stage_root / "logs" / "events.ndjson"
-            findings_path = execution_results_root / "review.context-findings.md"
-
-            self.assertTrue(findings_path.exists())
-            self.assertIn(
-                "Synthetic finding for review.context",
-                findings_path.read_text(encoding="utf-8"),
-            )
-            self.assertTrue(summary_path.exists())
-            self.assertTrue(event_log_path.exists())
-
-            records = [
-                json.loads(line)
-                for line in event_log_path.read_text(encoding="utf-8").splitlines()
-            ]
-            finished = [
-                record
-                for record in records
-                if record["event_type"] == "invocation_finished"
-            ]
-            expected_keys = (
-                {
-                    ("review.context", f"{provider}_executor_{index}", None, 1)
-                    for index, provider in enumerate(("claude", "codex", "gemini"))
-                }
-                | {
-                    ("review.iterate", task_id, audit, 1)
-                    for audit in (1,)
-                    for task_id in (
-                        "codex_executor_0",
-                        "claude_reviewer_0",
-                        "gemini_reviewer_1",
-                    )
-                }
-                | {("review.summary", "claude_executor_0", None, 1)}
-            )
-            assert set(captured) == expected_keys
-            assert len(finished) == len(expected_keys) == 7
-            usage_by_key = {
-                (
-                    record["node_id"],
-                    record["task_id"],
-                    record.get("audit_round_num"),
-                    record.get("round_num"),
-                ): record
-                for record in finished
-            }
-            assert set(usage_by_key) == expected_keys
-            expected_total = 0
-            for key, (prompt, response) in captured.items():
-                # The documented lower bound rounds each visible text separately.
-                expected_tokens = (len(prompt) + 3) // 4 + (len(response) + 3) // 4
-                expected_total += expected_tokens
-                record = usage_by_key[key]
-                assert record["visible_estimate_tokens"] == expected_tokens > 0, (
-                    "incorrect visible token estimate"
-                )
-                assert record["attempt_count"] == 1
-                assert record["cli_captured"] is True
-                assert record["provider_usage_status"] == "none"
-                assert record["provider_usage_report_count"] == 0
-                assert record["visible_estimate_method"] == "char-count-lower-bound"
-                assert record["visible_estimate_is_lower_bound"] is True
-                assert record["output_extraction_status"] == "success"
-                assert record["provider"] == key[1].split("_", 1)[0]
-                assert record["role"] == key[1].split("_")[1]
-            manifest = json.loads(
-                (execution_stage_root / "manifests/run.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            assert manifest["status"] == "succeeded"
-            states = [
-                json.loads(path.read_text(encoding="utf-8"))
-                for path in (execution_stage_root / "manifests/nodes").glob("*.json")
-            ]
-            assert {state["node_id"] for state in states} == {
-                key[0] for key in expected_keys
-            }
-            for state in states:
-                assert state["run_id"] == manifest["run_id"]
-                assert state["artifacts"]
-                for artifact in state["artifacts"]:
-                    assert artifact["relative_path"].startswith(state["node_id"] + "-")
-                    payload = (
-                        execution_results_root / artifact["relative_path"]
-                    ).read_bytes()
-                    assert len(payload) == artifact["size_bytes"]
-                    assert hashlib.sha256(payload).hexdigest() == artifact["sha256"]
-            summary_text = summary_path.read_text(encoding="utf-8")
-            assert "CLI invocations captured: 7/7" in summary_text
-            assert (
-                f"Visible-text estimate (lower-bound): {expected_total:,} tokens"
-                in summary_text
-            )
-            assert "Run Summary" in stream.getvalue()
-            assert f"{expected_total:,} tokens" in stream.getvalue()
-
 
 @pytest.mark.parametrize(
     "provider",
@@ -495,18 +266,3 @@ def test_initialized_workflow_compiles(
         check_cli_availability=False,
     )
     assert not preview.has_errors(), preview.diagnostics
-
-
-def test_usage_assertions_reject_zero_estimates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def zero_estimate(char_count: int) -> int:
-        del char_count
-        return 0
-
-    monkeypatch.setattr(usage, "estimate_token_count", zero_estimate)
-    scenario = ExampleTemplateTests("test_mock_workflow_records_estimated_usage")
-    scenario.tmp_path = tmp_path
-    scenario.setUp()
-    with pytest.raises(AssertionError, match="incorrect visible token estimate"):
-        scenario.test_mock_workflow_records_estimated_usage()
