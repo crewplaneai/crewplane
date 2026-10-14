@@ -35,4 +35,9 @@ jobs:
             0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0,
             ISC, MIT, MPL-2.0, PSF-2.0, Python-2.0,
             Unicode-3.0, Unicode-DFS-2016, Unlicense, Zlib
+          # 4.16.0 declares PSF-2.0; dependency review misidentifies it as GPL:
+          # https://pypi.org/project/typing-extensions/4.16.0/
+          # The action ignores PURL versions, so the regression test guards the
+          # locked version and requires this exception to be reviewed on upgrade.
+          allow-dependencies-licenses: pkg:pypi/typing-extensions
           comment-summary-in-pr: always
