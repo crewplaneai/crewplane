@@ -23,6 +23,7 @@ from tests.integration.runtime.execution.review_loop_drift_support import (
 )
 
 
+@pytest.mark.race
 def test_monitoring_window_retries_concurrent_runtime_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -144,6 +145,7 @@ def test_recovery_baseline_without_registry_retains_original_bytes(
     request.runtime_context.runtime_publications.close()
 
 
+@pytest.mark.race
 def test_registered_reserved_publication_created_during_window_is_restored(
     tmp_path: Path,
 ) -> None:
@@ -271,3 +273,38 @@ def test_reserved_scans_preserve_missing_roots_and_unsafe_entries(
             assert not {safe, hardlink, symlink} & snapshot.keys()
     finally:
         request.runtime_context.runtime_publications.close()
+
+
+@pytest.mark.race
+def test_successful_capture_retries_when_publication_changes(tmp_path: Path) -> None:
+    from crewplane.runtime.execution.publication_registry import (
+        RuntimePublicationRegistry,
+    )
+
+    path = tmp_path / "peer.md"
+    initial = (3, hashlib.sha256(b"old").hexdigest())
+    current = (3, hashlib.sha256(b"new").hexdigest())
+    publications = RuntimePublicationRegistry()
+    captures = 0
+    try:
+        publications.publish(path, initial)
+
+        def capture() -> bytes:
+            nonlocal captures
+            captures += 1
+            assert captures <= 2, "capture did not converge after publication"
+            if captures == 1:
+                publications.publish(path, current)
+                return b"stale sentinel"
+            return b"new"
+
+        payload, signatures = (
+            review_loop_drift_capture.capture_consistent_publication_snapshot(
+                publications, capture, (OSError,)
+            )
+        )
+        assert captures == 2
+        assert payload == b"new"
+        assert signatures == {path: current}
+    finally:
+        publications.close()

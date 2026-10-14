@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -31,8 +30,6 @@ pytestmark = requires_workspace_support
 def test_reused_worktree_setup_runs_after_reset_and_clean(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     nested = repo / "packages" / "app"
     nested.mkdir(parents=True)
@@ -47,12 +44,10 @@ def test_reused_worktree_setup_runs_after_reset_and_clean(
             [
                 sys.executable,
                 "-c",
-                (
-                    "from pathlib import Path; "
-                    "assert Path('result.txt').read_text() == 'captured\\n'; "
-                    "assert not Path('packages/app/.cache').exists(); "
-                    "Path('setup-order.txt').write_text('after-reset')"
-                ),
+                "from pathlib import Path; "
+                "assert Path('result.txt').read_text() == 'captured\\n'; "
+                "assert not Path('packages/app/.cache').exists(); "
+                "Path('setup-order.txt').write_text('after-reset', encoding='utf-8')",
             ]
         ],
     )
@@ -101,14 +96,12 @@ def test_reused_worktree_setup_runs_after_reset_and_clean(
 def test_reused_worktree_setup_failure_clears_the_cache_lease(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = with_node_setup(
         two_node_lineage_plan(repo, cache_root),
         "verify",
-        [[sys.executable, "-c", "raise SystemExit(17)"]],
+        [[sys.executable, "-c", "import sys; sys.exit(int(sys.argv[1]))", "17"]],
     )
     output = workspace_output_manager(tmp_path, repo)
     output.create_node_dir(node_artifact_request("implement"))

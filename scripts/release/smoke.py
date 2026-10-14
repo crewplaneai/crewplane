@@ -8,8 +8,6 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
-import yaml
-
 from . import build, retry
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
@@ -69,11 +67,11 @@ def _install_smoke_pip(context: ReleaseContext, runner: CommandRunner) -> None:
     root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
-        smoke_python = current_python(root, runner)
         venv = tmp / "venv"
         if command_exists("uv"):
             runner.run(
-                ["uv", "venv", "--seed", "--python", smoke_python, str(venv)], cwd=root
+                ["uv", "venv", "--seed", "--python", sys.executable, str(venv)],
+                cwd=root,
             )
         else:
             runner.run([sys.executable, "-m", "venv", str(venv)], cwd=root)
@@ -111,7 +109,6 @@ def _install_smoke_uv(context: ReleaseContext, runner: CommandRunner) -> None:
         tmp = Path(temporary)
         home = tmp / "home"
         home.mkdir()
-        smoke_python = current_python(root, runner)
         env = {"HOME": str(home)}
         runner.run(
             [
@@ -120,7 +117,7 @@ def _install_smoke_uv(context: ReleaseContext, runner: CommandRunner) -> None:
                 "install",
                 "--force",
                 "--python",
-                smoke_python,
+                sys.executable,
                 "--find-links",
                 str(wheelhouse(context)),
                 "--no-index",
@@ -151,7 +148,6 @@ def _install_smoke_pipx(context: ReleaseContext, runner: CommandRunner) -> None:
     root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
-        smoke_python = current_python(root, runner)
         env = {"PIPX_HOME": str(tmp / "pipx-home"), "PIPX_BIN_DIR": str(tmp / "bin")}
         runner.run(
             [
@@ -159,7 +155,7 @@ def _install_smoke_pipx(context: ReleaseContext, runner: CommandRunner) -> None:
                 "install",
                 "--force",
                 "--python",
-                smoke_python,
+                sys.executable,
                 f"--pip-args=--no-index --find-links {wheelhouse(context)}",
                 f"{context.package_name}=={context.version.project}",
             ],
@@ -184,7 +180,7 @@ def _install_script_smoke(context: ReleaseContext, runner: CommandRunner) -> Non
             "CREWPLANE_VERSION": context.version.project,
             "CREWPLANE_INSTALL_FIND_LINKS": str(wheelhouse(context)),
             "CREWPLANE_INSTALL_NO_INDEX": "1",
-            "CREWPLANE_INSTALL_PYTHON": current_python(root, runner),
+            "CREWPLANE_INSTALL_PYTHON": sys.executable,
             "CREWPLANE_INSTALL_HOME": str(tmp / "home"),
             "HOME": str(tmp / "home"),
         }
@@ -222,7 +218,7 @@ def _npm_smoke(context: ReleaseContext, runner: CommandRunner) -> None:
             "CREWPLANE_VERSION": context.version.project,
             "CREWPLANE_INSTALL_FIND_LINKS": str(wheelhouse(context)),
             "CREWPLANE_INSTALL_NO_INDEX": "1",
-            "CREWPLANE_INSTALL_PYTHON": current_python(root, runner),
+            "CREWPLANE_INSTALL_PYTHON": sys.executable,
         }
         prefix = tmp / "prefix"
         runner.run(
@@ -416,46 +412,35 @@ def exercise_installed_cli(
     tmp: Path,
     env: dict[str, str] | None = None,
 ) -> None:
-    runner.run([str(executable), "--help"], cwd=context.root, env=env)
-    version_result = runner.run(
-        [str(executable), "--version"],
-        cwd=context.root,
-        env=env,
+    resolved = executable.resolve()
+    python = (
+        resolved.parent.parent / ".venv/bin/python"
+        if resolved.suffix == ".js"
+        else resolved.parent / "python"
     )
-    if context.version.project not in version_result.stdout:
-        raise ReleaseError(
-            "installed CLI version output does not contain the package version"
-        )
-    project = tmp / "project"
-    project.mkdir(exist_ok=True)
-    runner.run([str(executable), "init"], cwd=project, env=env)
-    write_mock_config(project / ".crewplane" / "config.yml")
-    runner.run([str(executable), "validate"], cwd=project, env=env)
-    runner.run([str(executable), "run", "--no-live"], cwd=project, env=env)
-
-
-def write_mock_config(path: Path) -> None:
-    config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    match config:
-        case {
-            "settings": {
-                "integrations": {
-                    "invoker": {"implementation": "mock", "options": dict() as options}
-                }
-            }
-        }:
-            options["delay_seconds"] = 0
-            options["observation_delay_seconds"] = 0
-        case _:
-            raise ReleaseError("scaffolded config does not define the mock invoker")
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-
-
-def current_python(root: Path, runner: CommandRunner) -> str:
-    return runner.run(
-        [sys.executable, "-c", "import sys; print(sys.executable)"],
-        cwd=root,
-    ).stdout.strip()
+    diagnostics = context.root / "test-results" / f"package-release-{uuid4().hex}"
+    runner.run(
+        [
+            sys.executable,
+            str(
+                Path(__file__).resolve().parents[2]
+                / "tests/helpers/installed_package_assertions.py"
+            ),
+            "--python",
+            str(python),
+            "--cli",
+            str(executable),
+            "--expected-version",
+            context.version.project,
+            "--checkout",
+            str(context.root),
+            "--diagnostics",
+            str(diagnostics),
+        ],
+        cwd=tmp,
+        env=env,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def wheelhouse(context: ReleaseContext) -> Path:

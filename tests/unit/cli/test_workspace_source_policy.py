@@ -29,6 +29,7 @@ from tests.helpers.platforms import (
     posix_support_policy,
     requires_posix,
     requires_workspace_support,
+    symlink_or_skip,
     windows_support_policy,
 )
 from tests.helpers.workspace_source_policy import (
@@ -342,12 +343,9 @@ def test_workspace_source_policy_rejects_dangling_cache_root_symlink(
     tmp_path: Path,
 ) -> None:
     cache_root = tmp_path / "workspace-cache"
-    try:
-        cache_root.symlink_to(
-            tmp_path / "missing-cache-target", target_is_directory=True
-        )
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        cache_root, tmp_path / "missing-cache-target", target_is_directory=True
+    )
     config = workspace_source_config().model_copy(
         update={
             "settings": Settings(

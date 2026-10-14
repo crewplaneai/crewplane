@@ -14,6 +14,8 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from tests.helpers.fixture_files import fixture_path
 
 
 def start_git_metadata_lock_holder(
@@ -23,14 +25,7 @@ def start_git_metadata_lock_holder(
     holder = subprocess.Popen(
         [
             sys.executable,
-            "-c",
-            (
-                "import fcntl, pathlib, sys, time; "
-                "handle = pathlib.Path(sys.argv[1]).open('a+b'); "
-                "fcntl.flock(handle.fileno(), fcntl.LOCK_EX); "
-                "print('locked', flush=True); "
-                "time.sleep(float(sys.argv[2]))"
-            ),
+            str(fixture_path("workspace/git_metadata_lock.py")),
             lock_path.as_posix(),
             str(hold_seconds),
         ],
@@ -136,3 +131,11 @@ def plan_with_available_setup_profile(
     workspace["setup_profiles"] = {"bootstrap": {"run": commands}}
     runtime_snapshot["workspace"] = workspace
     return plan.model_copy(update={"runtime_config_snapshot": runtime_snapshot})
+
+
+def remove_remaining_worktree(
+    plan: PreflightExecutionPlan, workspace_path: Path | None
+) -> None:
+    if workspace_path is not None and workspace_path.exists():
+        assert plan.workspace_source is not None
+        remove_worktree_workspace(plan.workspace_source, workspace_path)

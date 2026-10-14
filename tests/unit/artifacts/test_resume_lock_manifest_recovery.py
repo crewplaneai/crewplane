@@ -230,10 +230,7 @@ def test_stale_lock_with_symlinked_manifest_directory_fails_closed(
     outside.mkdir()
     run_dir = tmp_path / "execution-stages" / "workflow--source"
     run_dir.mkdir(parents=True)
-    try:
-        symlink_or_skip(run_dir / "manifests", outside, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(run_dir / "manifests", outside, target_is_directory=True)
 
     with pytest.raises(ResumeLockError, match="symlink"):
         acquire_same_context_lock(
@@ -267,10 +264,7 @@ def test_stale_lock_with_symlinked_run_manifest_fails_closed(
     )
     manifest_dir = tmp_path / "execution-stages" / "workflow--source" / "manifests"
     manifest_dir.mkdir(parents=True)
-    try:
-        symlink_or_skip(manifest_dir / "run.json", outside_manifest)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(manifest_dir / "run.json", outside_manifest)
 
     with pytest.raises(ResumeLockError, match="symlink"):
         acquire_same_context_lock(

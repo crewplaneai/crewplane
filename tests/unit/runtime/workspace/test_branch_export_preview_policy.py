@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -42,8 +41,6 @@ def test_fulfill_branch_exports_ignores_inherited_git_transport_restrictions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/restricted-env")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -79,8 +76,6 @@ def test_fulfill_branch_exports_ignores_inherited_git_transport_restrictions(
 def test_fulfill_branch_exports_writes_skipped_record_when_disabled(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(
         repo,
@@ -129,8 +124,6 @@ def test_fulfill_branch_exports_writes_skipped_record_when_disabled(
 def test_disabled_branch_export_preserves_broken_record_symlink(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(
         repo,
@@ -171,8 +164,6 @@ def test_disabled_branch_export_preserves_broken_record_symlink(
 def test_preview_branch_exports_verifies_without_creating_ref(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/preview")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -206,8 +197,6 @@ def test_preview_branch_exports_verifies_without_creating_ref(
 def test_preview_and_history_fulfillment_verify_existing_expected_branch(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/preview")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -245,8 +234,6 @@ def test_preview_and_history_fulfillment_verify_existing_expected_branch(
 def test_preview_branch_exports_rejects_prerequisite_bundle_chain(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/preview")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -304,8 +291,6 @@ def test_preview_branch_exports_rejects_prerequisite_bundle_chain(
 def test_preview_and_fulfillment_reject_ambient_omitted_bundle_prerequisite(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/omitted-upstream")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -368,8 +353,6 @@ def test_preview_and_fulfillment_reject_ambient_omitted_bundle_prerequisite(
 def test_preview_branch_exports_rejects_sha256_prerequisite_bundles(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     try:
         repo = create_git_repo(tmp_path, object_format="sha256")
     except subprocess.CalledProcessError as exc:

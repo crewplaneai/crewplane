@@ -60,7 +60,7 @@ def test_parallel_reviewers_publish_only_after_every_invocation_finishes(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -139,7 +139,7 @@ def test_peer_private_output_mutation_is_rejected_at_publication(
         review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -207,7 +207,7 @@ def test_reviewer_verdict_uses_bound_private_output_after_canonical_mutation(
         publish_then_mutate_canonical,
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -274,7 +274,7 @@ def test_reviewer_normalization_rejects_substituted_publication_source(
         substitute_normalized_source,
     )
     request = ReviewerRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -303,7 +303,7 @@ def test_peer_canonical_precreation_is_fatal_before_round_publication(
     output = OutputManager("workflow", base_dir=tmp_path)
     node = make_review_node()
     node_dir = output.create_node_dir(node_artifact_request(node.id))
-    runtime_context = make_round_runtime_context()
+    runtime_context = make_round_runtime_context(tmp_path)
     runtime_context.plan.runtime_config_snapshot["agents"] = {
         "exec": {"cli_cmd": ["mock"], "default_model": "m1"},
         "review": {"cli_cmd": ["mock"], "default_model": "m2"},

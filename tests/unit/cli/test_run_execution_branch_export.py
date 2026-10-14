@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -403,8 +402,6 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
 def test_resume_historical_branch_export_skips_incomplete_final_checkpoint(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = _two_node_same_worktree_plan(
         branch_export_plan(repo, tmp_path, branch_name="feature/resume")
@@ -454,8 +451,6 @@ def test_resume_historical_branch_export_skips_incomplete_final_checkpoint(
 def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     stream = io.StringIO()
     console = Console(
         file=stream,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import shutil
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 import crewplane.cli.workspace_cleanup.eligibility as cleanup_eligibility
 from crewplane.cli.app import app
+from tests.helpers.isolated_git import require_git
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     make_run_manifest,
@@ -83,8 +84,11 @@ def test_cleanup_workspaces_yes_allows_distinct_terminal_node_and_run_states(
 
 
 def test_cleanup_workspaces_yes_preserves_unrecorded_run_refs(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
+    require_git(
+        dict(os.environ),
+        required=os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        expected_floor_bin=os.environ.get("GIT_FLOOR_BIN"),
+    )
     project_root, config_path, workspace_path = cleanup_project(
         tmp_path,
         initialize_git=True,

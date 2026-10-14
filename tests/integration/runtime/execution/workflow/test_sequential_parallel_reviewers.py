@@ -27,14 +27,16 @@ from crewplane.runtime.execution.common import (
 from crewplane.runtime.execution.provider_call import (
     generated_files as provider_generated_files,
 )
+from crewplane.runtime.execution.review_loop import reviewer_round
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import topology_from_workflow
 from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
+    InvocationKey,
     ParallelReviewerBarrierInvoker,
-    TaskOutputInvoker,
+    ScriptedAgentInvoker,
     execute_sequential_stage,
     review_loop_status_path,
     review_output,
@@ -70,10 +72,6 @@ class ParallelReviewerStreamingLogInvoker(ParallelReviewerBarrierInvoker):
             await asyncio.wait_for(self.release_slow_reviewer.wait(), timeout=1.0)
         else:
             await asyncio.wait_for(self.slow_log_ready.wait(), timeout=1.0)
-            asyncio.get_running_loop().call_later(
-                0.05,
-                self.release_slow_reviewer.set,
-            )
         output_file.write_text(review_output(verdict="NO_FINDINGS"), encoding="utf-8")
 
 
@@ -82,6 +80,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
     def temporary_directory_root(self, tmp_path: Path) -> None:
         self.tmp_path = tmp_path
 
+    @pytest.mark.race
     async def test_multi_provider_reviewers_run_in_parallel_within_local_round(
         self,
     ) -> None:
@@ -123,6 +122,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             "review-b_reviewer_1",
         }
 
+    @pytest.mark.race
     async def test_parallel_reviewer_peer_log_is_not_read_by_drift_snapshot(
         self,
     ) -> None:
@@ -172,13 +172,37 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     stream.write(b" still running")
             return payload
 
-        with patch.object(Path, "read_bytes", new=append_after_peer_log_read):
-            await execute_sequential_stage(config, node, output, invoker=invoker)
+        completed_tasks: list[str] = []
+        guarded_call = reviewer_round.run_provider_call_with_drift_guard
+
+        async def finish_guarded_call(request):
+            result = await guarded_call(request)
+            if request.task_id == "review-a_reviewer_0":
+                assert invoker.slow_log_ready.is_set()
+                assert not invoker.release_slow_reviewer.is_set()
+                completed_tasks.append(request.task_id)
+                invoker.release_slow_reviewer.set()
+            return result
+
+        try:
+            with (
+                patch.object(Path, "read_bytes", new=append_after_peer_log_read),
+                patch.object(
+                    reviewer_round,
+                    "run_provider_call_with_drift_guard",
+                    new=finish_guarded_call,
+                ),
+            ):
+                await execute_sequential_stage(config, node, output, invoker=invoker)
+        finally:
+            invoker.release_slow_reviewer.set()
+        assert completed_tasks == ["review-a_reviewer_0"]
 
         assert invoker.slow_log_path is not None
         assert peer_log_read_count == 0
 
     @requires_workspace_support
+    @pytest.mark.race
     async def test_parallel_reviewer_private_snapshots_do_not_overlap(
         self,
     ) -> None:
@@ -210,11 +234,17 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
             ],
         )
-        invoker = TaskOutputInvoker(
-            outputs_by_task_id={
-                "exec_executor_0": "executor output",
-                "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
-                "review-b_reviewer_1": review_output(verdict="NO_FINDINGS"),
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey(
+                    "review.node.parallel.metadata", "exec_executor_0"
+                ): "executor output",
+                InvocationKey(
+                    "review.node.parallel.metadata", "review-a_reviewer_0"
+                ): review_output(verdict="NO_FINDINGS"),
+                InvocationKey(
+                    "review.node.parallel.metadata", "review-b_reviewer_1"
+                ): review_output(verdict="NO_FINDINGS"),
             },
         )
         output = OutputManager("workflow", base_dir=tmp_path)
@@ -296,6 +326,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
         )
         assert status_payload["artifact_drift_warning_count"] == 0
 
+    @pytest.mark.race
     async def test_parallel_reviewer_log_setup_failure_uses_invocation_lifecycle(
         self,
     ) -> None:
@@ -328,12 +359,20 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         release_review_a = asyncio.Event()
-        invoker = TaskOutputInvoker(
-            outputs_by_task_id={
-                "exec_executor_0": "executor output",
-                "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
+        invoker = ScriptedAgentInvoker(
+            responses={
+                InvocationKey(
+                    "review.node.reviewer.log.failure", "exec_executor_0"
+                ): "executor output",
+                InvocationKey(
+                    "review.node.reviewer.log.failure", "review-a_reviewer_0"
+                ): review_output(verdict="NO_FINDINGS"),
             },
-            gates_by_task_id={"review-a_reviewer_0": release_review_a},
+            gates={
+                InvocationKey(
+                    "review.node.reviewer.log.failure", "review-a_reviewer_0"
+                ): release_review_a
+            },
         )
 
         def release_in_flight_reviewer() -> None:

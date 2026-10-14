@@ -209,10 +209,7 @@ def test_workspace_generated_file_snapshot_rejects_symlink_swap_during_copy(
         nonlocal swapped
         if path == "app.txt" and dir_fd is not None and not swapped:
             source.unlink()
-            try:
-                symlink_or_skip(source, outside)
-            except OSError as exc:
-                pytest.skip(f"symlinks are unavailable: {exc}")
+            symlink_or_skip(source, outside)
             swapped = True
         if dir_fd is None:
             return original_open(path, flags)

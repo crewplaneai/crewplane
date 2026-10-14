@@ -8,7 +8,7 @@ import pytest
 
 from crewplane.runtime.workspace.worktree import reset
 from crewplane.runtime.workspace.worktree.protected_refs import ProtectedRefSnapshot
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 
 pytestmark = requires_workspace_support
 
@@ -215,10 +215,7 @@ def test_reset_rejects_unsafe_policy_file(
     else:
         target = tmp_path / "target"
         target.write_text("outside", encoding="utf-8")
-        try:
-            policy_file.symlink_to(target)
-        except OSError:
-            pytest.skip("symlink creation is unavailable")
+        symlink_or_skip(policy_file, target)
 
     with pytest.raises(RuntimeError, match="policy file is not a real file"):
         run_reset(monkeypatch, checkout, common_git_dir, git_dir)
@@ -319,10 +316,7 @@ def test_reset_rejects_missing_or_symlinked_git_metadata(
     target.mkdir()
     (target / "gitdir").write_text((checkout / ".git").as_posix())
     linked = common_git_dir / "worktrees" / "linked"
-    try:
-        linked.symlink_to(target, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(linked, target, target_is_directory=True)
     (checkout / ".git").write_text(f"gitdir: {linked.as_posix()}")
     command = GitCommand()
     with pytest.raises(RuntimeError, match="must not be symlinked"):
@@ -353,7 +347,7 @@ def test_reset_rejects_invalid_gitdir_backlink(
     if setup == "directory":
         backlink.mkdir()
     elif setup == "symlink":
-        backlink.symlink_to(checkout / ".git")
+        symlink_or_skip(backlink, checkout / ".git")
     elif setup == "empty":
         backlink.write_text(" \n", encoding="utf-8")
 

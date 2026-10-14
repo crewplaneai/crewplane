@@ -79,10 +79,10 @@ jobs:
           prune-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev --extra stress
 
       - name: Run tests
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev make test
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev --extra stress python scripts/run_tests.py --profile ${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }}
 
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
@@ -108,6 +108,16 @@ jobs:
         with:
           name: fuzz-yaml-failure
           path: ${{ runner.temp }}/fuzz-yaml/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-tests-${{ matrix.python-version }}
+          path: test-results/
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 
@@ -140,7 +150,7 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
 
       - name: Run native Windows suite
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q --durations=20
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile windows
 
       - name: Build installed-wheel fixtures
         run: uv build
@@ -150,6 +160,16 @@ jobs:
 
       - name: Smoke-test uv installation outside checkout
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer uv
+
+      - name: Upload test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-tests-${{ matrix.python-version }}
+          path: test-results/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   package:
     name: package
@@ -190,7 +210,7 @@ jobs:
         run: |
           ls -la dist
           python -m zipfile --test dist/*.whl
-          uv run --extra dev twine check dist/*
+          uv run --locked --extra dev twine check dist/*
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -198,4 +218,14 @@ jobs:
           name: dist
           path: dist/*
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-acceptance
+          path: test-results/
+          include-hidden-files: true
+          if-no-files-found: ignore
           retention-days: 7

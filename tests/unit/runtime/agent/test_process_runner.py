@@ -1,6 +1,8 @@
 import asyncio
-import tracemalloc
+import json
+import subprocess
 import unittest
+from pathlib import Path
 from threading import Event
 from unittest.mock import patch
 
@@ -19,6 +21,8 @@ from crewplane.runtime.agent.process.streams import (
     LOG_QUEUE_MAX_ITEMS,
     pipe_stream,
 )
+from tests.helpers.capture_memory_probe import run_probe
+from tests.helpers.fixture_files import copy_fixture
 
 
 class _RecordingLogHandle:
@@ -184,23 +188,11 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             capture.cleanup()
 
     def test_captured_stream_retains_full_output_with_bounded_memory(self) -> None:
-        capture = RealCapturedStream(max_memory_bytes=64 * 1024)
-        chunk = b"x" * 4096
-        tracemalloc.start()
-        try:
-            remaining_chunks = (8 * 1024 * 1024) // len(chunk)
-            while remaining_chunks:
-                capture.write(chunk)
-                remaining_chunks -= 1
-            _current, peak = tracemalloc.get_traced_memory()
-            capture.close()
-
-            self.assertEqual(capture.tail_bytes, b"x" * (64 * 1024))
-            self.assertEqual(capture.path.stat().st_size, 8 * 1024 * 1024)
-            self.assertLess(peak, 1024 * 1024)
-        finally:
-            tracemalloc.stop()
-            capture.cleanup()
+        probe = Path(__file__).resolve().parents[3] / "helpers/capture_memory_probe.py"
+        result = run_probe(probe)
+        measurements = json.loads(result.stdout)
+        self.assertLess(measurements["peak_bytes"], 1024 * 1024)
+        self.assertTrue(measurements["cleaned"])
 
     async def test_collect_process_output_keeps_event_loop_live_with_slow_log_sink(
         self,
@@ -500,3 +492,21 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(diagnostics[0].level, "warning")
         self.assertEqual(diagnostics[0].attributes["attempted_signal"], "terminate")
+
+
+def test_memory_probe_timeout_reaps_its_direct_child(tmp_path, monkeypatch) -> None:
+    probe = tmp_path / "blocked_probe.py"
+    copy_fixture("processes/sleeping_process.py", probe)
+    processes = []
+    popen = subprocess.Popen
+
+    def record_process(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", record_process)
+    with unittest.TestCase().assertRaises(subprocess.TimeoutExpired):
+        run_probe(probe, timeout=0.2)
+    assert len(processes) == 1
+    assert processes[0].poll() is not None

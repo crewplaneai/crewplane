@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -14,7 +13,7 @@ from crewplane.runtime.workspace.worktree.cache import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -33,8 +32,6 @@ pytestmark = requires_workspace_support
 def test_same_worktree_reuse_rejects_retargeted_git_file_before_reset(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -101,7 +98,7 @@ def test_reusable_reset_rejects_symlinked_git_metadata_before_git_command(
         encoding="utf-8",
     )
     expected_git_dir = worktrees_dir / "checkout"
-    expected_git_dir.symlink_to(real_admin_dir, target_is_directory=True)
+    symlink_or_skip(expected_git_dir, real_admin_dir, target_is_directory=True)
     (checkout_root / ".git").write_text(
         f"gitdir: {expected_git_dir.as_posix()}\n",
         encoding="utf-8",
@@ -146,13 +143,11 @@ def test_reusable_reset_rejects_symlinked_git_info_before_unlink(
         f"gitdir: {expected_git_dir.as_posix()}\n",
         encoding="utf-8",
     )
-    try:
-        (expected_git_dir / "info").symlink_to(
-            outside_info,
-            target_is_directory=True,
-        )
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        expected_git_dir / "info",
+        outside_info,
+        target_is_directory=True,
+    )
 
     def ignore_common_git_policy_drift(repo_root: Path, common_git_dir: Path) -> None:
         del repo_root, common_git_dir
@@ -190,8 +185,6 @@ def test_reused_worktree_rejects_source_tree_mismatch_before_reset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -245,8 +238,6 @@ def test_reused_worktree_rejects_missing_local_source_bundle_before_reset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

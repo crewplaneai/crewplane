@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +20,7 @@ from crewplane.artifacts.workspace.chain_validation import (
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.isolated_git import require_git
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     attach_workspace_descriptor,
@@ -759,8 +760,11 @@ def test_validate_frontier_rejects_bool_bundle_size(
 def test_validate_frontier_accepts_sha256_lineage_bundle(
     tmp_path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
+    require_git(
+        dict(os.environ),
+        required=os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        expected_floor_bin=os.environ.get("GIT_FLOOR_BIN"),
+    )
     source = source_record(tmp_path)
     plan = make_plan()
     policy = workspace_selection_record(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from pathlib import Path
 from threading import Event
 from time import monotonic, sleep
@@ -47,8 +46,6 @@ def test_worktree_retry_reset_deadline_bounds_asyncio_run_while_lock_is_held(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")
@@ -88,8 +85,6 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
     monkeypatch: pytest.MonkeyPatch,
     defer_terminal_state: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")
@@ -213,8 +208,6 @@ def test_preparation_cancellation_has_bounded_terminal_cleanup(
     hold_git_lock: bool,
     delay_past_preparation_timeout: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")

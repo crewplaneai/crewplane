@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -50,8 +49,6 @@ pytestmark = requires_workspace_support
 def test_same_worktree_reuses_checkout_with_incremental_reset(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     nested = repo / "packages" / "app"
     nested.mkdir(parents=True)
@@ -113,8 +110,6 @@ def test_same_worktree_reuses_checkout_with_incremental_reset(
 
 
 def test_empty_nested_project_cwd_survives_retry_and_reuse(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     project_root = repo / "packages" / "new-app"
     project_root.mkdir(parents=True)
@@ -189,8 +184,6 @@ async def _cancel_reuse_claim_without_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -310,8 +303,6 @@ def test_safe_worktree_reuse_reserves_no_second_checkout_capacity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = two_node_lineage_plan(repo, tmp_path / "cache")
     source = plan.workspace_source
@@ -353,8 +344,6 @@ def test_safe_worktree_reuse_reserves_no_second_checkout_capacity(
 
 
 def test_retained_successful_worktree_is_not_reused(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root, cleanup_on_success=False)

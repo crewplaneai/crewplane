@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from rich.console import Console
@@ -23,6 +24,7 @@ from crewplane.core.workflow.models import (
 )
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import require_git
 from tests.helpers.isolated_git import run_git_text as git
 
 
@@ -58,6 +60,11 @@ def workspace_source_snapshot(
 
 
 def init_git_repo(root: Path) -> WorkspaceSourceSnapshot:
+    require_git(
+        dict(os.environ),
+        required=os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        expected_floor_bin=os.environ.get("GIT_FLOOR_BIN"),
+    )
     git(root, "init")
     git(root, "config", "user.name", "Crewplane Test")
     git(root, "config", "user.email", "crewplane-test@example.invalid")

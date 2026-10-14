@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -99,8 +98,6 @@ def test_overlapping_project_root_invocations_do_not_cross_attribute_ambient_fil
 async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(

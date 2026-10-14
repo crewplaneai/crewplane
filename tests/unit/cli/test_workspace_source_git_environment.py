@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
@@ -105,9 +106,15 @@ def _write_fake_git(bin_dir: Path, version_text: str) -> Path:
     bin_dir.mkdir(parents=True)
     executable = bin_dir / "git"
     executable.write_text(
-        f"#!/bin/sh\nprintf '%s\\n' '{version_text}'\n",
+        dedent("""\
+            #!/bin/sh
+            IFS= read -r version < "$0.version"
+            printf '%s\\n' "$version"
+            """),
         encoding="utf-8",
+        newline="\n",
     )
+    executable.with_suffix(".version").write_text(version_text + "\n", encoding="utf-8")
     executable.chmod(0o755)
     return executable
 
@@ -193,15 +200,13 @@ def test_workspace_git_failure_diagnostics_redact_output_credentials(
     fake_bin.mkdir()
     fake_git = fake_bin / "git"
     fake_git.write_text(
-        "\n".join(
-            (
-                "#!/bin/sh",
-                "printf '%s\\n' 'stdout token=stdout-secret credential.helper=stdout-helper'",
-                "printf '%s\\n' 'Authorization: Bearer stdout-header'",
-                "printf '%s\\n' 'stderr https://user:stderr-password@example.invalid/repository authToken=stderr-token' >&2",
-                "exit 1",
-            )
-        ),
+        dedent("""\
+            #!/bin/sh
+            printf '%s\\n' 'stdout token=stdout-secret credential.helper=stdout-helper'
+            printf '%s\\n' 'Authorization: Bearer stdout-header'
+            printf '%s\\n' 'stderr https://user:stderr-password@example.invalid/repository authToken=stderr-token' >&2
+            exit 1
+            """),
         encoding="utf-8",
         newline="\n",
     )
@@ -234,7 +239,7 @@ def test_workspace_git_ignores_ambient_global_configuration(
     ambient_hooks = tmp_path / "ambient-hooks"
     ambient_hooks.mkdir()
     pre_commit = ambient_hooks / "pre-commit"
-    pre_commit.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    pre_commit.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
     pre_commit.chmod(0o755)
     ambient_config = tmp_path / "ambient-gitconfig"
     ambient_config.write_text(
@@ -293,3 +298,17 @@ def test_workspace_git_ignores_ambient_global_configuration(
         check=False,
     )
     assert fsmonitor.returncode == 1
+
+
+@pytest.mark.parametrize("version", ["git version 2.33.0", "unknown version"])
+@pytest.mark.parametrize("required", [False, True], ids=["optional", "required"])
+def test_workspace_git_rejects_unsupported_versions(
+    tmp_path: Path, version: str, required: bool
+) -> None:
+    bin_dir = tmp_path / "git-bin"
+    _write_fake_git(bin_dir, version)
+    with pytest.raises(
+        pytest.fail.Exception if required else pytest.skip.Exception,
+        match=r"Git 2\.34\.1\+",
+    ):
+        require_git({"PATH": str(bin_dir)}, required)

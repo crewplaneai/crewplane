@@ -43,7 +43,7 @@ def context(tmp_path: Path) -> Iterator[ReviewLoopRunContext]:
     output = OutputManager("workflow", base_dir=tmp_path)
     executor, reviewer = node.provider_records
     run_context = ReviewLoopRunContext(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=output.create_node_dir(node_artifact_request(node.id)),

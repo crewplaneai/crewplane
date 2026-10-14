@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,8 +50,6 @@ def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
@@ -158,8 +155,6 @@ def test_failed_reuse_cleanup_retry_updates_abandoned_generation_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = two_node_lineage_plan(repo, tmp_path / "cache")
     source = plan.workspace_source
@@ -232,8 +227,6 @@ def test_failed_fresh_fallback_preserves_new_checkout_identity_for_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = two_node_lineage_plan(repo, tmp_path / "cache")
     output = workspace_output_manager(tmp_path, repo)
@@ -334,8 +327,6 @@ def test_preclaim_fallback_failure_preserves_temporary_ref_cleanup_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = two_node_lineage_plan(repo, tmp_path / "cache")
     source = plan.workspace_source

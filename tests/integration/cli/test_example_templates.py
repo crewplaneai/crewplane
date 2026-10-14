@@ -1,4 +1,3 @@
-import asyncio
 import io
 import unittest
 from contextlib import chdir
@@ -29,10 +28,8 @@ from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
-from crewplane.version import SCHEMA_VERSION
-from tests.helpers.isolated_git import run_git
+from tests.helpers.isolated_git import IsolatedGit
 from tests.helpers.platforms import requires_workspace_support
-from tests.helpers.working_directory import temporary_project_cwd
 
 LEGACY_PROMPT_FIELDS = {"prompt_arg", "quota_parser", "stdin_prompt_arg", "use_stdin"}
 
@@ -50,7 +47,7 @@ class ExampleTemplateTests(unittest.TestCase):
         self.tmp_path = tmp_path
 
     def setUp(self) -> None:
-        self.template_dir = Path("src/crewplane/example_templates")
+        self.template_dir = templates.TEMPLATE_DIR
 
     def test_config_template_is_valid(self) -> None:
         config_path = self.template_dir / "config.yml"
@@ -187,117 +184,6 @@ class ExampleTemplateTests(unittest.TestCase):
             [Path("composition/child.task.md"), Path("root.task.md")],
         )
 
-    def test_mock_workflow_records_estimated_usage(
-        self,
-    ) -> None:
-        config_path = (self.template_dir / "config.yml").resolve()
-
-        with temporary_project_cwd(self.tmp_path) as rendered_root:
-            state_dir = rendered_root / ".crewplane"
-            workflows_dir = state_dir / "workflows"
-            workflows_dir.mkdir(parents=True, exist_ok=True)
-
-            rendered_config_path = state_dir / "config.yml"
-            rendered_workflow_path = workflows_dir / "code-review-example.task.md"
-            rendered_config_path.write_text(
-                templates.render_template_content(
-                    config_path.read_text(encoding="utf-8")
-                ),
-                encoding="utf-8",
-            )
-            rendered_workflow_path.write_text(
-                f"""---
-schema_version: "{SCHEMA_VERSION}"
-name: Usage capture
-nodes:
-  - id: review.context
-    mode: parallel
-    providers: [claude, codex, gemini]
-    findings: true
-  - id: review.iterate
-    mode: sequential
-    needs: [review.context]
-    depth: 2
-    audit_rounds: 2
-    providers:
-      - provider: codex
-        role: executor
-      - provider: claude
-        role: reviewer
-      - provider: gemini
-        role: reviewer
-  - id: review.summary
-    mode: sequential
-    needs: [review.iterate]
-    providers: [claude]
----
-## review.context
-Return findings about this test input.
-## review.iterate
-Review {{{{review.context.findings}}}}.
-## review.summary
-Summarize {{{{review.iterate.output}}}}.
-""",
-                encoding="utf-8",
-            )
-
-            config = load_config(rendered_config_path)
-            assert config.settings is not None
-            config.settings.integrations.invoker.options = {
-                "delay_seconds": 0,
-                "observation_delay_seconds": 0,
-                "output_mode": "lorem",
-                "seed": 42,
-            }
-            mock_agent = config.agents["mock"]
-            for agent_name in ("claude", "codex", "gemini"):
-                config.agents[agent_name] = mock_agent.model_copy(deep=True)
-            source = load_workflow_source_for_preflight(
-                rendered_workflow_path,
-                project_root=rendered_root,
-            )
-            validate_workflow_plan(source.workflow)
-
-            stream = io.StringIO()
-            asyncio.run(
-                workflow_runner.execute_workflow_run(
-                    config=config,
-                    source=source,
-                    force=False,
-                    no_live=True,
-                    console=Console(file=stream, force_terminal=False),
-                )
-            )
-
-            execution_stage_root = next(
-                (rendered_root / ".crewplane" / "execution-stages").iterdir()
-            )
-            execution_results_root = next(
-                (rendered_root / ".crewplane" / "execution-results").iterdir()
-            )
-            summary_path = execution_stage_root / "logs" / "summary.md"
-            event_log_path = execution_stage_root / "logs" / "events.ndjson"
-            findings_path = execution_results_root / "review.context-findings.md"
-
-            self.assertTrue(findings_path.exists())
-            self.assertIn(
-                "Synthetic finding for review.context",
-                findings_path.read_text(encoding="utf-8"),
-            )
-            self.assertTrue(summary_path.exists())
-            self.assertTrue(event_log_path.exists())
-
-            event_log_text = event_log_path.read_text(encoding="utf-8")
-            summary_text = summary_path.read_text(encoding="utf-8")
-            self.assertIn('"provider_usage_status": "none"', event_log_text)
-            self.assertIn('"visible_estimate_tokens":', event_log_text)
-            self.assertIn('"output_extraction_status": "success"', event_log_text)
-            self.assertIn("## Spend Observability", summary_text)
-            self.assertIn("CLI invocations captured:", summary_text)
-            self.assertIn("Visible-text estimate (lower-bound):", summary_text)
-            self.assertIn("Run Summary", stream.getvalue())
-            self.assertIn("Visible-text estimate (lower-bound):", stream.getvalue())
-
 
 @pytest.mark.parametrize(
     "provider",
@@ -317,9 +203,13 @@ def test_onboarding_provider_config_is_valid_without_generic_model_arg(
         assert "model_arg" not in payload[provider]
 
 
-TEMPLATE_ROOT = Path(__file__).resolve().parents[3] / "src/crewplane/example_templates"
-WORKFLOW_PATHS = tuple(
-    sorted(path.relative_to(TEMPLATE_ROOT) for path in TEMPLATE_ROOT.rglob("*.task.md"))
+TEMPLATE_ROOT = templates.TEMPLATE_DIR
+WORKFLOW_PATHS = (
+    templates.DEFAULT_WORKFLOW_TEMPLATE.relative_to(TEMPLATE_ROOT),
+    *(
+        Path("example-templates") / path
+        for path in templates.discover_workflow_library_templates()
+    ),
 )
 
 
@@ -327,9 +217,10 @@ def test_legacy_yaml_template_not_shipped() -> None:
     assert not (TEMPLATE_ROOT / "tasks.yaml").exists()
 
 
-@pytest.fixture(scope="module")
-def initialized_templates(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = tmp_path_factory.mktemp("initialized-templates")
+@pytest.fixture
+def initialized_templates(tmp_path: Path, isolated_git: IsolatedGit) -> Path:
+    root = tmp_path / "project"
+    root.mkdir()
     with chdir(root):
         cli.init()
         change_request = root / "docs/crewplane-change-request.md"
@@ -337,9 +228,9 @@ def initialized_templates(tmp_path_factory: pytest.TempPathFactory) -> Path:
         change_request.write_text(
             "Implement the requested feature.\n", encoding="utf-8"
         )
-        run_git(root, "init")
-        run_git(root, "add", ".")
-        run_git(root, "commit", "-m", "initial")
+        isolated_git.run(root, "init")
+        isolated_git.run(root, "add", ".")
+        isolated_git.run(root, "commit", "-m", "initial")
     return root
 
 

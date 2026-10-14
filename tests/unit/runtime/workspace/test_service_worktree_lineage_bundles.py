@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -53,8 +52,6 @@ def test_worktree_workspace_imports_missing_bundle_source_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -190,8 +187,6 @@ def test_temporary_import_ref_cleanup_runs_in_reverse_and_notes_later_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -325,8 +320,6 @@ def test_temporary_ref_cleanup_rejects_symbolic_ref_without_touching_target(
     tmp_path: Path,
     target_exists: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     source = workspace_plan(
         repo,
@@ -381,8 +374,6 @@ def test_temporary_ref_cleanup_rejects_symbolic_ref_without_touching_target(
 def test_temporary_ref_reconciliation_keeps_earlier_success_when_later_claim_fails(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     source = workspace_plan(
         repo,
@@ -437,8 +428,6 @@ def test_temporary_ref_reconciliation_keeps_earlier_success_when_later_claim_fai
 
 
 def test_export_bundle_rejects_symlinked_bundle_directory(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -480,8 +469,6 @@ def test_export_bundle_rejects_symlinked_bundle_directory(tmp_path: Path) -> Non
 
 
 def test_export_bundle_rejects_symlinked_bundle_file(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -44,8 +43,6 @@ pytestmark = requires_workspace_support
 def test_verify_source_commit_available_rejects_ambient_omitted_upstream(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -114,8 +111,6 @@ def test_verify_source_commit_available_rejects_ambient_omitted_upstream(
 def test_verify_source_commit_available_rejects_ambient_project_commit(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -158,8 +153,6 @@ def test_verify_source_commit_available_rejects_ambient_project_commit(
 def test_worktree_workspace_rejects_imported_source_tree_mismatch(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -201,8 +194,6 @@ def test_worktree_workspace_rejects_imported_source_tree_mismatch(
 def test_worktree_workspace_rejects_missing_local_source_bundle(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -251,8 +242,6 @@ def test_worktree_workspace_rejects_missing_local_source_bundle(
 def test_worktree_workspace_rejects_tampered_local_source_bundle(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -294,8 +283,6 @@ def test_worktree_workspace_rejects_tampered_local_source_bundle(
 def test_worktree_workspace_rejects_local_source_bundle_ref_mismatch(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
@@ -333,8 +320,6 @@ def test_worktree_workspace_rejects_local_source_bundle_ref_mismatch(
 def test_worktree_workspace_rejects_candidate_source_without_bundle(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(

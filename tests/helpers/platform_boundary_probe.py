@@ -34,7 +34,7 @@ from crewplane.architecture.contracts import InvocationContext
 from crewplane.artifacts.atomic import atomic_write_bytes_if_absent
 from crewplane.cli.app import app
 from crewplane.runtime.agent.invocation.command import run_command_once
-from tests.helpers.installed_wheel_smoke import verify_run
+from tests.helpers.installed_package_assertions import verify_run
 from tests.helpers.mock_resume import write_executor_fixture
 from tests.helpers.review_checkpoint_cli import write_checkpoint_project
 
@@ -182,7 +182,9 @@ async def capture_process(project: Path) -> dict[str, object]:
         [
             sys.executable,
             "-c",
-            "import sys; sys.stdout.buffer.write(b'exact\\r\\n\\x1a\\xff'); sys.stderr.buffer.write(b'diagnostic\\n')",
+            "import sys; "
+            "sys.stdout.buffer.write(b'exact\\r\\n\\x1a\\xff'); "
+            "sys.stderr.buffer.write(b'diagnostic\\n')",
         ],
         None,
         project / "provider.log",

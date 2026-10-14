@@ -25,8 +25,9 @@ from crewplane.runtime.execution.consensus import (
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
+    InvocationKey,
     MockAgentInvoker,
-    TaskOutputInvoker,
+    ScriptedAgentInvoker,
     execute_sequential_stage,
     review_inbox_path,
     review_loop_status_path,
@@ -346,11 +347,30 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             config,
             node,
             output,
-            invoker=TaskOutputInvoker(
-                outputs_by_task_id={
-                    "exec_executor_0": "executor output",
-                    "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
-                    "review-b_reviewer_1": "  ",
+            invoker=ScriptedAgentInvoker(
+                responses={
+                    InvocationKey(
+                        "review.node.partial.failure",
+                        "review-a_reviewer_0",
+                        round_num=2,
+                    ): review_output(verdict="NO_FINDINGS"),
+                    InvocationKey(
+                        "review.node.partial.failure",
+                        "review-b_reviewer_1",
+                        round_num=2,
+                    ): "  ",
+                    InvocationKey(
+                        "review.node.partial.failure", "exec_executor_0"
+                    ): "executor output",
+                    InvocationKey(
+                        "review.node.partial.failure", "exec_executor_0", round_num=2
+                    ): "executor output",
+                    InvocationKey(
+                        "review.node.partial.failure", "review-a_reviewer_0"
+                    ): review_output(verdict="NO_FINDINGS"),
+                    InvocationKey(
+                        "review.node.partial.failure", "review-b_reviewer_1"
+                    ): "  ",
                 },
             ),
         )

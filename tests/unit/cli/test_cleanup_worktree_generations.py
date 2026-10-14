@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 import crewplane.runtime.workspace.cleanup as workspace_cleanup
 from crewplane.cli.app import app
 from crewplane.runtime.workspace.state import WorkspaceStateRetention
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.resume import (
     make_run_manifest,
     write_run_manifest,
@@ -361,10 +361,7 @@ def test_cleanup_workspaces_yes_ignores_symlink_workspace_candidates(
     outside.mkdir()
     (outside / "keep.txt").write_text("keep", encoding="utf-8")
     workspace_path.parent.mkdir(parents=True)
-    try:
-        workspace_path.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_path, outside, target_is_directory=True)
 
     result = CliRunner().invoke(
         app,

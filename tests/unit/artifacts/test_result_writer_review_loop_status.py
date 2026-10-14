@@ -286,10 +286,7 @@ def test_unsafe_latest_candidate_does_not_get_aggregated(
     outside = tmp_path / "outside.md"
     outside.write_text("outside", encoding="utf-8")
     candidate = stage_dir / "executor_round1.md"
-    try:
-        symlink_or_skip(candidate, outside)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(candidate, outside)
     writer = build_writer(tmp_path / "result.md", tmp_path / "findings.md")
 
     with pytest.raises(ValueError, match="single-link regular file"):

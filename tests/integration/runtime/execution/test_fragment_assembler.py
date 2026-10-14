@@ -128,10 +128,7 @@ def test_assemble_prompt_rejects_symlinked_static_bundle(
     static_path.parent.mkdir(parents=True)
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
-    try:
-        symlink_or_skip(static_path, outside)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(static_path, outside)
     store = FragmentArtifactStore(tmp_path)
     (store.results_dir / "compiled-input.md").write_text("node", encoding="utf-8")
     secrets = SecretContext()

@@ -24,7 +24,7 @@ from crewplane.runtime.workspace.state_selection import (
 from crewplane.runtime.workspace.worktree.source_refs import (
     invocation_source_ref,
 )
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.unit.runtime.workspace.state_selection_support import (
     ArtifactStore,
@@ -249,10 +249,7 @@ def test_workspace_state_paths_rejects_symlink_state(tmp_path: Path) -> None:
     stage_dir.mkdir()
     outside = tmp_path / "outside-state.json"
     outside.write_text("{}", encoding="utf-8")
-    try:
-        (stage_dir / "workspace-state.json").symlink_to(outside)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(stage_dir / "workspace-state.json", outside)
 
     with pytest.raises(RuntimeError, match="Unsafe workspace state artifact"):
         workspace_state_paths(stage_dir)

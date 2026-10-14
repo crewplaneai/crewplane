@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -26,7 +27,7 @@ from crewplane.runtime.execution.provider_call.generated_files import (
 from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS, require_git
 
 
 def test_shared_project_root_does_not_capture_unclaimed_changes(
@@ -567,8 +568,11 @@ def _finalize_with_snapshot(
 
 
 def _clean_repo(tmp_path: Path) -> Path:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
+    require_git(
+        dict(os.environ),
+        required=os.environ.get("CREWPLANE_REQUIRED_GIT") == "1",
+        expected_floor_bin=os.environ.get("GIT_FLOOR_BIN"),
+    )
     repo = tmp_path / "repo"
     repo.mkdir()
     _run_git(repo, "init")

@@ -145,14 +145,13 @@ def ordered_node_ids(snapshot) -> list[str]:  # type: ignore[no-untyped-def]
 
 def render_compact_runtime_dashboard(run_result) -> tuple[str, str]:  # type: ignore[no-untyped-def]
     runtime = SimulatedTmuxRuntime()
-    runtime.start(
+    with runtime.running(
         RunContext(
             workflow_topology=topology_from_workflow(run_result.workflow),
             run_id="compact-runtime",
             refresh_per_second=0,
         )
-    )
-    try:
+    ):
         node_index = ordered_node_ids(run_result.selected_snapshot).index(
             run_result.selected_node_id
         )
@@ -169,12 +168,13 @@ def render_compact_runtime_dashboard(run_result) -> tuple[str, str]:  # type: ig
         left_text = runtime.runtime_files.left_content.read_text(encoding="utf-8")
         right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")
         return left_text, right_text
-    finally:
-        runtime.stop(RunResult(status="succeeded"))
 
 
-def test_auto_closing_stop_clears_runtime_file_state() -> None:
+def test_auto_closing_stop_clears_runtime_file_state(
+    request: pytest.FixtureRequest,
+) -> None:
     runtime = SimulatedTmuxRuntime(auto_close_session=True)
+    request.addfinalizer(runtime.close)
     runtime.start(
         RunContext(
             workflow_topology=topology_from_workflow(
@@ -192,8 +192,11 @@ def test_auto_closing_stop_clears_runtime_file_state() -> None:
     assert not runtime.lifecycle.last_session.runtime_lease.root.exists()
 
 
-def test_non_auto_closing_stop_preserves_runtime_file_state() -> None:
+def test_non_auto_closing_stop_preserves_runtime_file_state(
+    request: pytest.FixtureRequest,
+) -> None:
     runtime = SimulatedTmuxRuntime(auto_close_session=False)
+    request.addfinalizer(runtime.close)
     runtime.start(
         RunContext(
             workflow_topology=topology_from_workflow(
@@ -215,8 +218,9 @@ def test_non_auto_closing_stop_preserves_runtime_file_state() -> None:
         runtime.cleanup_preserved_runtime()
 
 
-def test_pane_width_uses_reported_tmux_width() -> None:
+def test_pane_width_uses_reported_tmux_width(request: pytest.FixtureRequest) -> None:
     runtime = SimulatedTmuxRuntime(auto_close_session=False)
+    request.addfinalizer(runtime.close)
     runtime.left_pane_width = 10
     runtime.start(
         RunContext(
@@ -246,8 +250,11 @@ def test_pane_width_uses_reported_tmux_width() -> None:
     assert not refresh_thread.is_alive()
 
 
-def test_failed_start_cleans_up_partial_runtime_state() -> None:
+def test_failed_start_cleans_up_partial_runtime_state(
+    request: pytest.FixtureRequest,
+) -> None:
     runtime = SimulatedTmuxRuntime(auto_close_session=False)
+    request.addfinalizer(runtime.close)
     runtime.lifecycle.attach_failure = RuntimeError("attach failed")
 
     with pytest.raises(RuntimeError, match="attach failed"):
@@ -273,12 +280,15 @@ def test_failed_start_cleans_up_partial_runtime_state() -> None:
     )
 
 
-def test_failed_start_cleanup_resets_state_even_if_tmux_rollback_fails() -> None:
+def test_failed_start_cleanup_resets_state_even_if_tmux_rollback_fails(
+    request: pytest.FixtureRequest,
+) -> None:
     warnings: list[str] = []
     runtime = SimulatedTmuxRuntime(
         auto_close_session=False,
         warning_sink=warnings.append,
     )
+    request.addfinalizer(runtime.close)
     runtime.lifecycle.attach_failure = RuntimeError("attach failed")
     runtime.client.fail_kill_session = True
 
@@ -425,14 +435,13 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
 
     run_result = run_visualization_case(tmp_path, case_data)
     runtime = SimulatedTmuxRuntime()
-    runtime.start(
+    with runtime.running(
         RunContext(
             workflow_topology=topology_from_workflow(run_result.workflow),
             run_id="compact-runtime-inspect",
             refresh_per_second=0,
         )
-    )
-    try:
+    ):
         node_index = ordered_node_ids(run_result.selected_snapshot).index(
             run_result.selected_node_id
         )
@@ -473,8 +482,6 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
             args[5] == f"Node Log: {run_result.selected_node_id} (raw)"
             for args in pane_title_writes
         )
-    finally:
-        runtime.stop(RunResult(status="succeeded"))
 
 
 @requires_tmux_support
@@ -578,3 +585,33 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
         'respawn-pane -k -t "$right_pane" tail -n +1 -F "$log_path"' in arg
         for arg in bind_key_args
     )
+
+
+@pytest.mark.parametrize("boundary", ["start", "body"])
+def test_runtime_scope_cleans_acquired_resources_after_failure(
+    monkeypatch, boundary
+) -> None:
+    runtime = SimulatedTmuxRuntime()
+    start = runtime.start
+    threads = []
+
+    def start_then_fail(context):
+        start(context)
+        threads.append(runtime.runtime._refresh_thread)
+        if boundary == "start":
+            raise RuntimeError("injected setup failure")
+
+    monkeypatch.setattr(runtime, "start", start_then_fail)
+    context = RunContext(
+        workflow_topology=topology_from_workflow(
+            build_compact_linear_workflow(Path("."))
+        ),
+        run_id="owned-failure",
+        refresh_per_second=0,
+    )
+    with pytest.raises(RuntimeError, match="injected"), runtime.running(context):
+        raise RuntimeError("injected body failure")
+    assert threads and all(
+        thread is not None and not thread.is_alive() for thread in threads
+    )
+    assert not runtime.session.runtime_lease.root.exists()

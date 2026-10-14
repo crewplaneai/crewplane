@@ -116,10 +116,7 @@ def test_artifacts_support_symlinked_base_directory_ancestor(tmp_path: Path) -> 
     real_parent = temp_root / "real-parent"
     real_parent.mkdir()
     alias = temp_root / "alias"
-    try:
-        symlink_or_skip(alias, real_parent, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(alias, real_parent, target_is_directory=True)
 
     base_dir = alias / "nested" / "state"
     output = OutputManager("Workflow", base_dir=base_dir)
@@ -174,10 +171,7 @@ def test_compiled_stage_directory_rejects_symlink_escape(tmp_path: Path) -> None
     outside = base_dir / "outside"
     outside.mkdir()
     stage_link = output.stages_dir / "build.node"
-    try:
-        symlink_or_skip(stage_link, outside, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(stage_link, outside, target_is_directory=True)
 
     request = NodeArtifactRequest(
         "build.node",
@@ -214,10 +208,7 @@ def test_compiled_result_path_rejects_symlinked_results_root(tmp_path: Path) -> 
     outside = base_dir / "outside"
     outside.mkdir()
     results_root = base_dir / "execution-results"
-    try:
-        symlink_or_skip(results_root, outside, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(results_root, outside, target_is_directory=True)
 
     with pytest.raises(ValueError, match="real directory"):
         output.get_node_output_path(node_artifact_request("build.node"))
@@ -232,10 +223,7 @@ def test_compiled_result_path_rejects_symlinked_target(tmp_path: Path) -> None:
     outside.write_text("outside", encoding="utf-8")
     result_path = output.results_dir / build_result_filename("build.node")
     result_path.parent.mkdir(parents=True)
-    try:
-        symlink_or_skip(result_path, outside)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(result_path, outside)
 
     with pytest.raises(ValueError, match="must not be a symlink"):
         output.get_node_output_path(node_artifact_request("build.node"))
@@ -370,11 +358,8 @@ def test_preflight_and_workspace_exports_reject_symlinked_directories(
 
     preflight_link = output.stages_dir / "preflight"
     export_link = output.stages_dir / "workspace-exports"
-    try:
-        symlink_or_skip(preflight_link, outside, target_is_directory=True)
-        symlink_or_skip(export_link, outside, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(preflight_link, outside, target_is_directory=True)
+    symlink_or_skip(export_link, outside, target_is_directory=True)
 
     with pytest.raises(ValueError, match="real directory"):
         output.write_preflight_static_file("static-files/context.txt", b"x")

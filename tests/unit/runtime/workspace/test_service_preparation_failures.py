@@ -13,7 +13,7 @@ import crewplane.runtime.workspace.service.worktree as workspace_service_worktre
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.invocation import invocation_slug
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -29,8 +29,6 @@ pytestmark = requires_workspace_support
 def test_snapshot_workspace_failure_removes_disposable_checkout(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -55,8 +53,6 @@ def test_snapshot_workspace_failure_removes_disposable_checkout(
 def test_snapshot_workspace_cancellation_removes_disposable_checkout(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -81,8 +77,6 @@ def test_snapshot_workspace_cancellation_removes_disposable_checkout(
 def test_snapshot_workspace_preparation_failure_removes_workspace_path(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -126,8 +120,6 @@ def test_workspace_collision_is_retained_without_removal(
     collision_kind: str,
     kind: str,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind=kind)
@@ -148,10 +140,7 @@ def test_workspace_collision_is_retained_without_removal(
         workspace_path.mkdir()
         sentinel.write_text("unowned data\n", encoding="utf-8")
     else:
-        try:
-            workspace_path.symlink_to(tmp_path / "missing", target_is_directory=True)
-        except OSError:
-            pytest.skip("symlink creation is unavailable")
+        symlink_or_skip(workspace_path, tmp_path / "missing", target_is_directory=True)
 
     with pytest.raises(RuntimeError, match="already exists"):
         prepare_invocation_workspace(
@@ -171,8 +160,6 @@ def test_snapshot_capacity_rejection_writes_failed_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
@@ -209,8 +196,6 @@ def test_worktree_workspace_preparation_failure_writes_failed_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")
@@ -250,8 +235,6 @@ def test_snapshot_workspace_preparation_cleanup_failure_notes_primary_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)

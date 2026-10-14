@@ -131,7 +131,7 @@ def test_executor_drift_guard_allows_runtime_workspace_state_path(
         review_loop_executor_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ExecutorRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -176,7 +176,7 @@ def test_executor_drift_guard_does_not_allow_workspace_paths_without_managed_wor
         review_loop_executor_round, "run_provider_call_with_drift_guard", fake_guard
     )
     request = ExecutorRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         node=node,
         output=output,
         node_dir=node_dir,
@@ -208,7 +208,7 @@ def test_executor_round_rejects_output_changed_after_runtime_publication(
     output = OutputManager("workflow", base_dir=tmp_path)
     node = make_review_node()
     node_dir = output.create_node_dir(node_artifact_request(node.id))
-    runtime_context = make_round_runtime_context()
+    runtime_context = make_round_runtime_context(tmp_path)
 
     async def fake_guard(request):
         request.output_file.write_text("trusted candidate", encoding="utf-8")
@@ -261,7 +261,7 @@ def test_executor_round_distinguishes_missing_output_from_unsafe_output(
     output = OutputManager("workflow", base_dir=tmp_path)
     node = make_review_node()
     node_dir = output.create_node_dir(node_artifact_request(node.id))
-    runtime_context = make_round_runtime_context()
+    runtime_context = make_round_runtime_context(tmp_path)
     runtime_context.plan = runtime_context.plan.model_copy(
         update={"project_root": str(tmp_path)}
     )
@@ -319,7 +319,7 @@ def test_executor_round_distinguishes_missing_output_from_unsafe_output(
 def test_seed_executor_outputs_aliases_generated_file_workspace_roots(
     tmp_path: Path,
 ) -> None:
-    runtime_context = make_round_runtime_context()
+    runtime_context = make_round_runtime_context(tmp_path)
     node_id = "review.node"
     node_dir = tmp_path / "node"
     audit_dir = node_dir / "audit-round-2"
@@ -375,7 +375,7 @@ def test_invalid_candidate_round_skips_reviewers_and_tracks_accounting(
 
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fail_review)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,
@@ -426,7 +426,7 @@ def test_no_progress_candidate_skips_second_review_round_and_tracks_accounting(
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
     monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fake_executor)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,
@@ -478,7 +478,7 @@ def test_remediation_context_exhaustion_keeps_latest_valid_candidate(
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
     monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,
@@ -534,7 +534,7 @@ def test_remediation_context_exhaustion_discards_recovered_executor_lineage(
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
     monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,
@@ -590,7 +590,7 @@ def test_remediation_non_context_invocation_failure_still_raises(
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
     monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,
@@ -639,7 +639,7 @@ def test_no_progress_candidate_discards_executor_workspace_lineage(
     monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
     monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fake_executor)
     request = AuditRoundRequest(
-        runtime_context=make_round_runtime_context(),
+        runtime_context=make_round_runtime_context(tmp_path),
         stage=node,
         output=output,
         node_dir=node_dir,

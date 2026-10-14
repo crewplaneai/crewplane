@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -43,8 +42,6 @@ def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanu
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -106,8 +103,6 @@ def test_fulfill_branch_exports_preserves_prepared_record_when_branch_lock_teard
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -161,8 +156,6 @@ def test_fulfill_branch_exports_preserves_prepared_record_after_update_ref_timeo
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -227,8 +220,6 @@ def test_fulfill_branch_exports_terminalizes_current_run_branch_race(
     monkeypatch: pytest.MonkeyPatch,
     race_matches_target: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/raced")
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
@@ -290,8 +281,6 @@ def test_create_branch_ref_refuses_raced_existing_branch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/raced")
     source = plan.workspace_source
@@ -339,8 +328,6 @@ def test_create_branch_ref_rejects_symbolic_destination_without_touching_target(
     tmp_path: Path,
     target_exists: bool,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
     source = plan.workspace_source

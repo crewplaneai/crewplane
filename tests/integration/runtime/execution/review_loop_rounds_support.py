@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from crewplane.architecture.contracts.invocation_failures import (
     FailureKind,
     FailurePhase,
@@ -25,15 +27,15 @@ from crewplane.version import SCHEMA_VERSION
 REVIEW_IO_TIMEOUT_SECONDS = 30
 
 
-def make_round_runtime_context() -> CompiledRuntimeContext:
+def make_round_runtime_context(project_root: Path) -> CompiledRuntimeContext:
     return CompiledRuntimeContext(
         plan=PreflightExecutionPlan(
             plan_schema_version=SCHEMA_VERSION,
             run_id="run-1",
             run_key_name="run-1",
-            project_root=".",
-            context_root=".",
-            manifest_root=".crewplane",
+            project_root=project_root.resolve().as_posix(),
+            context_root=project_root.resolve().as_posix(),
+            manifest_root=(project_root.resolve() / ".crewplane").as_posix(),
             created_at="2026-06-03T00:00:00",
             workflow_name="workflow",
             workflow_signature="workflow-signature",

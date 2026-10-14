@@ -20,7 +20,7 @@ from crewplane.runtime.workspace.filesystem import (
 )
 from crewplane.runtime.workspace.worktree import cleanup as worktree_cleanup
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.workspace_service import workspace_plan
 from tests.unit.runtime.workspace.cleanup_support import (
     cache_workspace_path,
@@ -56,8 +56,6 @@ def test_remove_workspace_path_does_not_chmod_hardlinked_files(
 def test_remove_worktree_workspace_unlinks_top_level_symlink_without_git_remove(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -75,10 +73,7 @@ def test_remove_worktree_workspace_unlinks_top_level_symlink_without_git_remove(
     )
     workspace_link = cache_workspace_path(tmp_path, "workspaces", "run-1", "linked")
     workspace_link.parent.mkdir(parents=True)
-    try:
-        workspace_link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_link, outside, target_is_directory=True)
 
     remove_worktree_workspace(source, workspace_link)
 
@@ -93,8 +88,6 @@ def test_remove_worktree_workspace_unlinks_top_level_symlink_without_git_remove(
 def test_remove_worktree_workspace_retains_then_removes_same_unsafe_path_by_mode(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -108,10 +101,7 @@ def test_remove_worktree_workspace_retains_then_removes_same_unsafe_path_by_mode
     outside.mkdir()
     (outside / "keep.txt").write_text("keep\n", encoding="utf-8")
     workspace_link = tmp_path / "workspace"
-    try:
-        workspace_link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(workspace_link, outside, target_is_directory=True)
 
     with pytest.raises(
         RuntimeError,
@@ -128,8 +118,6 @@ def test_remove_worktree_workspace_retains_then_removes_same_unsafe_path_by_mode
 def test_remove_worktree_workspace_does_not_git_remove_checkout_symlink(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -147,13 +135,11 @@ def test_remove_worktree_workspace_does_not_git_remove_checkout_symlink(
     )
     workspace_path = cache_workspace_path(tmp_path, "workspaces", "run-1", "linked")
     workspace_path.mkdir(parents=True)
-    try:
-        (workspace_path / "checkout").symlink_to(
-            external_checkout,
-            target_is_directory=True,
-        )
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(
+        workspace_path / "checkout",
+        external_checkout,
+        target_is_directory=True,
+    )
 
     remove_worktree_workspace(source, workspace_path)
 
@@ -167,8 +153,6 @@ def test_remove_worktree_workspace_does_not_git_remove_checkout_symlink(
 def test_remove_worktree_workspace_retains_registered_missing_checkout(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     plan = workspace_plan(
         repo,
@@ -199,8 +183,6 @@ def test_cleanup_workspace_cache_removes_registered_worktree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     workspace_path = cache_workspace_path(
         tmp_path, "workspaces", "run-1", "node-round1"
@@ -242,8 +224,6 @@ def test_cleanup_workspace_cache_removes_registered_worktree(
 def test_cleanup_workspace_cache_derives_git_dir_for_registered_worktree(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     workspace_path = cache_workspace_path(
         tmp_path, "workspaces", "run-1", "node-round1"
@@ -269,8 +249,6 @@ def test_cleanup_workspace_cache_preserves_registered_worktree_when_git_remove_f
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo = cleanup_git_repo(tmp_path)
     workspace_path = cache_workspace_path(
         tmp_path, "workspaces", "run-1", "node-round1"
@@ -318,10 +296,7 @@ def test_cleanup_workspace_cache_rejects_symlink_git_admin_entry(
     )
     checkout = workspace_path / "checkout"
     checkout.mkdir(parents=True)
-    try:
-        (checkout / ".git").symlink_to(outside)
-    except OSError:
-        pytest.skip("symlink creation is unavailable")
+    symlink_or_skip(checkout / ".git", outside)
 
     with pytest.raises(RuntimeError, match="Git metadata could not be verified"):
         cleanup_workspace_cache(
@@ -338,8 +313,6 @@ def test_cleanup_workspace_cache_rejects_symlink_git_admin_entry(
 def test_cleanup_workspace_cache_preserves_external_registered_worktree(
     tmp_path: Path,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     current_root = tmp_path / "current"
     external_root = tmp_path / "external"
     current_root.mkdir()
@@ -380,8 +353,6 @@ def test_cleanup_workspace_cache_rejects_gitdir_backlink_mismatch_before_git(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
     repo_parent = tmp_path / "current"
     repo_parent.mkdir()
     repo = cleanup_git_repo(repo_parent)

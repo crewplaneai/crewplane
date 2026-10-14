@@ -160,10 +160,7 @@ def test_input_stage_rejects_symlinked_workspace_content(tmp_path: Path) -> None
     workspace_file.parent.mkdir(parents=True)
     outside = tmp_path / "outside.txt"
     outside.write_bytes(payload)
-    try:
-        symlink_or_skip(workspace_file, outside)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(workspace_file, outside)
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
     node = _input_node(workspace_locator_id=locator.locator_id)
 
@@ -196,10 +193,7 @@ def test_input_stage_rejects_symlinked_preflight_content(tmp_path: Path) -> None
     static_file.parent.mkdir(parents=True)
     outside = tmp_path / "outside.txt"
     outside.write_bytes(payload)
-    try:
-        symlink_or_skip(static_file, outside)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(static_file, outside)
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
     node = _input_node(content_ref)
 

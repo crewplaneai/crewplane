@@ -154,14 +154,11 @@ def test_history_rejects_symlinked_stages_root(tmp_path) -> None:
         pytest.skip("symlink support is unavailable")
     outside_stages = tmp_path / "outside-stages"
     outside_stages.mkdir()
-    try:
-        symlink_or_skip(
-            tmp_path / "execution-stages",
-            outside_stages,
-            target_is_directory=True,
-        )
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(
+        tmp_path / "execution-stages",
+        outside_stages,
+        target_is_directory=True,
+    )
 
     with pytest.raises(RunHistoryError, match="history root contains a symlink"):
         find_same_context_runs(
@@ -192,14 +189,11 @@ def test_history_rejects_symlinked_run_directory_escape(tmp_path) -> None:
         / "run.json"
     )
     symlink_path = stages_root / manifest.run_key_name
-    try:
-        symlink_or_skip(
-            symlink_path,
-            outside_manifest.parents[1],
-            target_is_directory=True,
-        )
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(
+        symlink_path,
+        outside_manifest.parents[1],
+        target_is_directory=True,
+    )
 
     with pytest.raises(RunHistoryError, match="escapes"):
         find_same_context_runs(
@@ -232,14 +226,11 @@ def test_history_rejects_symlinked_manifest_directory_escape(tmp_path) -> None:
     run_dir = stages_root / manifest.run_key_name
     run_dir.mkdir()
     symlink_path = run_dir / "manifests"
-    try:
-        symlink_or_skip(
-            symlink_path,
-            outside_manifest.parent,
-            target_is_directory=True,
-        )
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(
+        symlink_path,
+        outside_manifest.parent,
+        target_is_directory=True,
+    )
 
     with pytest.raises(RunHistoryError, match="symlink"):
         find_same_context_runs(
@@ -272,10 +263,7 @@ def test_history_rejects_symlinked_run_manifest_escape(tmp_path) -> None:
     manifest_dir = stages_root / manifest.run_key_name / "manifests"
     manifest_dir.mkdir(parents=True)
     symlink_path = manifest_dir / "run.json"
-    try:
-        symlink_or_skip(symlink_path, outside_manifest)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(symlink_path, outside_manifest)
 
     with pytest.raises(RunHistoryError, match="symlink"):
         find_same_context_runs(

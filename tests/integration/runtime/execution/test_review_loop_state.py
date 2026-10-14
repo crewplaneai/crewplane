@@ -198,10 +198,7 @@ def test_status_payload_rejects_symlinked_review_output(tmp_path: Path) -> None:
     outside = tmp_path / "outside.md"
     outside.write_text("outside", encoding="utf-8")
     output_file = node_dir / "exec_executor_0_round1.md"
-    try:
-        symlink_or_skip(output_file, outside)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(output_file, outside)
     executor = ExecutorRoundArtifact(
         provider=ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
         task_id="exec_executor_0",
@@ -285,10 +282,7 @@ def test_persist_review_loop_status_rejects_symlinked_review_state_directory(
     outside = tmp_path / "outside"
     outside.mkdir()
     review_state_dir = node_dir / "review-state"
-    try:
-        symlink_or_skip(review_state_dir, outside, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
+    symlink_or_skip(review_state_dir, outside, target_is_directory=True)
 
     with pytest.raises(ValueError, match="real directory"):
         persist_review_loop_status(
