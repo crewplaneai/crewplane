@@ -1,5 +1,6 @@
 import json
 import re
+import tomllib
 
 import yaml
 
@@ -137,3 +138,44 @@ def test_dependency_review_covers_python_and_npm_manifests() -> None:
     paths = set(workflow["on"]["pull_request"]["paths"])
 
     assert {"pyproject.toml", "uv.lock", "packaging/npm/package*.json"} <= paths
+
+
+def test_dependency_review_scopes_license_exception_to_reviewed_release() -> None:
+    workflow = yaml.load(
+        read_text(".github", "workflows", "dependency-review.yml"),
+        Loader=yaml.BaseLoader,
+    )
+    job = workflow["jobs"]["dependency-review"]
+    review = next(
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/dependency-review-action@")
+    )
+    inputs = review["with"]
+    exceptions = {
+        package.strip()
+        for package in inputs.get("allow-dependencies-licenses", "").split(",")
+        if package.strip()
+    }
+
+    assert exceptions == {"pkg:pypi/typing-extensions"}
+    lockfile = tomllib.loads(read_text("uv.lock"))
+    reviewed_versions = {
+        package["version"]
+        for package in lockfile["package"]
+        if package["name"] == "typing-extensions"
+    }
+    assert reviewed_versions == {"4.16.0"}, (
+        "Re-review the typing-extensions license exception when its version changes"
+    )
+    allowed_licenses = {
+        license.strip() for license in inputs["allow-licenses"].split(",")
+    }
+    assert "PSF-2.0" in allowed_licenses
+    assert "GPL" not in inputs["allow-licenses"]
+    assert inputs["fail-on-severity"] == "high"
+    assert inputs.get("license-check", "true") == "true"
+    assert inputs.get("vulnerability-check", "true") == "true"
+    assert inputs.get("warn-only", "false") == "false"
+    assert review.get("continue-on-error", "false") == "false"
+    assert job.get("continue-on-error", "false") == "false"
