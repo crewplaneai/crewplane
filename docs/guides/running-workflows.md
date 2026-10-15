@@ -146,10 +146,12 @@ crewplane validate [TASKS_FILE] --config .crewplane/config.yml
 `validate` checks your workflow, settings, and the files and values used in
 prompts. It does not run the workflow's tasks or save run files.
 
-When you use a provider CLI, validation also checks that it is ready to use.
-For some providers, including Ollama, this sends a short test prompt to the
-selected model. If a check fails, see
-[provider setup](../getting-started/provider-setup.md).
+For CLI providers, validation also checks that the required CLI is available.
+When you use the Ollama plugin, validation performs a liveness check on the
+selected local model: it sends a short test prompt to confirm the model can
+respond. This check does not use your workflow prompts.
+
+If a check fails, see [provider setup](../getting-started/provider-setup.md).
 The default mock setup from `crewplane init` does not need a provider CLI.
 
 ## Dry Run
@@ -197,7 +199,7 @@ summary, event timeline, manifests, stage outputs, and results.
 
 | Command | What it does |
 | --- | --- |
-| `crewplane validate` | Checks the workflow and provider setup. May send a short test prompt; saves no run files. |
+| `crewplane validate` | Checks the workflow and provider setup; saves no run files. With the Ollama plugin, also performs a liveness check on the selected local model. |
 | `crewplane run --dry-run` | Prints the compiled execution plan and skip/resume advisory without invoking providers or writing run artifacts. |
 | `crewplane run` | Runs the selected workflow, writes run artifacts, and opens the live dashboard when tmux is available. |
 | `crewplane run --no-live` | Runs the selected workflow with plain terminal output instead of the live dashboard. |
@@ -237,8 +239,9 @@ reviewer loop.
 ## Duplicate Skip
 
 Crewplane can reuse a successful result when the workflow, inputs, and settings
-match an earlier run. Provider checks still run and may send a short test
-prompt, even when Crewplane skips the workflow's tasks.
+match an earlier run. Provider checks still run before Crewplane skips the
+workflow's tasks. With the Ollama plugin, this includes the liveness check on
+the selected local model.
 
 Evidence lives under:
 
@@ -314,7 +317,7 @@ which work was restored.
 
 | When | What happens | What to run instead |
 | --- | --- | --- |
-| The same workflow already finished successfully with the same inputs and settings. | Crewplane reuses the saved result and skips the workflow's tasks. Provider checks still run. | Run `crewplane run --force` to create a new run with a new run ID and rerun selected nodes. |
+| The same workflow already finished successfully with the same inputs and settings. | Crewplane reuses the saved result and skips the workflow's tasks. Provider checks still run; with the Ollama plugin, this includes a liveness check on the selected local model. | Run `crewplane run --force` to create a new run with a new run ID and rerun selected nodes. |
 | A previous run failed or was cancelled. | Crewplane creates a new run, reuses validated successful nodes and review checkpoints, and restarts other incomplete nodes. | Run `crewplane run --force` to create a new run with a new run ID and rerun every selected node. |
 | You run `crewplane run --dry-run`. | Crewplane prints the plan and skip/resume advisory only. It does not invoke providers or write run artifacts. | Run `crewplane run` to execute. |
 | Provider settings, workflow files, templates, or referenced inputs changed. | Crewplane computes a different workflow signature, so older results for different inputs or settings are not reused as duplicates. | Usually no override is needed. Run `crewplane run --dry-run` to preview the decision; use `crewplane run --force` only to bypass matching history for the new signature. |
@@ -400,8 +403,8 @@ Crewplane reads the count when the command starts, so editing or removing it
 does not change this command's total or workspace requirement. A new command
 reads the count again. `--dry-run` previews only the first run and reports the
 planned total. Validation and dry-run save no run files and do not start the
-workflow's tasks. Validation may still send a short test prompt to check
-provider setup.
+workflow's tasks. When using the Ollama plugin, validation still performs a
+liveness check on the selected local model. Dry-run skips this check.
 
 > [!TIP]
 > This is a convenient way to run a workflow repeatedly, especially for cases like code audits, cleanup, and refactoring.

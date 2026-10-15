@@ -18,7 +18,18 @@ agents:
   #   provider usage parsing
   # - Copilot remains visible-estimate-only until it exposes machine-readable usage
   #
-  # Optional: omit default_model to use the provider CLI's configured default.
+  # Optional: omit default_model if the provider CLI supports a configured default.
+  #
+  # Official Ollama plugin: local text generation, without file or tool access.
+  # Install crewplane-ollama in Crewplane's Python environment, start Ollama,
+  # and download a model before enabling this agent and its registration below.
+  # Setup: https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#local-ollama-text-generation
+  # local:
+  #   cli_cmd: ["ollama", "run"]
+  #   provider_kind: "ollama"
+  #   prompt_transport: "stdin"
+  #   default_model: "<installed-local-text-model>"
+  #   invocation_timeout_seconds: 900
   #
   # claude:
   #   cli_cmd: ["claude"]
@@ -225,6 +236,15 @@ settings:
       # Real provider runs:
       # implementation: "cli"
       # options: {}
+      #
+      # For Ollama, enable implementation: "cli" above and replace options: {}
+      # with this block after installing crewplane-ollama. Enable agents.local
+      # above and set its default_model to a downloaded model.
+      # options:
+      #   providers:
+      #     ollama:
+      #       implementation: "crewplane_ollama:OLLAMA"
+      #       distribution: "crewplane-ollama"
       #
       # Mock invoker for the first provider-free run. Comment out this
       # implementation/options block and uncomment the real provider lines above

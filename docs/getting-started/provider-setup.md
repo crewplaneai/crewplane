@@ -194,7 +194,8 @@ copilot version
 
 ## Local Ollama Text Generation
 
-Use the `crewplane-ollama` plugin to generate text with a local Ollama model.
+Use Crewplane's official `crewplane-ollama` plugin to generate text with a local
+Ollama model.
 This setup targets Ollama 0.40.2 and requires Python 3.13+ and Crewplane 0.3.8+.
 Before continuing, install Ollama, start its server, and download a text model.
 
@@ -222,8 +223,14 @@ Restart Ollama and check that its logs report cloud features disabled. Setting
 this only in the terminal where you run Crewplane does not change an already
 running server. See [Ollama's cloud settings](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features).
 
-Replace `<installed-local-text-model>` with the name of your downloaded model
-and merge these settings into `.crewplane/config.yml`:
+New configs from `crewplane init` include a commented `local` agent and Ollama
+plugin registration. After installing the packages and preparing the server,
+uncomment the `local` agent, switch the invoker to `cli`, and replace its mock
+options with the commented Ollama `options` block. Replace
+`<installed-local-text-model>` with the name of your downloaded model.
+
+`crewplane init` preserves existing configs. If yours does not include these
+examples, merge the following settings into `.crewplane/config.yml`:
 
 ```yaml
 agents:

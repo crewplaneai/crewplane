@@ -275,16 +275,18 @@ Runs configured `agents` commands against real provider CLIs. Its only option is
 [registration contract](integrations.md#cli) for authored and canonical records.
 
 When switching the generated config from `mock` to `cli`, replace the generated
-mock invoker `options:` block with `options: {}`. Leaving mock options such as
-`output_mode`, `seed`, or delay settings under the `cli` invoker is a config
-error.
+mock invoker `options:` block with `options: {}` for built-in providers, or an
+`options.providers` registration map for plugins. Leaving mock options such as
+`output_mode`, `seed`, or delay settings under the `cli` invoker is a config error.
 
 Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and
 records artifacts; it does not sandbox them.
 
-For Ollama, configure an agent with `cli_cmd: [ollama, run]`,
+The generated config includes a commented `local` agent and an Ollama plugin
+registration. Enable both after installing `crewplane-ollama` in Crewplane's
+Python environment. The agent uses `cli_cmd: [ollama, run]`,
 `provider_kind: ollama`, a nonblank `default_model` (or workflow `model`), and
 `prompt_transport: stdin`. Omit `prompt_transport_arg`, `model_arg`, and workflow
 `reasoning`. Register `crewplane_ollama:OLLAMA` from distribution

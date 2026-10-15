@@ -1,18 +1,15 @@
 # Crewplane Ollama
 
-Generate text with an operator-provisioned local Ollama model inside a Crewplane
-workflow, then pass the answer to downstream nodes through ordinary artifacts.
+Crewplane's official Ollama plugin generates text with a local model and passes
+the answer to downstream workflow nodes through ordinary artifacts.
 
-Install this distribution alongside the Crewplane wheel in the same Python 3.13+
+Install this distribution alongside Crewplane 0.3.8+ in the same Python 3.13+
 environment. See [provider setup](../../docs/getting-started/provider-setup.md#local-ollama-text-generation)
-for pip/uv installation, the `local` agent profile, server configuration, and the
-bundled example. This package exports `crewplane_ollama:OLLAMA`; it is loaded only
-when registered under `settings.integrations.invoker.options.providers.ollama`.
-
-This package requires Crewplane 0.3.8 or newer, the first assigned release with
-the public capability contract. Until that release is published, install the
-paired source-built wheels from this checkout. Live Ollama and macOS acceptance
-remain required before release.
+for package installation, server configuration, and the bundled text-generation
+example. Generated configs include a commented `local` agent and plugin
+registration; enable both after installation and choose a downloaded model.
+This package exports `crewplane_ollama:OLLAMA`; it is loaded only when registered
+under `settings.integrations.invoker.options.providers.ollama`.
 
 ## CLI contract
 
@@ -52,5 +49,4 @@ Provisioning, server cloud policy, model-removal pull races, resource consumptio
 CLI-only cancellation, separate concurrency limits, and unchanged-version/tag
 identity limits are explained in the [setup guide](../../docs/getting-started/provider-setup.md#local-ollama-text-generation).
 Linux/macOS/WSL follow Crewplane's platform scope; native Windows acceptance is
-pending. Live Ollama and macOS startup behavior require the documented manual
-acceptance before release.
+pending.

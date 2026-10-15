@@ -436,5 +436,6 @@ requirements above.
 
 `make check` includes plugin sources. With package-index access, run
 `make ollama-package-check` to verify the core and Ollama distributions in an
-isolated environment. Ollama release acceptance also requires live-model and
-macOS checks of readiness, output handoff, failure handling, and cancellation.
+isolated environment. For changes to the Ollama integration, also verify
+readiness, output handoff, failure handling, and cancellation with a live model
+on Linux and macOS.
