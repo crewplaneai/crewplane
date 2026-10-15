@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -7,7 +8,6 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from crewplane.architecture.errors import AdapterContractError
 from crewplane.architecture.loader import (
     instantiate_adapter,
     is_builtin_implementation,
@@ -15,7 +15,6 @@ from crewplane.architecture.loader import (
 )
 from crewplane.architecture.ports import (
     ArtifactStorePort,
-    InvokerAdapterPort,
 )
 from crewplane.artifacts.manager import OutputManager
 from crewplane.bootstrap import (
@@ -37,7 +36,6 @@ from crewplane.core.preflight.diagnostics import (
 )
 from crewplane.core.preflight.secrets import FingerprintKeyPolicy
 from crewplane.core.preflight.source import PreflightWorkflowSource
-from crewplane.core.workflow.models import WorkflowPlan
 
 from .context import (
     WorkflowRunContext,
@@ -45,6 +43,12 @@ from .context import (
     fallback_workflow_name,
     resolve_project_root,
     resolve_state_dir,
+)
+from .invoker_preflight import (
+    InvokerDiagnostics,
+    collect_invoker_availability_diagnostics,
+    collect_invoker_diagnostics,
+    invoker_preflight_warning_diagnostics,
 )
 from .preflight_success import write_preflight_success_artifacts
 from .workspace.preflight_diagnostics import workspace_preflight_diagnostics
@@ -85,12 +89,29 @@ def compile_workflow_preview(
         console=console,
         no_live=no_live,
     )
+    diagnostics = (
+        asyncio.run(
+            collect_invoker_availability_diagnostics(
+                context.source.workflow,
+                config,
+                context.project_root,
+                snapshot_result.invoker_options,
+                which_fn,
+            )
+        )
+        if check_cli_availability
+        else collect_invoker_diagnostics(
+            context.source.workflow,
+            config,
+            context.project_root,
+            snapshot_result.invoker_options,
+        )
+    )
     return compile_preview(
         context=context,
         snapshot_result=snapshot_result,
         fingerprint_key_policy=fingerprint_key_policy,
-        check_invoker_availability=check_cli_availability,
-        executable_lookup=which_fn,
+        invoker_diagnostics=diagnostics,
         workspace_real_execution=workspace_real_execution,
     )
 
@@ -194,19 +215,9 @@ def compile_preview(
     snapshot_result: RuntimeConfigSnapshotBuildResult,
     fingerprint_key_policy: FingerprintKeyPolicy,
     additional_validation_errors: tuple[str, ...] = (),
-    check_invoker_availability: bool = False,
-    executable_lookup: Callable[[str], str | None] | None = None,
+    invoker_diagnostics: InvokerDiagnostics = InvokerDiagnostics(),
     workspace_real_execution: bool = False,
 ) -> PreflightCompilationPreview:
-    invoker_validation_errors, invoker_validation_warnings = (
-        run_invoker_preflight_diagnostics(
-            workflow=context.source.workflow,
-            config=context.config,
-            project_root=context.project_root,
-            check_availability=check_invoker_availability,
-            executable_lookup=executable_lookup,
-        )
-    )
     workspace_check = collect_workspace_source_policy(
         config=context.config,
         workflow=context.source.workflow,
@@ -238,169 +249,15 @@ def compile_preview(
             terminal_history_reader=terminal_history_reader,
             fingerprint_key_policy=fingerprint_key_policy,
             additional_validation_errors=(
-                invoker_validation_errors + additional_validation_errors
+                invoker_diagnostics.errors + additional_validation_errors
             ),
             additional_diagnostics=(
                 workspace_preflight_diagnostics(workspace_check)
-                + invoker_preflight_warning_diagnostics(invoker_validation_warnings)
+                + invoker_preflight_warning_diagnostics(invoker_diagnostics.warnings)
             ),
             workspace_source_snapshot=workspace_check.source_snapshot,
         ),
     )
-
-
-def run_invoker_preflight_diagnostics(
-    workflow: WorkflowPlan,
-    config: Config,
-    project_root: Path,
-    check_availability: bool,
-    executable_lookup: Callable[[str], str | None] | None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    reasoning_locations = _reasoning_requested_locations(workflow)
-    settings = config.settings
-    configured_invoker_identity = resolve_implementation_path(
-        "invoker",
-        settings.integrations.invoker.implementation,
-    )
-    if not is_builtin_implementation("invoker", configured_invoker_identity, "cli"):
-        return _reasoning_ineligibility_errors(reasoning_locations), ()
-    adapter = instantiate_adapter(
-        "invoker",
-        settings.integrations.invoker.implementation,
-    )
-    request_errors = run_request_validation_errors(
-        workflow,
-        config,
-        adapter,
-        configured_invoker_identity,
-        project_root,
-    )
-    availability_errors = (
-        run_availability_errors(
-            workflow,
-            config,
-            adapter,
-            project_root,
-            executable_lookup,
-        )
-        if check_availability
-        else ()
-    )
-    return (
-        request_errors + availability_errors,
-        run_model_arg_warnings(config, adapter),
-    )
-
-
-def run_availability_errors(
-    workflow: WorkflowPlan,
-    config: Config,
-    adapter: InvokerAdapterPort,
-    project_root: Path,
-    executable_lookup: Callable[[str], str | None] | None,
-) -> tuple[str, ...]:
-    collector = getattr(adapter, "collect_availability_errors", None)
-    if not callable(collector):
-        return ()
-    try:
-        errors = collector(
-            workflow,
-            config,
-            project_root,
-            executable_lookup=executable_lookup,
-        )
-    except Exception as exc:
-        raise AdapterContractError(
-            f"Invoker adapter collect_availability_errors() failed: {exc}"
-        ) from exc
-    return validated_adapter_messages(errors, "collect_availability_errors")
-
-
-def run_request_validation_errors(
-    workflow: WorkflowPlan,
-    config: Config,
-    adapter: InvokerAdapterPort,
-    resolved_identity: str,
-    working_directory: Path | None = None,
-) -> tuple[str, ...]:
-    requested_locations = _reasoning_requested_locations(workflow)
-    if not is_builtin_implementation("invoker", resolved_identity, "cli"):
-        return _reasoning_ineligibility_errors(requested_locations)
-    collector = getattr(adapter, "collect_request_errors", None)
-    if not callable(collector):
-        raise AdapterContractError(
-            "Built-in CLI invoker adapter must define collect_request_errors()."
-        )
-    try:
-        errors = collector(
-            workflow,
-            config,
-            working_directory=working_directory,
-        )
-    except Exception as exc:
-        raise AdapterContractError(
-            f"Built-in CLI invoker collect_request_errors() failed: {exc}"
-        ) from exc
-    return validated_adapter_messages(errors, "collect_request_errors")
-
-
-def run_model_arg_warnings(
-    config: Config,
-    adapter: InvokerAdapterPort,
-) -> tuple[str, ...]:
-    collector = getattr(adapter, "collect_model_arg_warnings", None)
-    if not callable(collector):
-        raise AdapterContractError(
-            "Built-in CLI invoker adapter must define collect_model_arg_warnings()."
-        )
-    try:
-        warnings = collector(config)
-    except Exception as exc:
-        raise AdapterContractError(
-            f"Built-in CLI invoker collect_model_arg_warnings() failed: {exc}"
-        ) from exc
-    return validated_adapter_messages(warnings, "collect_model_arg_warnings")
-
-
-def invoker_preflight_warning_diagnostics(
-    warnings: tuple[str, ...],
-) -> tuple[PreflightDiagnostic, ...]:
-    return tuple(
-        PreflightDiagnostic(
-            code=PreflightDiagnosticCode.PROVIDER_CONFIG,
-            phase=PreflightDiagnosticPhase.PROVIDER,
-            message=message,
-            severity="warning",
-        )
-        for message in warnings
-    )
-
-
-def _reasoning_requested_locations(workflow: WorkflowPlan) -> tuple[str, ...]:
-    return tuple(
-        f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
-        f"'{provider.provider}'"
-        for node in workflow.nodes
-        for provider in node.providers
-        if provider.reasoning is not None
-    )
-
-
-def _reasoning_ineligibility_errors(
-    requested_locations: tuple[str, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        f"{location}: first-class reasoning requires the built-in CLI invoker."
-        for location in requested_locations
-    )
-
-
-def validated_adapter_messages(value: object, method_name: str) -> tuple[str, ...]:
-    if not isinstance(value, tuple) or not all(isinstance(item, str) for item in value):
-        raise AdapterContractError(
-            f"Invoker adapter {method_name}() must return tuple[str, ...]."
-        )
-    return value
 
 
 def write_preflight_diagnostics(

@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.8] - Unreleased
+
+### Added
+
+- Explicitly registered CLI provider packages, with a separate Ollama integration for local text-generation workflows.
 
 ## [0.3.7] - 2026-10-09
 

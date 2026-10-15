@@ -17,6 +17,7 @@ from crewplane.core.config import (
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
     Config,
     FileAccessSettings,
+    ProviderIdentifier,
     TokenPricing,
 )
 from crewplane.core.token_budget import TokenBudgetSettings
@@ -88,7 +89,7 @@ class RuntimeAgentConfigSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str | JsonObject]
-    provider_kind: ProviderKind = ProviderKind.GENERIC
+    provider_kind: ProviderIdentifier = ProviderKind.GENERIC.value
     default_model: str | None = None
     model_arg: str | JsonObject | None = "--model"
     prompt_transport: PromptTransport = "stdin"

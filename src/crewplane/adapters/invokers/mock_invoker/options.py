@@ -62,8 +62,10 @@ def _validate_output_dir(value: object) -> Path | None:
     return Path(value).resolve()
 
 
-def parse_options(options: JsonObject | None) -> MockInvokerOptions:
-    """Validate and canonicalize user-supplied mock invoker options."""
+def parse_options(
+    options: JsonObject | None, canonical: bool = False
+) -> MockInvokerOptions:
+    """Validate mock options, accepting serialized unset criteria at construction."""
 
     resolved = dict(options or {})
     for raw_key in resolved:
@@ -107,7 +109,7 @@ def parse_options(options: JsonObject | None) -> MockInvokerOptions:
         "strict_file_mode",
     )
     seed = _validate_optional_int(resolved.pop("seed", None), "seed")
-    fail_when = validate_fail_selectors(resolved.pop("fail_when", []))
+    fail_when = validate_fail_selectors(resolved.pop("fail_when", []), canonical)
 
     if output_mode == "file" and output_dir is None:
         raise ValueError(

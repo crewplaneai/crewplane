@@ -52,7 +52,7 @@ class MockInvokerAdapter:
         """Build a mock invoker from the configured integration options."""
 
         _validate_config(config)
-        return MockAgentInvoker(options=parse_options(options))
+        return MockAgentInvoker(options=parse_options(options, canonical=True))
 
 
 def _validate_config(config: Config) -> None:

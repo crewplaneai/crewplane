@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +19,7 @@ from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.observability import ObservabilityHub
 from crewplane.observability.observer import Observer
 from crewplane.observability.types import WorkflowTopology
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 from crewplane.runtime.execution import WorkflowExecutionError, execute_workflow
 
 from . import workflow_runner
@@ -124,7 +124,6 @@ async def _execute_workflow(
         console=console,
         execute_workflow_impl=execute_workflow,
         observability_hub_cls=_create_observability_hub,
-        which_fn=shutil.which,
     )
 
 
@@ -257,7 +256,7 @@ def run(
         typer.Option(
             "--dry-run",
             "-n",
-            help="Show execution plan without running",
+            help="Show execution plan without provider probes, execution, or run artifacts",
         ),
     ] = False,
     force: Annotated[
@@ -319,6 +318,11 @@ def run(
                 console=console,
             )
         )
+    except KeyboardInterrupt as exc:
+        cleanup_error = unconfirmed_process_cleanup(exc)
+        if cleanup_error is None:
+            raise
+        raise_context_loading_failure(cleanup_error, console)
     except workflow_runner.WorkflowCancelledByUser as exc:
         console.print(f"[yellow]{exc}[/]")
         raise typer.Exit(code=130) from None
@@ -336,6 +340,11 @@ def run(
             "If no run is active, remove .crewplane/locks and retry.[/]"
         )
         raise typer.Exit(code=1) from None
+    except Exception as exc:
+        cleanup_error = unconfirmed_process_cleanup(exc)
+        if cleanup_error is None:
+            raise
+        raise_context_loading_failure(exc, console)
 
 
 @app.command()
@@ -362,7 +371,10 @@ def validate(
         ),
     ] = None,
 ) -> None:
-    """Validate a workflow definition file."""
+    """Validate a workflow and provider availability, including configured probes.
+
+    Writes no run artifacts. Local provider probes may perform diagnostic inference.
+    """
     console = Console()
     paths = resolve_cli_workflow_paths(tasks_file, config_file, console)
     console.print(f"Validating {paths.tasks}...")
@@ -387,6 +399,11 @@ def validate(
         console.print("[green]✓[/] Preflight: compiled execution plan preview")
     except typer.Exit:
         raise
+    except KeyboardInterrupt as exc:
+        cleanup_error = unconfirmed_process_cleanup(exc)
+        if cleanup_error is None:
+            raise
+        raise_context_loading_failure(cleanup_error, console)
     except Exception as exc:
         raise_context_loading_failure(exc, console)
 

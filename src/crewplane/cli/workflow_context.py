@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never
@@ -18,6 +17,7 @@ from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_
 from crewplane.core.workflow.validation.workspace import (
     validate_repeat_force_run_workspace,
 )
+from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from . import workflow_runner
 from .paths import resolve_state_file, resolve_tasks_file
@@ -113,7 +113,6 @@ def compile_validate_preview_for_context(
         project_root=context.paths.project_root,
         state_dir=context.paths.state_dir,
         check_cli_availability=True,
-        which_fn=shutil.which,
         workspace_real_execution=False,
     )
     workflow_runner.raise_for_preflight_preview_errors(preview, console)
@@ -127,12 +126,20 @@ def raise_context_loading_failure(
     paths: CliWorkflowPaths | None = None,
     write_diagnostics: bool = False,
 ) -> Never:
+    message = str(exc)
+    cleanup_error = unconfirmed_process_cleanup(exc)
+    if cleanup_error is not None:
+        evidence = cleanup_error.evidence
+        message = (
+            f"{cleanup_error} (PID {evidence.pid}, "
+            f"process group {evidence.process_group_id})"
+        )
     if write_diagnostics:
         workflow_runner.write_early_preflight_failure_run(
             paths.tasks if paths is not None else tasks_file,
-            str(exc),
+            message,
             project_root=paths.project_root if paths is not None else None,
             state_dir=paths.state_dir if paths is not None else None,
         )
-    console.print(f"[red]✗[/] Invalid: {exc}")
+    console.print(f"[red]✗[/] Invalid: {message}")
     raise typer.Exit(code=1) from exc

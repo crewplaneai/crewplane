@@ -7,7 +7,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | --- | --- |
 | `crewplane init` | Create project-local config and example workflows. |
 | `crewplane onboarding` | Prepare real providers after the provider-free first run. |
-| `crewplane validate` | Check workflow/config validity without invoking providers. |
+| `crewplane validate` | Check workflow/config validity and provider availability, including configured diagnostic probes. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
 | `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
 
@@ -150,8 +150,11 @@ Arguments and options:
 | `TASKS_FILE` | Workflow file to validate. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
 | `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
 
-`validate` invokes no providers and writes no run artifacts. For the built-in
-`cli` invoker, it checks configured provider CLI availability.
+`validate` writes no run artifacts. The `cli` invoker checks executables and
+awaits availability callbacks for configured capabilities. Ollama checks model
+presence and performs a bounded local diagnostic inference. Registration
+validation itself runs no probes. See [Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
+for prerequisites and resource/cancellation limits.
 If `repeat_force_run_count` is set, it also checks that workspace isolation is
 disabled and no worktrees are declared.
 
@@ -178,6 +181,9 @@ Options:
 When the mock invoker is active, `run` prints that no provider CLI commands will
 be started. `run --dry-run` skips provider executable availability checks and
 may read existing manifests for an advisory skip/resume message.
+Dry-run also skips capability probes and remains artifact-free. Real runs check
+availability before dedupe or resume selection, including Ollama diagnostic
+inference; even a run eligible for reuse requires successful preflight.
 
 If the workflow sets `repeat_force_run_count: 3`, one `crewplane run` command
 runs the whole workflow three times, one after another. Each run starts from

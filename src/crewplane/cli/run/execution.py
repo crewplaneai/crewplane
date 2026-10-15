@@ -47,6 +47,7 @@ from .execution_helpers import (
     raise_run_preflight_errors,
     write_initial_run_manifest,
 )
+from .invoker_preflight import collect_invoker_availability_diagnostics
 from .manifest import (
     print_resume_context_message,
 )
@@ -215,12 +216,18 @@ async def execute_workflow_run(
             "Mock invoker active: no provider CLI commands will be started."
         )
     try:
+        invoker_diagnostics = await collect_invoker_availability_diagnostics(
+            workflow,
+            config,
+            context.project_root,
+            snapshot_result.invoker_options,
+            which_fn,
+        )
         preview = compile_preview(
             context=context,
             snapshot_result=snapshot_result,
             fingerprint_key_policy="persist_if_needed",
-            check_invoker_availability=True,
-            executable_lookup=which_fn,
+            invoker_diagnostics=invoker_diagnostics,
             workspace_real_execution=True,
         )
     except AdapterContractError as exc:

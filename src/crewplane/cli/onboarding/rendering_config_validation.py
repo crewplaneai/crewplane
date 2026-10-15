@@ -14,10 +14,10 @@ def validate_provider_ready_config(
         )
     for provider in providers:
         provider_kind = config.agents[provider].provider_kind
-        if provider_kind.value != provider:
+        if provider_kind != provider:
             raise OnboardingRenderingError(
                 f"Provider-ready config for {provider} has provider_kind "
-                f"{provider_kind.value!r}."
+                f"{provider_kind!r}."
             )
     invoker = config.settings.integrations.invoker
     if invoker.implementation != "cli":

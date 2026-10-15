@@ -52,8 +52,12 @@ def test_generated_profile_validates_and_dry_runs_without_launch(
             "providers: [opencode]", f"providers: [{alias}]"
         )
     )
-    found = {"opencode": "/test/opencode"}
-    monkeypatch.setattr("crewplane.adapters.invokers.cli.shutil.which", found.get)
+
+    def find_provider(executable, path=None):
+        del path
+        return "/test/opencode" if executable == "opencode" else None
+
+    monkeypatch.setattr("crewplane.adapters.invokers.cli.shutil.which", find_provider)
     before = {path: path.read_bytes() for path in project.rglob("*") if path.is_file()}
     config = load_config(config_path)
     assert config.settings.integrations.invoker.implementation == "cli"
@@ -111,8 +115,11 @@ def test_d2_conflicts_fail_before_launch(project, arguments, native_args):
 def test_invalid_resolved_models_fail_preflight(
     project, monkeypatch, arguments, source, model
 ):
-    found = {"opencode": "/test/opencode"}
-    monkeypatch.setattr("crewplane.adapters.invokers.cli.shutil.which", found.get)
+    def find_provider(executable, path=None):
+        del path
+        return "/test/opencode" if executable == "opencode" else None
+
+    monkeypatch.setattr("crewplane.adapters.invokers.cli.shutil.which", find_provider)
     if source == "default":
         path = project / "config.yml"
         path.write_text(

@@ -39,7 +39,96 @@ The `cli` invoker runs configured provider commands from `agents`. It owns
 prompt transport, retries, quota detection, timeout handling, output extraction,
 and provider usage parsing.
 
-Options: none.
+Use `options.providers` under `settings.integrations.invoker` to add installed
+provider plugins. Omit this map or leave it empty to use only built-in providers.
+`providers` is the only supported option for the `cli` invoker.
+
+```yaml
+options:
+  providers:
+    ollama:
+      implementation: crewplane_ollama:OLLAMA
+      distribution: crewplane-ollama
+```
+
+Each entry requires these two fields:
+
+| Field | Meaning |
+| --- | --- |
+| `implementation` | The plugin's exported object, written as `module:object`. |
+| `distribution` | The installed Python package name, such as `crewplane-ollama`. |
+
+Use the values supplied by the plugin. Both must be nonempty strings without
+leading or trailing spaces; additional fields are rejected. Crewplane adds the
+installed package `version` to its saved records. Do not set `version` yourself.
+
+The entry name is the `provider_kind` used in agent profiles. It must match
+`[a-z][a-z0-9_-]*` and cannot reuse a built-in name: `claude`, `codex`, `copilot`,
+`gemini`, `kilo`, `pi`, `deepseek`, `opencode`, or `generic`. Every agent profile
+must name a built-in or registered provider, even if the workflow does not use it.
+
+Install the plugin in Crewplane's Python environment before configuring it.
+Crewplane loads only the plugins listed here; it does not find or install them
+automatically. Use trusted packages, since their Python code runs with
+Crewplane's permissions.
+
+Validation fails if a package is missing, its object cannot be loaded, or the
+object is not a valid capability with a matching `provider_kind`. Changing a
+registration or installed package version can prevent reuse of saved results,
+even when the workflow does not use that plugin.
+
+See [Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
+for a complete installation and configuration example.
+
+### Authoring a CLI capability
+
+Import the public types and helpers from `crewplane.adapters.invokers.cli_invoker`:
+`CliProviderCapability`, `CliInvocationRequest`, `CliCommand`,
+`extract_strict_stdout`, `run_command_once`, and `unconfirmed_process_cleanup`.
+Result, environment, output, and classification types are available from
+`crewplane.architecture.contracts`.
+
+Export a `CliProviderCapability` instance whose `provider_kind` matches the
+registration name. Provide request validation and command-building callbacks.
+Choose how to read answers and usage, recognize failures and usage limits,
+display logs, retry failures, and handle idle timeouts. Use the model supplied
+in `CliInvocationRequest.model`; ignore `model_arg`, which is for `generic` only.
+Declare compatible Crewplane versions in your package dependencies.
+
+#### Availability checks
+
+`check_availability` is optional and defaults to `None`. When provided, it must
+have type `Callable[[CliInvocationRequest], Awaitable[None]]`. Return `None` on
+success, or raise `ValueError` when the provider is unavailable. Returning another
+value is a contract error.
+
+Crewplane checks the request and executable before calling this function during
+validation and normal runs. Dry-run and loading registrations do not call it.
+
+#### Files, processes, and cancellation
+
+Callbacks must support concurrent requests without storing request data in
+shared mutable globals. Importing the plugin must be free of side effects,
+and request validation must not create invocation files.
+
+Command builders must clean up temporary files if they fail before returning a
+complete command. Once those files are passed to Crewplane with the command,
+Crewplane cleans them up after success, failure, or cancellation. Output readers,
+classifiers, and usage decoders must leave captured-file cleanup to the owner.
+
+An availability callback owns the captured output files returned by
+`run_command_once`. Delete both captures in `finally` and let deletion errors
+propagate. The helper owns the files until it returns. Use
+`ChildProcessEnvironment` for subprocess environment settings. In availability
+checks, pass `None` for `log_file`, `log_header`, and `invocation_context`.
+
+Wait for owned subprocess work and bounded cleanup before returning or
+propagating cancellation. Preserve exception chains and notes. Before converting
+an exception to `ValueError`, call `unconfirmed_process_cleanup(error)`. If it
+returns a cleanup error, re-raise the original exception.
+
+See [ADR 0019](../architecture/adr/0019-explicit-plugin-system.md) for the design
+and lifecycle guarantees.
 
 ### `mock`
 

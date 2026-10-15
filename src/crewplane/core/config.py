@@ -1,8 +1,10 @@
+import re
 from pathlib import Path
-from typing import Final, Self
+from typing import Annotated, Final, Self
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     FiniteFloat,
@@ -13,8 +15,6 @@ from pydantic import (
 from yaml.constructor import ConstructorError
 
 from crewplane.architecture.contracts import (
-    SUPPORTED_PROVIDER_KIND_VALUE_SET,
-    SUPPORTED_PROVIDER_KIND_VALUES,
     JsonObject,
     PromptTransport,
     ProviderKind,
@@ -34,8 +34,6 @@ from .workflow.keywords import (
 from .workspace.settings import WorkspaceSettings
 from .yaml_loader import load_yaml_unique
 
-ALLOWED_PROVIDER_KINDS: Final = SUPPORTED_PROVIDER_KIND_VALUES
-ALLOWED_PROVIDER_KIND_SET: Final = SUPPORTED_PROVIDER_KIND_VALUE_SET
 ALLOWED_PROMPT_TRANSPORTS: Final = ("stdin", "argv")
 ALLOWED_PROMPT_TRANSPORT_SET: Final = set(ALLOWED_PROMPT_TRANSPORTS)
 DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS: Final = 5.0
@@ -51,6 +49,16 @@ def _validate_command_token(value: str | None, field_name: str) -> str | None:
     if value is not None and not value.strip():
         raise ValueError(f"{field_name} cannot be blank")
     return value
+
+
+def validate_provider_identifier(value: object) -> str:
+    """Validate provider identity without changing authored spelling."""
+    if not isinstance(value, str) or re.fullmatch(r"[a-z][a-z0-9_-]*", value) is None:
+        raise ValueError("provider_kind must match [a-z][a-z0-9_-]*")
+    return value
+
+
+ProviderIdentifier = Annotated[str, BeforeValidator(validate_provider_identifier)]
 
 
 class TokenPricing(BaseModel):
@@ -104,7 +112,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str]
-    provider_kind: ProviderKind = ProviderKind.GENERIC
+    provider_kind: ProviderIdentifier = ProviderKind.GENERIC.value
     default_model: str | None = None
 
     model_arg: str | None = "--model"
@@ -135,17 +143,6 @@ class AgentConfig(BaseModel):
             raise ValueError("cli_cmd must contain at least one token")
         if any(not token.strip() for token in value):
             raise ValueError("cli_cmd cannot contain blank tokens")
-        return value
-
-    @field_validator("provider_kind", mode="before")
-    @classmethod
-    def _validate_provider_kind(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        if value not in ALLOWED_PROVIDER_KIND_SET:
-            raise ValueError(
-                f"provider_kind must be one of: {', '.join(ALLOWED_PROVIDER_KINDS)}"
-            )
         return value
 
     @field_validator("prompt_transport", mode="before")

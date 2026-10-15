@@ -6,7 +6,11 @@ from pathlib import Path
 from rich.console import Console
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.architecture.loader import instantiate_adapter, require_artifact_store
+from crewplane.architecture.loader import (
+    instantiate_adapter,
+    require_artifact_store,
+    resolve_implementation_path,
+)
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents, UIRuntimePlan
 from crewplane.core.config import Config
@@ -41,11 +45,15 @@ def build_runtime_components(
         instantiate_adapter("ui", ui_spec.implementation) if live_ui_enabled else None
     )
 
+    if invoker_options is None:
+        invoker_options = invoker_adapter.canonicalize_options(
+            invoker_spec.implementation,
+            resolve_implementation_path("invoker", invoker_spec.implementation),
+            dict(invoker_spec.options),
+        ).options
     base_invoker = invoker_adapter.create_invoker(
         config=config,
-        options=invoker_options
-        if invoker_options is not None
-        else dict(invoker_spec.options),
+        options=invoker_options,
     )
     _validate_invoker_contract(base_invoker)
     if artifact_store is None:

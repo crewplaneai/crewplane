@@ -36,6 +36,7 @@ def test_capability_defaults_are_explicit_and_immutable() -> None:
     assert capability.quota_classifier is classify_generic_quota
     assert capability.failure_classifier is classify_generic_failure
     assert capability.usage_decoder is None
+    assert capability.check_availability is None
     assert capability.one_shot_failure_retry is None
     assert capability.log_presentation_format == "plain"
     assert capability.log_presentation_profile == "generic"

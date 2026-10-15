@@ -113,6 +113,52 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 options=self._options(mystery=1),
             )
 
+    async def test_canonical_failure_selector_preserves_matching(self) -> None:
+        adapter = MockInvokerAdapter()
+        canonical = adapter.canonicalize_options(
+            "mock",
+            "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+            self._options(fail_when=[{"node_id": "node.a"}]),
+        )
+        invoker = adapter.create_invoker(self._build_config(), canonical.options)
+        output = self.tmp_path / "failed.md"
+
+        with pytest.raises(
+            RuntimeError, match="forced failure by selector: node_id=node.a"
+        ):
+            await invoker.invoke(
+                config=AgentConfig(cli_cmd=["echo"]),
+                model=None,
+                prompt="hello",
+                output_file=output,
+                cwd=self.tmp_path,
+                invocation_context=self._context(),
+            )
+        assert not output.exists()
+
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"]),
+            model=None,
+            prompt="hello",
+            output_file=output,
+            cwd=self.tmp_path,
+            invocation_context=InvocationContext(
+                node_id="other",
+                task_id="other",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+            ),
+        )
+        assert output.is_file()
+
+    def test_authored_failure_selector_still_rejects_null_criteria(self) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            MockInvokerAdapter().canonicalize_options(
+                "mock",
+                "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+                self._options(fail_when=[{"node_id": "node.a", "provider": None}]),
+            )
+
     def test_create_invoker_exposes_mock_log_presentation_descriptor(self) -> None:
         adapter = MockInvokerAdapter()
         invoker = adapter.create_invoker(

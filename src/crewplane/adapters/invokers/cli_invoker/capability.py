@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,11 +10,10 @@ from crewplane.architecture.contracts import (
     LogPresentationFormat,
     OneShotFailureRetryPolicy,
     OutputExtractor,
-    ProviderKind,
     QuotaClassifier,
     UsageDecoder,
 )
-from crewplane.core.config import AgentConfig
+from crewplane.core.config import AgentConfig, validate_provider_identifier
 
 from . import command_strategy
 from .failures.classifier import classify_generic_failure
@@ -44,9 +43,14 @@ class CliCommand:
 
 @dataclass(frozen=True)
 class CliProviderCapability:
-    """Adapter-owned strategies for one CLI family; callbacks borrow streams."""
+    """Strategies shared by overlapping requests; callbacks borrow streams.
 
-    provider_kind: ProviderKind
+    Builders own allocations until they return a command. Availability callbacks
+    await their subprocess cleanup before returning or propagating cancellation,
+    and own capture paths returned by their probe commands.
+    """
+
+    provider_kind: str
     validate_request: Callable[[CliInvocationRequest], None]
     build_command: Callable[[CliInvocationRequest, str], CliCommand]
     output_extractor: OutputExtractor | None
@@ -57,3 +61,7 @@ class CliProviderCapability:
     log_presentation_profile: str = "generic"
     one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
     supports_output_idle_timeout: bool = True
+    check_availability: Callable[[CliInvocationRequest], Awaitable[None]] | None = None
+
+    def __post_init__(self) -> None:
+        validate_provider_identifier(self.provider_kind)

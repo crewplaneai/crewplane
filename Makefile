@@ -23,12 +23,15 @@ UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)
 RUN_PYTHON = uv run --locked $(TEST_EXTRAS) python
 RUN_RUFF = $(RUN_PYTHON) -m ruff
 RUN_MYPY = $(RUN_PYTHON) -m mypy
+PLUGIN_SOURCES = $(wildcard plugins/*/src)
+OLLAMA_PACKAGE = plugins/crewplane-ollama
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
 .PHONY: help setup uninstall test coverage-check typecheck lint format format-check check actionlint \
 	dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
 	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
+	ollama-package-build ollama-package-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
 	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
 	release-prepare release-check release-confirm release-pypi release-npm release
@@ -43,7 +46,7 @@ help:
 		'  setup              Install editable dev environment' \
 		'  test               Run pytest with statement and branch coverage gates' \
 		'  coverage-check    Check floors in an explicit COVERAGE_REPORT' \
-		'  typecheck          Check strict typing for the package and fixtures' \
+		'  typecheck          Check strict typing for core, plugins, and fixtures' \
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
@@ -58,6 +61,8 @@ help:
 		'Package validation:' \
 		'  package-build      Build wheel and sdist into dist/' \
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
+		'  ollama-package-build Rebuild the Ollama wheel and sdist in its dist/' \
+		'  ollama-package-check Build and validate core and Ollama distributions' \
 		'  wheel-typecheck    Type-check an external consumer against the built wheel' \
 		'  install-smoke      Exercise pip, uv tool, and pipx installs where available' \
 		'  install-check      Build once, then run package, installer, npm, and Homebrew smokes' \
@@ -98,17 +103,17 @@ coverage-check:
 # Keep the full production package and repository typecheck fixtures under
 # strict mypy coverage.
 typecheck:
-	$(RUN_MYPY) src/crewplane tests/typecheck
+	$(RUN_MYPY) src/crewplane tests/typecheck $(PLUGIN_SOURCES)
 
 lint:
-	$(RUN_RUFF) check src tests scripts
+	$(RUN_RUFF) check src tests scripts $(PLUGIN_SOURCES)
 
 format:
-	$(RUN_RUFF) check --fix --select I src tests scripts
-	$(RUN_RUFF) format src tests scripts
+	$(RUN_RUFF) check --fix --select I src tests scripts $(PLUGIN_SOURCES)
+	$(RUN_RUFF) format src tests scripts $(PLUGIN_SOURCES)
 
 format-check:
-	$(RUN_RUFF) format --check src tests scripts
+	$(RUN_RUFF) format --check src tests scripts $(PLUGIN_SOURCES)
 
 check: lint format-check typecheck uv-bootstrap-check test
 
@@ -126,6 +131,15 @@ uv-bootstrap-update:
 
 package-build:
 	$(RUN_RELEASE) package-build
+
+ollama-package-build:
+	rm -rf $(OLLAMA_PACKAGE)/dist
+	$(RUN_PYTHON) -m build --outdir $(OLLAMA_PACKAGE)/dist $(OLLAMA_PACKAGE)
+
+ollama-package-check: package-build ollama-package-build
+	$(RUN_PYTHON) -m twine check dist/* $(OLLAMA_PACKAGE)/dist/*
+	$(RUN_PYTHON) tests/helpers/check_cli_provider_packages.py \
+		--crewplane-wheel dist/*.whl --ollama-wheel $(OLLAMA_PACKAGE)/dist/*.whl
 
 package-check:
 	$(RUN_RELEASE) package-check

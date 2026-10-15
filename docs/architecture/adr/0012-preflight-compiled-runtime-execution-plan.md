@@ -218,6 +218,8 @@ Early parse, frontmatter, schema, or config failures may not have a workflow nam
 Preflight failure artifacts do not write a final execution manifest and cannot trigger duplicate skips.
 
 `crewplane validate` and `crewplane run --dry-run` remain artifact-free and invoke no providers.
+The no-provider guarantee for validation is amended by the
+[2026-10-14 update](#updates).
 
 Stage, output, findings, log, manifest, and result locators are allocated as
 safe artifact paths. Reserved run-root names stay protected, and node-derived
@@ -363,3 +365,7 @@ Negative consequences:
   inputs. Before later passes, the CLI reloads the selected config and entry
   workflow and resolves imports again. Preview and runtime plans continue to
   describe one DAG.
+- **2026-10-14**: [ADR 0019](0019-explicit-plugin-system.md#lifecycle-and-availability)
+  amends the no-provider validation guarantee: validation and real-run preflight
+  may perform adapter-owned diagnostic inference probes. Dry-run and registration
+  canonicalization remain probe-free; validation and dry-run remain artifact-free.

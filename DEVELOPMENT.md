@@ -182,6 +182,7 @@ crewplane/
 │       ├── artifacts/      # Output directories, manifests, results, resume, workspace state
 │       ├── observability/  # Runtime event model, layout/rendering, tmux dashboard
 │       └── example_templates/
+├── plugins/                # Independently packaged extensions
 ├── tests/
 ├── docs/                   # User and architecture documentation
 ├── pyproject.toml
@@ -330,6 +331,13 @@ constraints live in [AGENTS.md](AGENTS.md#change-guidance).
 - Composition root: `src/crewplane/bootstrap/container.py`
 - Expected tests: `tests/integration/architecture/`, relevant `tests/integration/adapters/`
 
+### Plugins
+
+- Public CLI capability API: `src/crewplane/adapters/invokers/cli_invoker/__init__.py`
+- Registration and package identity: `src/crewplane/adapters/invokers/cli_invoker/provider_registrations.py`
+- Plugin packages: `plugins/`, including `plugins/crewplane-ollama/`
+- Expected tests: `tests/unit/adapters/invokers/cli_invoker/`, `tests/integration/adapters/ollama/`, `tests/integration/adapters/test_cli_provider_lifecycle.py`, and CLI provider tests under `tests/integration/architecture/`
+
 ### Artifacts, manifests, and templates
 
 - Core files: `src/crewplane/artifacts/manager.py`, `src/crewplane/artifacts/directory_manager.py`, `src/crewplane/artifacts/generated_files/`, `src/crewplane/artifacts/locks/`, `src/crewplane/artifacts/results/`, `src/crewplane/artifacts/resume/`, `src/crewplane/artifacts/workspace/`, and `src/crewplane/core/preflight/`
@@ -417,3 +425,16 @@ runtime contracts.
 3. Add adapter behavior tests under `tests/integration/adapters/`.
 4. Add architecture wiring tests under `tests/integration/architecture/`.
 5. Run focused adapter and architecture tests, then `make check`.
+
+### CLI capability packages
+
+Additional CLI providers use the public `CliProviderCapability` contract in
+`crewplane.adapters.invokers.cli_invoker`. Keep independently buildable packages
+under `plugins/`, register their exports through
+`settings.integrations.invoker.options.providers`, and follow the adapter test
+requirements above.
+
+`make check` includes plugin sources. With package-index access, run
+`make ollama-package-check` to verify the core and Ollama distributions in an
+isolated environment. Ollama release acceptance also requires live-model and
+macOS checks of readiness, output handoff, failure handling, and cancellation.
