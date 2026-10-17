@@ -9,6 +9,7 @@ from .constants import (
     PROVIDER_SETUP_URL,
     WORKFLOW_RELATIVE_PATH,
 )
+from .detection import ProviderDetection
 from .rendering import (
     manual_config_snippet,
     manual_workflow_snippet,
@@ -20,7 +21,7 @@ INIT_RECOVERY_PROMPT = "Run non-overwriting crewplane init now? [y/N]: "
 MISSING_MOCK_EVIDENCE_PROMPT = "Choose [0]: "
 PROVIDER_CHOICE_PROMPT = "Choose one or more providers (comma-separated numbers): "
 APPLY_CHANGES_PROMPT = "Apply changes? [Y/n]: "
-ProviderStatus = tuple[str, bool]
+OPTIONAL_PROVIDER_PROMPT = "Choose [1]: "
 
 
 def print_title(console: Console) -> None:
@@ -42,7 +43,7 @@ def print_onboarding_intro(console: Console) -> None:
     console.print("  [cyan]crewplane run[/]")
     console.print("")
     console.print(
-        "Selecting local loads the official Ollama plugin to discover servers and models."
+        "Selecting Ollama loads the official Ollama plugin to discover servers and models."
     )
     console.print(
         "Applying Ollama setup runs a short readiness prompt. Crewplane does not"
@@ -115,11 +116,8 @@ def print_edited_files_stop(console: Console) -> None:
 
 def print_no_providers_stop(console: Console) -> None:
     console.print("")
-    console.print("No known provider CLI names were found on PATH.")
-    console.print("")
-    console.print(
-        "Install and authenticate a provider CLI outside Crewplane, then rerun:"
-    )
+    console.print("No providers are available to set up.")
+    console.print("Resolve the issues listed above, then rerun:")
     console.print("  [cyan]crewplane onboarding[/]")
     print_provider_setup_link(console, "Provider setup guide:")
 
@@ -131,7 +129,7 @@ def print_declined_changes(console: Console) -> None:
 
 def print_provider_selected(console: Console, provider: str) -> None:
     console.print("")
-    console.print(f"Selected {provider}.")
+    console.print(f"Selected {provider_display_name(provider)}.")
 
 
 def print_quickstart_state(console: Console) -> None:
@@ -160,21 +158,67 @@ def print_missing_mock_run_evidence(console: Console) -> None:
     console.print("[0] quit and run mock first")
 
 
+def provider_display_name(provider: str) -> str:
+    return ", ".join(
+        "Ollama" if name == "local" else name for name in provider.split(", ")
+    )
+
+
+def print_provider_diagnostic(console: Console, provider: str, diagnostic: str) -> None:
+    console.print(f"   {provider_display_name(provider)}: {diagnostic}", markup=False)
+
+
+def print_ollama_choices(console: Console, installation: bool = False) -> None:
+    console.print("")
+    console.print("Ollama is optional. How would you like to proceed?")
+    console.print("  [1] Continue onboarding without Ollama", markup=False)
+    action = (
+        "Quit and show plugin installation instructions" if installation else "Quit"
+    )
+    console.print(f"  [2] {action}", markup=False)
+
+
+def print_ollama_setup_link(console: Console) -> None:
+    console.print(
+        "Install crewplane-ollama in the Python environment running Crewplane."
+    )
+    print_provider_setup_link(
+        console, "Ollama installation:", "local-ollama-text-generation"
+    )
+
+
+def print_ollama_unconfigured(console: Console, cancelled: bool = False) -> None:
+    detail = (
+        "Ollama setup was cancelled." if cancelled else "Ollama setup could not finish."
+    )
+    console.print(detail)
+    console.print("Ollama was not configured.")
+    print_no_files_changed(console)
+
+
+def print_recovery_confirmation(console: Console, provider: str) -> None:
+    if provider:
+        console.print(
+            f"Replace the settings saved by this attempt to use {provider_display_name(provider)}."
+        )
+    else:
+        console.print("Restore the original mock settings saved before this attempt.")
+    console.print("Files edited since onboarding saved them will be left unchanged.")
+
+
 def print_provider_detection(
-    console: Console, provider_statuses: tuple[ProviderStatus, ...]
+    console: Console, detections: tuple[ProviderDetection, ...]
 ) -> None:
     console.print("")
     console.print("[bold]2. Provider detection[/]")
-    width = max((len(provider) for provider, _ in provider_statuses), default=0)
-    for provider, found in provider_statuses:
-        status = "found" if found else "not found"
-        console.print(f"   {provider.ljust(width)}   {status}")
+    for detection in detections:
+        name = provider_display_name(detection.provider)
+        console.print(f"   {name}: {detection.status.value}", markup=False)
+        if detection.diagnostic:
+            print_provider_diagnostic(console, name, detection.diagnostic)
     console.print("")
     console.print(
-        "Built-in detection checks command and required launcher availability; it does not run providers."
-    )
-    console.print(
-        "The local option checks package metadata first. Selecting it inspects Ollama servers and installed models."
+        "These checks find setup options; they do not mean a provider is configured."
     )
 
 
@@ -185,7 +229,7 @@ def print_provider_choices(console: Console, providers: tuple[str, ...]) -> None
     console.print("Crewplane found these provider options:")
     console.print("")
     for index, provider in enumerate(providers, start=1):
-        console.print(f"  [{index}] {provider}")
+        console.print(f"  [{index}] {provider_display_name(provider)}")
     console.print("Select at least one provider; you can select all listed providers.")
 
 
@@ -266,7 +310,9 @@ def print_manual_fallback(
     console.print("Crewplane cannot safely update generated files.")
     console.print(reason)
     console.print("")
-    console.print(f"Manual {', '.join(providers)} config snippet:")
+    console.print(
+        f"Manual {provider_display_name(', '.join(providers))} config snippet:"
+    )
     console.print("```yaml")
     console.print(manual_config_snippet(rendered_default_config(), providers))
     console.print("```")
@@ -313,7 +359,9 @@ def print_no_files_updated(console: Console) -> None:
 
 def print_validation_failure(console: Console, provider: str) -> None:
     console.print("")
-    console.print(f"Provider-ready validation failed for {provider}.")
+    console.print(
+        f"Saved settings for {provider_display_name(provider)} did not pass validation."
+    )
     console.print("Files were not rolled back.")
     print_provider_setup_link(console, "Use the provider setup guide to repair setup:")
 
@@ -323,10 +371,10 @@ def print_final_success(console: Console, provider: str) -> None:
     console.print("[green]Onboarding complete.[/]")
     console.print("")
     console.print(
-        f"Crewplane config is ready to start {provider} when you run the workflow."
+        f"Crewplane config is ready to start {provider_display_name(provider)} when you run the workflow."
     )
     console.print("")
-    console.print(f"Onboarding configured: {provider}.")
+    console.print(f"Onboarding configured: {provider_display_name(provider)}.")
     print_provider_setup_link(console, "To add more providers, use:")
     console.print("")
     console.print("Recommended first real run:")
@@ -336,9 +384,7 @@ def print_final_success(console: Console, provider: str) -> None:
     console.print("  [cyan]crewplane run --no-live[/]")
     console.print("")
     if "local" in provider.split(", "):
-        console.print(
-            "Ollama passed the readiness prompt. Its saved OLLAMA_HOST is reused for later runs."
-        )
+        console.print("Ollama is configured and passed the readiness check.")
         console.print(
             "Text-generation example: crewplane run --no-live --tasks .crewplane/workflows/example-templates/text-generation-example.task.md"
         )
@@ -354,10 +400,13 @@ def print_final_success(console: Console, provider: str) -> None:
         )
 
 
-def print_provider_setup_link(console: Console, heading: str) -> None:
+def print_provider_setup_link(
+    console: Console, heading: str, section: str = ""
+) -> None:
     console.print("")
     console.print(heading)
-    console.print(f"  [cyan]{PROVIDER_SETUP_URL}[/]")
+    url = f"{PROVIDER_SETUP_URL}#{section}" if section else PROVIDER_SETUP_URL
+    console.print(f"  {url}", markup=False, soft_wrap=True)
 
 
 def print_path_list(console: Console, heading: str, paths: tuple[Path, ...]) -> None:
@@ -371,7 +420,13 @@ __all__ = [
     "INIT_RECOVERY_PROMPT",
     "MISSING_MOCK_EVIDENCE_PROMPT",
     "PROVIDER_CHOICE_PROMPT",
-    "ProviderStatus",
+    "OPTIONAL_PROVIDER_PROMPT",
+    "provider_display_name",
+    "print_provider_diagnostic",
+    "print_ollama_choices",
+    "print_ollama_setup_link",
+    "print_ollama_unconfigured",
+    "print_recovery_confirmation",
     "print_already_onboarded",
     "print_declined_changes",
     "print_edited_files_stop",

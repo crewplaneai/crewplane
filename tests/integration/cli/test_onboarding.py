@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from collections import deque
 from dataclasses import replace
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,62 @@ class DetectionOnlyCodex:
         if executable_name == "codex" and self.calls.count("codex") == 1:
             return "/usr/bin/codex"
         return None
+
+
+@pytest.fixture(autouse=True)
+def missing_ollama_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_version = metadata.version
+
+    def installed_version(distribution: str) -> str:
+        if distribution == "crewplane-ollama":
+            raise metadata.PackageNotFoundError(distribution)
+        return original_version(distribution)
+
+    monkeypatch.setattr(metadata, "version", installed_version)
+
+
+@pytest.mark.parametrize("answers", [["1"], [""], ["invalid", "3", "1"]])
+def test_missing_ollama_plugin_can_continue_with_codex(
+    tmp_path: Path, answers: list[str]
+) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    output, _ = run_onboarding_in_project(
+        tmp_path,
+        answers=[*answers, "1", ""],
+        which=WhichRecorder({"codex": "/usr/bin/codex", "ollama": "/usr/bin/ollama"}),
+    )
+
+    config = load_config(tmp_path / CONFIG_RELATIVE_PATH)
+    assert set(config.agents) == {"codex"}
+    assert config.settings.integrations.invoker.options == {}
+    assert "Continue onboarding without Ollama" in output
+    assert "crewplane-ollama" in output
+    assert "not installed" in output
+    assert "Onboarding complete." in output
+    assert "local   not found" not in output
+
+
+def test_missing_ollama_plugin_can_quit_for_installation(tmp_path: Path) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    before = {
+        path: (tmp_path / path).read_bytes()
+        for path in (CONFIG_RELATIVE_PATH, WORKFLOW_RELATIVE_PATH)
+    }
+
+    output, _ = run_onboarding_in_project(
+        tmp_path,
+        answers=["2"],
+        which=WhichRecorder({"codex": "/usr/bin/codex"}),
+    )
+
+    assert "crewplane-ollama" in output
+    assert "provider-setup.md#local-ollama-text-generation" in output
+    assert "Onboarding complete" not in output
+    assert all(
+        (tmp_path / path).read_bytes() == content for path, content in before.items()
+    )
 
 
 def test_root_help_lists_onboarding_command() -> None:
@@ -266,7 +323,7 @@ def test_missing_mock_evidence_can_continue_and_select_provider(tmp_path: Path) 
 
     output, which = run_onboarding_in_project(
         tmp_path,
-        answers=["1", "1", ""],
+        answers=["1", "1", "1", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
     )
 
@@ -278,11 +335,17 @@ def test_missing_mock_evidence_can_continue_and_select_provider(tmp_path: Path) 
 def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
     initialize_default_project(tmp_path)
     write_successful_mock_history(tmp_path)
+    paths = [tmp_path / CONFIG_RELATIVE_PATH, tmp_path / WORKFLOW_RELATIVE_PATH]
+    before = [path.read_bytes() for path in paths]
 
-    output, which = run_onboarding_in_project(tmp_path, which=WhichRecorder())
+    output, which = run_onboarding_in_project(
+        tmp_path, answers=["1"], which=WhichRecorder()
+    )
 
-    assert "No known provider CLI names were found on PATH." in output
+    assert "No providers are available to set up." in output
     assert "provider-setup.md" in output
+    assert "Onboarding complete." not in output
+    assert [path.read_bytes() for path in paths] == before
     assert sorted(which.calls) == sorted(
         [*known_provider_names()[:-2], "env", "opencode"]
     )
@@ -295,7 +358,7 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     write_successful_mock_history(tmp_path)
     which = WhichRecorder({"codex": "/usr/bin/codex", "gemini": "/usr/bin/gemini"})
 
-    output, _ = run_onboarding_in_project(tmp_path, answers=["2", ""], which=which)
+    output, _ = run_onboarding_in_project(tmp_path, answers=["1", "2", ""], which=which)
 
     config_text = (tmp_path / CONFIG_RELATIVE_PATH).read_text(encoding="utf-8")
     workflow_text = (tmp_path / WORKFLOW_RELATIVE_PATH).read_text(encoding="utf-8")
@@ -339,27 +402,29 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert which.calls == [*known_provider_names()[:-2], "env", "opencode", "gemini"]
 
 
-def test_provider_selection_eof_leaves_files_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("stdin", "last_prompt"),
+    [("", "Choose [1]:"), ("1\n", "Choose one or more providers")],
+)
+def test_provider_prompts_eof_leave_files_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdin: str, last_prompt: str
 ) -> None:
     initialize_default_project(tmp_path)
     write_successful_mock_history(tmp_path)
-    default_config = (tmp_path / CONFIG_RELATIVE_PATH).read_text(encoding="utf-8")
-
+    paths = [tmp_path / CONFIG_RELATIVE_PATH, tmp_path / WORKFLOW_RELATIVE_PATH]
+    before = [path.read_bytes() for path in paths]
     stream = io.StringIO()
     options = make_options(
         tmp_path, stream, [], WhichRecorder({"codex": "/usr/bin/codex"})
     )
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
 
     with pytest.raises(EOFError):
         run_onboarding(replace(options, read_input=read_stdin_line))
 
-    assert "Choose one or more providers" in stream.getvalue()
+    assert last_prompt in stream.getvalue()
     assert "Onboarding complete." not in stream.getvalue()
-    assert (tmp_path / CONFIG_RELATIVE_PATH).read_text(
-        encoding="utf-8"
-    ) == default_config
+    assert [path.read_bytes() for path in paths] == before
 
 
 def test_onboarding_selects_opencode_with_native_model_default(tmp_path):
@@ -367,7 +432,7 @@ def test_onboarding_selects_opencode_with_native_model_default(tmp_path):
     write_successful_mock_history(tmp_path)
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=["1", ""],
+        answers=["1", "1", ""],
         which=WhichRecorder({"opencode": "/test/opencode"}),
     )
     config = load_config(tmp_path / CONFIG_RELATIVE_PATH)
@@ -401,7 +466,7 @@ def test_onboarding_enables_multiple_selected_providers(
     )
 
     output, _ = run_onboarding_in_project(
-        tmp_path, answers=[", ".join([*choices, choices[0]]), ""], which=which
+        tmp_path, answers=["1", ", ".join([*choices, choices[0]]), ""], which=which
     )
 
     config = load_config(tmp_path / CONFIG_RELATIVE_PATH)
@@ -435,7 +500,7 @@ def test_provider_selection_requires_at_least_one_valid_provider(
 
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=[invalid, "1,2", ""],
+        answers=["1", invalid, "1,2", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex", "gemini": "/usr/bin/gemini"}),
     )
 
@@ -454,7 +519,7 @@ def test_declined_file_preparation_leaves_files_unchanged(tmp_path: Path) -> Non
 
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=["1", "n"],
+        answers=["1", "1", "n"],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
     )
 
@@ -475,7 +540,7 @@ def test_prewrite_reread_failure_prints_manual_fallback(tmp_path: Path) -> None:
     def delete_workflow_after_confirmation() -> str:
         nonlocal call_count
         call_count += 1
-        if call_count == 2:
+        if call_count == 3:
             (tmp_path / WORKFLOW_RELATIVE_PATH).unlink()
             return ""
         return "1"
@@ -517,7 +582,7 @@ def test_prewrite_decode_failure_prints_manual_fallback(tmp_path: Path) -> None:
     def corrupt_workflow_after_confirmation() -> str:
         nonlocal call_count
         call_count += 1
-        if call_count == 2:
+        if call_count == 3:
             (tmp_path / WORKFLOW_RELATIVE_PATH).write_bytes(b"\xff")
             return ""
         return "1"
@@ -561,7 +626,7 @@ def test_partial_config_only_update_warns_before_validation(tmp_path: Path) -> N
 
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=["1", ""],
+        answers=["1", "1", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
         write_text=fail_workflow,
     )
@@ -583,7 +648,7 @@ def test_partial_workflow_only_update_warns_before_validation(tmp_path: Path) ->
 
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=["1", ""],
+        answers=["1", "1", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
         write_text=fail_config,
     )
@@ -604,7 +669,7 @@ def test_both_write_failures_do_not_claim_partial_update(tmp_path: Path) -> None
 
     output, _ = run_onboarding_in_project(
         tmp_path,
-        answers=["1", ""],
+        answers=["1", "1", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
         write_text=fail_all_writes,
     )
@@ -621,13 +686,13 @@ def test_validation_failure_keeps_written_files_without_rollback(
     write_successful_mock_history(tmp_path)
     stream = io.StringIO()
     which = DetectionOnlyCodex()
-    options = make_options(tmp_path, stream, ["1", ""], which)
+    options = make_options(tmp_path, stream, ["1", "1", ""], which)
 
     with pytest.raises(typer.Exit):
         run_onboarding(options)
 
     output = stream.getvalue()
-    assert "Provider-ready validation failed for codex." in output
+    assert "Saved settings for codex did not pass validation." in output
     assert "Files were not rolled back." in output
     assert load_config(tmp_path / CONFIG_RELATIVE_PATH).settings is not None
     assert "    providers: [codex]" in (tmp_path / WORKFLOW_RELATIVE_PATH).read_text(

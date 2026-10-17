@@ -162,7 +162,7 @@ crewplane onboarding
 The command guides you through setup:
 
 - Looks for supported AI commands your terminal can run.
-- Offers `local` when the official Ollama plugin is installed; see
+- Offers Ollama when its official plugin is installed; see
   [Ollama installation](provider-setup.md#local-ollama-text-generation) for what
   you need to install first.
 - Asks you to choose at least one provider by entering numbers separated by

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from enum import StrEnum
 from functools import partial
 
 from rich.console import Console
@@ -16,12 +17,18 @@ from crewplane.adapters.invokers.cli_invoker.provider_registrations import (
 )
 from crewplane.core.config import AgentConfig
 
+from . import messages
 from .plugin_profile import ollama_provider_options
+
+
+class LocalSetupFailure(StrEnum):
+    UNAVAILABLE = "unavailable"
+    CANCELLED = "cancelled"
 
 
 def prepare_local_agent(
     request: CliDiscoveryRequest, console: Console, prompt: Callable[[str], str]
-) -> AgentConfig | None:
+) -> AgentConfig | LocalSetupFailure:
     """Load only the selected official recipe; plugin callbacks own discovery."""
     console.print("Inspecting Ollama clients and servers (read-only checks)...")
     try:
@@ -35,9 +42,9 @@ def prepare_local_agent(
             )
         discovery = run_discovery_callback(partial(onboarding.discover, request))
         for diagnostic in discovery.diagnostics:
-            console.print(diagnostic, markup=False)
+            messages.print_provider_diagnostic(console, "local", diagnostic)
         if not discovery.command or not discovery.endpoints:
-            return None
+            return LocalSetupFailure.UNAVAILABLE
         console.print(f"Ollama client: {discovery.command[0]}", markup=False)
         index = select_item(
             "Ollama server",
@@ -46,21 +53,21 @@ def prepare_local_agent(
             prompt,
         )
         if index is None:
-            return None
+            return LocalSetupFailure.CANCELLED
         endpoint = discovery.endpoints[index]
         console.print(f"Selected endpoint: {endpoint.label}", markup=False)
         available = run_discovery_callback(
             partial(onboarding.list_models, request, endpoint)
         )
         for diagnostic in available.diagnostics:
-            console.print(diagnostic, markup=False)
+            messages.print_provider_diagnostic(console, "local", diagnostic)
         if not available.models:
-            return None
+            return LocalSetupFailure.UNAVAILABLE
         index = select_item(
             "installed local text model", available.models, console, prompt
         )
         if index is None:
-            return None
+            return LocalSetupFailure.CANCELLED
         return AgentConfig(
             cli_cmd=list(discovery.command),
             provider_kind="ollama",
@@ -71,8 +78,8 @@ def prepare_local_agent(
     except (ValueError, OSError) as exc:
         if unconfirmed_process_cleanup(exc) is not None:
             raise
-        console.print(f"Ollama setup failed: {exc}", markup=False)
-        return None
+        messages.print_provider_diagnostic(console, "local", str(exc))
+        return LocalSetupFailure.UNAVAILABLE
 
 
 def run_discovery_callback[T](callback: Callable[[], Awaitable[T]]) -> T:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import math
 import re
+import sys
 from collections.abc import Mapping
 from importlib import metadata
 from types import MappingProxyType
@@ -102,14 +103,20 @@ def _parse_record(identifier: str, raw: object, canonical: bool) -> dict[str, st
     return record
 
 
+def missing_provider_plugin_message(distribution: str) -> str:
+    return (
+        f"Provider plugin '{distribution}' is not installed in the Python environment "
+        f"running Crewplane ({sys.executable}). Install it in this environment "
+        "to use this provider."
+    )
+
+
 def _installed_version(record: Mapping[str, str]) -> str:
     declared = record["distribution"]
     try:
         installed = metadata.distribution(declared)
     except metadata.PackageNotFoundError as exc:
-        raise ValueError(
-            f"CLI provider distribution '{declared}' is not installed"
-        ) from exc
+        raise ValueError(missing_provider_plugin_message(declared)) from exc
     name = installed.metadata.get("Name")
     if not isinstance(name, str) or _normalized_distribution(
         name

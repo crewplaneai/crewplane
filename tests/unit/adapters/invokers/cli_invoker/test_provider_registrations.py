@@ -1,5 +1,6 @@
 import copy
 import importlib
+import sys
 from dataclasses import replace
 from unittest.mock import patch
 
@@ -224,6 +225,28 @@ def test_invalid_capability_contracts(registration, monkeypatch, field, value):
         ValueError, match=field.replace("_", " ") if field.startswith("log_") else field
     ):
         canonicalize_provider_options(options)
+
+
+def test_missing_plugin_identifies_distribution_and_running_environment(registration):
+    authored, metadata = registration
+    canonical = canonicalize_provider_options(authored)
+    metadata.unlink()
+    metadata.parent.rmdir()
+    importlib.invalidate_caches()
+
+    errors = []
+    for load, options in (
+        (canonicalize_provider_options, authored),
+        (verify_provider_options, canonical),
+    ):
+        with pytest.raises(ValueError) as caught:
+            load(options)
+        errors.append(str(caught.value))
+
+    assert errors[0] == errors[1]
+    assert "Provider plugin 'crewplane-fixture-provider' is not installed" in errors[0]
+    assert sys.executable in errors[0]
+    assert "Install it in this environment" in errors[0]
 
 
 def test_metadata_and_signed_drift_are_rejected_without_refresh(registration):
