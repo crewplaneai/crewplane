@@ -9,12 +9,26 @@ from .capabilities import (
     get_cli_provider_capability,
 )
 from .capability import CliCommand, CliInvocationRequest, CliProviderCapability
+from .discovery import (
+    DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    CliDiscoveredEndpoint,
+    CliDiscoveredModels,
+    CliDiscoveryRequest,
+    CliProviderDiscovery,
+    CliProviderOnboarding,
+)
 from .streaming import extract_strict_stdout
 
 __all__ = [
+    "DEFAULT_DISCOVERY_TIMEOUT_SECONDS",
     "CliCommand",
     "CliInvocationRequest",
     "CliProviderCapability",
+    "CliDiscoveryRequest",
+    "CliDiscoveredEndpoint",
+    "CliDiscoveredModels",
+    "CliProviderDiscovery",
+    "CliProviderOnboarding",
     "build_cli_invocation_plan",
     "build_cli_log_presentation",
     "get_cli_provider_capability",

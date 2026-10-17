@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from crewplane.adapters.invokers.cli_invoker import CliProviderOnboarding
 from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
 from crewplane.adapters.invokers.cli_invoker.provider_registrations import (
     canonicalize_provider_options,
@@ -195,6 +196,8 @@ def test_invalid_exports_fail_explicitly(registration, reference, match):
         ("output_extractor", False),
         ("usage_decoder", "decoder"),
         ("check_availability", True),
+        ("onboarding", "discovery"),
+        ("onboarding", CliProviderOnboarding(discover=None, list_models=None)),
         ("log_presentation_format", "html"),
         ("log_presentation_profile", ""),
         ("supports_output_idle_timeout", 1),

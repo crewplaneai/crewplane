@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -5,9 +6,37 @@ import pytest
 from crewplane.cli.onboarding.detection import detect_providers
 from crewplane.cli.onboarding.rendering import rendered_default_config
 from crewplane.core.provider_names import known_provider_names
+from tests.helpers.cli_provider import OLLAMA_PACKAGE, expose_distribution
 from tests.helpers.platforms import requires_posix
 
 pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
+
+def test_ollama_package_detection_does_not_import_plugin(tmp_path, monkeypatch):
+    expose_distribution(
+        monkeypatch, tmp_path, OLLAMA_PACKAGE, "crewplane-ollama", "0.1.0"
+    )
+    monkeypatch.setitem(sys.modules, "crewplane_ollama", None)
+    detections = detect_providers(rendered_default_config(), tmp_path, {}.get)
+    local = next(item for item in detections if item.provider == "local")
+    assert local.found
+    assert "selecting local loads" in local.diagnostic
+
+
+def test_missing_ollama_package_has_installation_guidance(tmp_path, monkeypatch):
+    from importlib import metadata
+
+    def missing_distribution(name):
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(metadata, "version", missing_distribution)
+    local = next(
+        item
+        for item in detect_providers(rendered_default_config(), tmp_path, {}.get)
+        if item.provider == "local"
+    )
+    assert not local.found
+    assert "Install the optional crewplane-ollama" in local.diagnostic
 
 
 @pytest.mark.parametrize("present", [False, True])
@@ -33,7 +62,10 @@ def test_detection_requires_dsh_from_the_generated_deepseek_command(
 ) -> None:
     monkeypatch.setenv("PATH", str(Path.cwd() / "bin"))
     detections = detect_providers(rendered_default_config(), tmp_path, found.get)
-    assert tuple(item.provider for item in detections) == known_provider_names()
+    assert tuple(item.provider for item in detections) == (
+        *known_provider_names(),
+        "local",
+    )
     assert [item.provider for item in detections if item.found] == (
         ["deepseek"] if "dsh" in found else []
     )

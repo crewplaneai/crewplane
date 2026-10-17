@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.text import Text
 
+from crewplane.adapters.invokers.cli_invoker import DEFAULT_DISCOVERY_TIMEOUT_SECONDS
 from crewplane.artifacts.locks import ResumeLockError
 from crewplane.core import platform
 from crewplane.core.config import Config
@@ -221,9 +223,21 @@ def init() -> None:
 
 
 @app.command("onboarding", help=ONBOARDING_COMMAND_HELP)
-def onboarding() -> None:
+def onboarding(
+    discovery_timeout: Annotated[
+        float,
+        typer.Option(
+            "--discovery-timeout",
+            help="Seconds allowed for each local provider discovery phase.",
+        ),
+    ] = DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+) -> None:
     """Prepare real providers after the provider-free first run."""
-    run_onboarding_command()
+    if not math.isfinite(discovery_timeout) or discovery_timeout <= 0:
+        raise typer.BadParameter(
+            "must be a finite number greater than 0", param_hint="--discovery-timeout"
+        )
+    run_onboarding_command(discovery_timeout)
 
 
 @app.command()

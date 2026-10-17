@@ -4,6 +4,7 @@ from datetime import datetime
 
 from crewplane.adapters.invokers.cli_invoker import (
     CliProviderCapability,
+    CliProviderOnboarding,
     extract_strict_stdout,
 )
 from crewplane.architecture.contracts import CommandResult, QuotaClassification
@@ -13,6 +14,7 @@ from crewplane.architecture.contracts.invocation_failures import (
 
 from .availability import check_availability
 from .command import build_command, validate_request
+from .discovery import discover, list_models
 
 __all__ = ["OLLAMA"]
 
@@ -49,4 +51,5 @@ OLLAMA = CliProviderCapability(
     failure_classifier=classify_failure,
     log_presentation_format="plain",
     check_availability=check_availability,
+    onboarding=CliProviderOnboarding(discover=discover, list_models=list_models),
 )

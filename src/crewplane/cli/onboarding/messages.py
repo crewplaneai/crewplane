@@ -41,8 +41,15 @@ def print_onboarding_intro(console: Console) -> None:
     console.print("  [cyan]crewplane validate[/]")
     console.print("  [cyan]crewplane run[/]")
     console.print("")
-    console.print("Onboarding will not start provider CLIs, make model calls,")
-    console.print("authenticate providers, or overwrite files you've edited.")
+    console.print(
+        "Selecting local loads the official Ollama plugin to discover servers and models."
+    )
+    console.print(
+        "Applying Ollama setup runs a short readiness prompt. Crewplane does not"
+    )
+    console.print(
+        "install software, start servers, authenticate providers, or overwrite edited files."
+    )
 
 
 def print_non_tty_stop(console: Console) -> None:
@@ -164,11 +171,10 @@ def print_provider_detection(
         console.print(f"   {provider.ljust(width)}   {status}")
     console.print("")
     console.print(
-        "Detection checks command and required launcher availability; it does not run providers."
+        "Built-in detection checks command and required launcher availability; it does not run providers."
     )
     console.print(
-        "It does not authenticate providers, run version commands, "
-        "check account/model access, or make model calls."
+        "The local option checks package metadata first. Selecting it inspects Ollama servers and installed models."
     )
 
 
@@ -176,7 +182,7 @@ def print_provider_choices(console: Console, providers: tuple[str, ...]) -> None
     console.print("")
     console.print("[bold]3. Provider handoff[/]")
     console.print("")
-    console.print("Crewplane found these provider CLI names on PATH:")
+    console.print("Crewplane found these provider options:")
     console.print("")
     for index, provider in enumerate(providers, start=1):
         console.print(f"  [{index}] {provider}")
@@ -194,9 +200,17 @@ def print_file_preparation_confirmation(console: Console, provider: str) -> None
         "unchanged generated defaults."
     )
     console.print("")
-    console.print(
-        f"It will not start or authenticate {provider}, or verify account/model access."
-    )
+    if "local" in provider.split(", "):
+        console.print(
+            "Ollama readiness will run 'ollama show' and a short 'Reply with OK only.' inference prompt after saving. This may load the model and use your GPU."
+        )
+        console.print(
+            "Ollama provides text generation from supplied content, without file or tool access."
+        )
+    else:
+        console.print(
+            f"It will not start or authenticate {provider}, or verify account/model access."
+        )
     console.print(
         "The generated profiles include configured provider permissions; review"
     )
@@ -261,7 +275,9 @@ def print_manual_fallback(
         "Do not leave mock options such as output_mode, seed, delay_seconds, "
         "or observation_delay_seconds under the cli invoker."
     )
-    console.print("The cli invoker expects options: {}.")
+    console.print(
+        "The cli invoker uses options: {} for built-ins, or explicit providers registrations for plugins."
+    )
     console.print("")
     console.print("Workflow provider switch:")
     console.print("```yaml")
@@ -319,14 +335,23 @@ def print_final_success(console: Console, provider: str) -> None:
     console.print("Run without the live dashboard:")
     console.print("  [cyan]crewplane run --no-live[/]")
     console.print("")
-    console.print(
-        f"Crewplane has not checked {provider.capitalize()} auth, account status, "
-        "model access, or provider settings."
-    )
-    console.print(
-        "If the provider CLI prompts, fails auth, or lacks model access, "
-        "fix that in the provider tool and rerun."
-    )
+    if "local" in provider.split(", "):
+        console.print(
+            "Ollama passed the readiness prompt. Its saved OLLAMA_HOST is reused for later runs."
+        )
+        console.print(
+            "Text-generation example: crewplane run --no-live --tasks .crewplane/workflows/example-templates/text-generation-example.task.md"
+        )
+        console.print(
+            "If a WSL host address changes, update agents.local.environment.OLLAMA_HOST in config.yml and run crewplane validate. Other providers' credentials and account access are not checked."
+        )
+    else:
+        console.print(
+            f"Crewplane has not checked {provider.capitalize()} auth, account status, model access, or provider settings."
+        )
+        console.print(
+            "If the provider CLI prompts, fails auth, or lacks model access, fix that in the provider tool and rerun."
+        )
 
 
 def print_provider_setup_link(console: Console, heading: str) -> None:

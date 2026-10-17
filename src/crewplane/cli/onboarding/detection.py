@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import metadata
 from pathlib import Path
 
 from crewplane.adapters.invokers.cli import (
@@ -37,5 +38,23 @@ def detect_providers(
         )
         detections.append(
             ProviderDetection(provider, result.available, result.diagnostic)
+        )
+    try:
+        version = metadata.version("crewplane-ollama")
+    except metadata.PackageNotFoundError:
+        detections.append(
+            ProviderDetection(
+                "local",
+                False,
+                "Install the optional crewplane-ollama package in Crewplane's Python environment to set up Ollama.",
+            )
+        )
+    else:
+        detections.append(
+            ProviderDetection(
+                "local",
+                True,
+                f"Ollama plugin {version} installed; selecting local loads its client/server discovery. Readiness is checked after configuration.",
+            )
         )
     return tuple(detections)

@@ -30,7 +30,10 @@ async def check_availability(request: CliInvocationRequest) -> None:
         ) from exc
     assert resolved.model is not None
     phase = "model lookup"
-    deadline = asyncio.timeout(PROBE_TIMEOUT_SECONDS)
+    timeout_seconds = request.config.invocation_timeout_seconds
+    if timeout_seconds is None:
+        timeout_seconds = PROBE_TIMEOUT_SECONDS
+    deadline = asyncio.timeout(timeout_seconds)
     try:
         async with deadline:
             await _probe_command(
@@ -50,7 +53,7 @@ async def check_availability(request: CliInvocationRequest) -> None:
         if isinstance(exc, TimeoutError) and not deadline.expired():
             raise
         detail = (
-            f"deadline exceeded ({PROBE_TIMEOUT_SECONDS:g}s)"
+            f"deadline exceeded ({timeout_seconds:g}s)"
             if isinstance(exc, TimeoutError)
             else str(exc)
         )

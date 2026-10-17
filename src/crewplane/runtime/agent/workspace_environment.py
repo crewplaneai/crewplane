@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -7,10 +8,32 @@ from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     InvocationContext,
 )
+from crewplane.core.agent_environment import merge_agent_environment
 from crewplane.core.workspace.git_policy import (
     workspace_git_base_environment,
     workspace_git_environment_unset_keys,
 )
+
+
+def with_agent_environment(
+    environment: Mapping[str, str],
+    controlled: ChildProcessEnvironment | None,
+    managed_workspace: bool = False,
+) -> ChildProcessEnvironment | None:
+    if not environment:
+        return controlled
+    if controlled is None:
+        return ChildProcessEnvironment(set=environment, unset=())
+    values = merge_agent_environment({}, environment)
+    unset = tuple(merge_agent_environment({}, dict.fromkeys(controlled.unset, "")))
+    if managed_workspace:
+        unset = tuple(
+            dict.fromkeys((*unset, *workspace_git_environment_unset_keys(values)))
+        )
+    for name in unset:
+        values.pop(name, None)
+    values = merge_agent_environment(values, controlled.set)
+    return ChildProcessEnvironment(set=values, unset=unset)
 
 
 def prepare_workspace_child_environment(

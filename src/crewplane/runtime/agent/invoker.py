@@ -15,7 +15,10 @@ from crewplane.core.config import AgentConfig
 from .invocation import command as invocation_command_module
 from .invocation import loop as invocation_loop_module
 from .invocation.output import cleanup_structured_output_file
-from .workspace_environment import prepare_workspace_child_environment
+from .workspace_environment import (
+    prepare_workspace_child_environment,
+    with_agent_environment,
+)
 
 
 class InvocationPlanBuilder(Protocol):
@@ -92,7 +95,12 @@ async def invoke_agent_with_runner(
             invocation_context=effective_context,
             command_runner=command_runner,
             plan=plan,
-            child_environment=effective_child_environment,
+            child_environment=with_agent_environment(
+                config.environment,
+                effective_child_environment,
+                effective_context is not None
+                and effective_context.workspace is not None,
+            ),
         )
     finally:
         cleanup_structured_output_file(plan.structured_output_file)

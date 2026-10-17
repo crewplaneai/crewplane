@@ -13,9 +13,11 @@ from crewplane.architecture.contracts import (
     QuotaClassifier,
     UsageDecoder,
 )
+from crewplane.core.agent_environment import merge_agent_environment
 from crewplane.core.config import AgentConfig, validate_provider_identifier
 
 from . import command_strategy
+from .discovery import CliProviderOnboarding
 from .failures.classifier import classify_generic_failure
 from .quota.classifier import classify_generic_quota
 
@@ -30,6 +32,13 @@ class CliInvocationRequest:
     requested_reasoning: str | None = None
     working_directory: Path | None = None
     environment: Mapping[str, str] = field(default_factory=os.environ.copy)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "environment",
+            merge_agent_environment(self.environment, self.config.environment),
+        )
 
 
 @dataclass(frozen=True)
@@ -62,6 +71,7 @@ class CliProviderCapability:
     one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
     supports_output_idle_timeout: bool = True
     check_availability: Callable[[CliInvocationRequest], Awaitable[None]] | None = None
+    onboarding: CliProviderOnboarding | None = None
 
     def __post_init__(self) -> None:
         validate_provider_identifier(self.provider_kind)

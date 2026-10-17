@@ -264,7 +264,10 @@ crewplane run --no-live --tasks .crewplane/workflows/example-templates/text-gene
 
 `crewplane validate` tests the selected model with a short prompt.
 `crewplane run` makes the same check before starting the workflow. Each model
-check has a 60-second timeout and may use GPU memory and processing time.
+check uses the agent's `invocation_timeout_seconds` for model lookup and inference
+together, with a 60-second limit when that setting is `null`. Increase the
+setting for slower hardware or model loading.
+The check may use GPU memory and processing time.
 If the server is unavailable or the model cannot answer, Crewplane reports an
 error and the workflow does not start. `--dry-run` skips the model check.
 Validation and dry-run save no run files.
@@ -320,9 +323,10 @@ quit and restart Ollama. Follow the
 Keep cloud features disabled on the Windows server.
 
 The Windows setting controls where Ollama accepts connections. The WSL setting
-tells the client where to find that server. Run Crewplane from the terminal
-where you set `OLLAMA_HOST`. If you launch it through an editor or agent, set the
-same value there. Use the plugin installation and provider settings shown above.
+tells the client where to find that server. If
+`agents.local.environment.OLLAMA_HOST` is set in `.crewplane/config.yml`, update
+it to the Windows server address; it overrides the shell's value. Otherwise,
+run Crewplane from the terminal where you set `OLLAMA_HOST`.
 
 ## Pi Text Mode
 

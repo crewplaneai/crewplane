@@ -103,6 +103,7 @@ settings use dotted paths in the left column.
 | Field | Description |
 | --- | --- |
 | `cli_cmd` | Provider command and its arguments, as a non-empty list. |
+| `environment` | String-to-string environment overrides for this agent's CLI. Defaults to `{}`. Applied during validation and execution; changes affect reuse of saved results. |
 | `provider_kind` | A lowercase ASCII identifier matching `[a-z][a-z0-9_-]*`. Built-ins are `claude`, `codex`, `copilot`, `gemini`, `kilo`, `pi`, `deepseek`, `opencode`, and `generic` (default). External identifiers require an explicit CLI capability registration. |
 | `default_model` | Model to use when the workflow provider omits `model`. Leave both fields unset for DeepSeek and choose its model in DeepSeek's settings. |
 | `model_arg` | Model flag for `provider_kind: generic`. Defaults to `--model`; set it to `null` to send no model flag. The built-in CLI invoker ignores it for other provider kinds and warns before the run. |
@@ -135,8 +136,15 @@ model and reasoning fields, and configure the model, credentials, and permission
 in DeepSeek. The [DeepSeek setup guide](../getting-started/provider-setup.md#deepseek-headless-mode)
 includes the required command and saved permission preset.
 
-Crewplane records command arguments in run files. Prefer environment variables
-or the provider's credential store for credentials. For recognized secret options
+Agent `environment` values override inherited process variables without changing
+Crewplane's own environment. Windows variable names are case-insensitive.
+Runtime-controlled workspace Git values and removals take precedence. Names
+must be nonblank and contain neither `=` nor NUL; values must not contain NUL.
+Use this mapping for non-secret settings such as `OLLAMA_HOST`. Values live in
+your YAML file; prefer inherited environment variables or the provider's
+credential store for credentials.
+
+Crewplane records command arguments in run files. For recognized secret options
 in `cli_cmd`, `extra_args`, or workspace setup commands, Crewplane hides the values
 in saved run files and error messages. Changes to those values still affect run
 reuse without saving the credentials themselves.

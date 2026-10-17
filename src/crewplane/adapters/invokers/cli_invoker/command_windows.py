@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from crewplane.core.agent_environment import merge_agent_environment
 from crewplane.core.config import Config
 from crewplane.core.workflow.models import WorkflowPlan
 
@@ -126,18 +127,25 @@ class WindowsCommandStrategy:
         errors = []
         for target in request_validation_targets(workflow, config):
             diagnostic = self.availability(
-                target.agent_config.cli_cmd, root, lookup
+                target.agent_config.cli_cmd,
+                root,
+                lookup,
+                merge_agent_environment(os.environ, target.agent_config.environment),
             ).diagnostic
             if diagnostic is not None:
                 errors.append(f"{target.location}: {diagnostic}")
         return errors
 
     def availability(
-        self, command: list[str], root: Path, lookup: Callable[[str], str | None]
+        self,
+        command: list[str],
+        root: Path,
+        lookup: Callable[[str], str | None],
+        environment: Mapping[str, str] | None = None,
     ) -> CommandAvailability:
         del lookup
         try:
-            resolved = resolve_command(command[0], root)
+            resolved = resolve_command(command[0], root, environment)
             prepare_windows_launcher(resolved, command[1:])
         except (OSError, ValueError) as exc:
             return CommandAvailability(False, str(exc))

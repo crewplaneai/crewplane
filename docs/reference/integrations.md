@@ -68,9 +68,9 @@ The entry name is the `provider_kind` used in agent profiles. It must match
 must name a built-in or registered provider, even if the workflow does not use it.
 
 Install the plugin in Crewplane's Python environment before configuring it.
-Crewplane loads only the plugins listed here; it does not find or install them
-automatically. Use trusted packages, since their Python code runs with
-Crewplane's permissions.
+Plugins load through explicit registration or an explicitly selected official
+onboarding recipe. Crewplane does not scan for arbitrary plugins or install
+them. Use trusted packages, since their Python code runs with Crewplane's permissions.
 
 Validation fails if a package is missing, its object cannot be loaded, or the
 object is not a valid capability with a matching `provider_kind`. Changing a
@@ -95,6 +95,10 @@ display logs, retry failures, and handle idle timeouts. Use the model supplied
 in `CliInvocationRequest.model`; ignore `model_arg`, which is for `generic` only.
 Declare compatible Crewplane versions in your package dependencies.
 
+Use `CliInvocationRequest.environment` for command resolution and availability
+probes. It contains the inherited environment with the agent's configured
+[overrides](configuration.md#agentsname) applied.
+
 #### Availability checks
 
 `check_availability` is optional and defaults to `None`. When provided, it must
@@ -104,6 +108,26 @@ value is a contract error.
 
 Crewplane checks the request and executable before calling this function during
 validation and normal runs. Dry-run and loading registrations do not call it.
+
+#### Onboarding discovery
+
+The optional `CliProviderCapability.onboarding` field accepts a
+`CliProviderOnboarding` with two async callbacks:
+
+| Callback | Result |
+| --- | --- |
+| `discover(request)` | `CliProviderDiscovery`: command tuple, endpoint choices, and diagnostics. Each `CliDiscoveredEndpoint` has a label and environment overrides. |
+| `list_models(request, endpoint)` | `CliDiscoveredModels`: model names and diagnostics. |
+
+`CliDiscoveryRequest` supplies the project root, environment, executable lookup,
+and a positive, finite `timeout_seconds` budget (default `15`). Callbacks own
+read-only discovery within that budget and cleanup on cancellation. They must
+not install software, start servers, or make inference requests. Empty command,
+endpoint, or model collections prevent setup from being applied.
+
+Only explicitly selected official recipes (currently Ollama) use discovery;
+registration, validation, dry-run, and execution do not invoke it. The CLI owns
+selection and configuration writes.
 
 #### Files, processes, and cancellation
 

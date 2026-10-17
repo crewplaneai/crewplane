@@ -19,6 +19,7 @@ from crewplane.core.config import validate_provider_identifier
 
 from .capabilities import CAPABILITIES
 from .capability import CliProviderCapability
+from .discovery import CliProviderOnboarding
 
 _BUILTIN_NAMES = frozenset(kind.value for kind in ProviderKind)
 _REFERENCE = re.compile(
@@ -176,6 +177,13 @@ def _validate_capability(identifier: str, capability: CliProviderCapability) -> 
         raise ValueError("supports_output_idle_timeout must be a bool")
     if capability.one_shot_failure_retry is not None:
         _validate_retry_policy(capability.one_shot_failure_retry)
+    if capability.onboarding is not None:
+        if not isinstance(capability.onboarding, CliProviderOnboarding):
+            raise ValueError("onboarding must be a CliProviderOnboarding or None")
+        if not callable(capability.onboarding.discover) or not callable(
+            capability.onboarding.list_models
+        ):
+            raise ValueError("onboarding callbacks must be callable")
 
 
 def _validate_retry_policy(policy: OneShotFailureRetryPolicy) -> None:

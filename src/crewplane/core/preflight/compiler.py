@@ -412,10 +412,12 @@ def _raw_agent_config_value(
     if agent_name is None:
         return False, None
     relative_path = path.removeprefix(f"{_AGENT_CONFIG_PATH_PREFIX}{agent_name}.")
-    return _value_at_path(
-        runtime_snapshot.raw_agents.get(agent_name),
-        relative_path.split("."),
+    parts = (
+        relative_path.split(".", 1)
+        if relative_path.startswith("environment.")
+        else relative_path.split(".")
     )
+    return _value_at_path(runtime_snapshot.raw_agents.get(agent_name), parts)
 
 
 def _raw_workspace_setup_profile_value(

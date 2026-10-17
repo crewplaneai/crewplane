@@ -11,8 +11,8 @@ def validate_known_providers(providers: tuple[str, ...]) -> None:
     if not providers:
         raise OnboardingRenderingError("Select at least one provider.")
     for provider in providers:
-        if provider not in KNOWN_PROVIDER_NAMES:
-            names = ", ".join(KNOWN_PROVIDER_NAMES)
+        if provider not in (*KNOWN_PROVIDER_NAMES, "local"):
+            names = ", ".join((*KNOWN_PROVIDER_NAMES, "local"))
             raise OnboardingRenderingError(
                 f"Unknown provider '{provider}'. Expected {names}."
             )

@@ -4,6 +4,7 @@ import asyncio
 import copy
 import importlib.metadata
 import json
+import socket
 import sys
 from functools import partial
 from pathlib import Path
@@ -14,6 +15,7 @@ from rich.console import Console
 
 import crewplane
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
+from crewplane.adapters.invokers.cli_invoker import CliDiscoveryRequest
 from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import Config
@@ -27,6 +29,20 @@ def rejects(action, match):
         assert match in str(exc), str(exc)
     else:
         raise AssertionError(f"Expected rejection: {match}")
+
+
+async def check_installed_discovery():
+    onboarding = crewplane_ollama.OLLAMA.onboarding
+    assert onboarding is not None
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        endpoint = f"http://127.0.0.1:{reserved.getsockname()[1]}"
+        request = CliDiscoveryRequest(Path.cwd(), {"OLLAMA_HOST": endpoint}, {}.get, 10)
+        result = await onboarding.discover(request)
+    assert result.endpoints == ()
+    assert any("ConnectError" in item for item in result.diagnostics), (
+        result.diagnostics
+    )
 
 
 def main():
@@ -117,6 +133,7 @@ def main():
     assert "crewplane>=0.3.8" in actual.requires
     assert any(str(item) == "crewplane_ollama/py.typed" for item in actual.files)
     assert crewplane_ollama.OLLAMA.provider_kind == "ollama"
+    asyncio.run(check_installed_discovery())
     actual_options = adapter.canonicalize_options(
         "cli",
         "cli",

@@ -23,6 +23,7 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.version import SCHEMA_VERSION
 
+from .agent_environment import validate_agent_environment
 from .provider_names import normalize_provider_name
 from .token_budget import TokenBudgetSettings
 from .workflow.keywords import (
@@ -112,6 +113,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str]
+    environment: dict[str, str] = Field(default_factory=dict)
     provider_kind: ProviderIdentifier = ProviderKind.GENERIC.value
     default_model: str | None = None
 
@@ -197,6 +199,11 @@ class AgentConfig(BaseModel):
         if value is not None and value <= 0:
             raise ValueError("invocation timeout values must be greater than 0")
         return value
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, value: dict[str, str]) -> dict[str, str]:
+        return validate_agent_environment(value)
 
     def get_command(self) -> list[str]:
         return list(self.cli_cmd)

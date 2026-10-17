@@ -7,9 +7,11 @@ Install this distribution alongside Crewplane 0.3.8+ in the same Python 3.13+
 environment. See [provider setup](../../docs/getting-started/provider-setup.md#local-ollama-text-generation)
 for package installation, server configuration, and the bundled text-generation
 example. Generated configs include a commented `local` agent and plugin
-registration; enable both after installation and choose a downloaded model.
-This package exports `crewplane_ollama:OLLAMA`; it is loaded only when registered
-under `settings.integrations.invoker.options.providers.ollama`.
+registration; enable both manually or follow the
+[onboarding walkthrough](../../docs/getting-started/quickstart.md#5-onboard-a-provider).
+This package exports `crewplane_ollama:OLLAMA`; it is loaded when explicitly
+selected in onboarding or registered under
+`settings.integrations.invoker.options.providers.ollama`.
 
 ## CLI contract
 
@@ -40,7 +42,8 @@ ordinary retries, wall-clock timeouts, and output-idle timeouts still apply.
 ## Availability and limits
 
 Validation and real-run preflight probe model presence followed by diagnostic
-inference under one 60-second deadline. Both use the fully resolved executable,
+inference under one deadline from the agent's `invocation_timeout_seconds`, or
+60 seconds when it is `null`. Both use the fully resolved executable,
 the same server environment, and the fixed prompt `Reply with OK only.`. Probe
 captures are deleted after consumption; cancellation awaits shared process
 cleanup. Dry-run does not probe.

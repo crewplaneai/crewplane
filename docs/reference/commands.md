@@ -129,10 +129,16 @@ config by hand. The command checks generated config and workflow files, detects
 supported provider CLIs on `PATH`, prompts for one or more providers, updates unchanged
 generated defaults, and validates the result.
 
-It does not authenticate provider tools, verify account or model access, or run
-providers. If `.crewplane/` or generated files are missing, it may offer a
-confirmed, non-overwriting init recovery step. There are no command-specific
-options in v1.
+The command does not install provider software or authenticate providers.
+If `.crewplane/` or generated files are missing, it may offer a
+confirmed, non-overwriting init recovery step.
+
+For provider selection and readiness checks, follow the
+[quickstart onboarding step](../getting-started/quickstart.md#5-onboard-a-provider).
+
+| Option | Description |
+| --- | --- |
+| `--discovery-timeout SECONDS` | Time budget in seconds for each local provider discovery phase. Must be positive and finite. Defaults to `15`. |
 
 ## `crewplane validate`
 

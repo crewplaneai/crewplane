@@ -69,7 +69,10 @@ implementation and supplying distribution; import names do not establish
 distribution identity. Require installed distribution metadata, validate the
 exported contract, and match its declared identity to the registration before use.
 
-Load only configured plugins. Unknown identifiers, missing packages, import
+Load only configured plugins, or an official onboarding recipe explicitly
+selected by the user to prepare that configuration. Onboarding may check known
+package metadata before selection; it must not import arbitrary installed
+packages. Unknown identifiers, missing packages, import
 failures, invalid exports, and identity mismatches fail explicitly before
 invocation; never substitute a generic or alternate implementation. Each
 configured host binds an immutable registration set without mutating the global
@@ -110,6 +113,12 @@ registration resolution. Validation and real-run preflight await these checks
 for the effective request, including workflow overrides. Canonicalization and
 dry-run perform no probes; validation and dry-run allocate no run artifacts.
 
+Optional onboarding discovery also belongs to the invoker boundary. Discovery
+is read-only and bounded; the CLI owns choices and configuration writes.
+Selected endpoint settings become explicit agent environment values, shared by
+validation and execution and included in existing execution signatures. Runtime
+must not rediscover or silently substitute endpoints.
+
 Checks use bounded, supervised work and finish owned cleanup before returning
 or propagating cancellation. Unresolved cleanup remains an explicit failure
 with diagnostic evidence.
@@ -128,7 +137,7 @@ version, compatibility adapter, migration layer, or parallel legacy API.
 
 ## Non-Goals
 
-- Automatic discovery, a plugin marketplace or installer, hot reload, or runtime
+- Automatic discovery of arbitrary plugin packages, a plugin marketplace or installer, hot reload, or runtime
   dependency negotiation.
 - General-purpose workflow hooks, new node types, or hidden cross-node state.
 - Provider provisioning, daemon management, or external resource scheduling.

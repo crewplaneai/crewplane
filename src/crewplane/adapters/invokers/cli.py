@@ -150,7 +150,10 @@ class CliInvokerAdapter:
             if (
                 capability.check_availability is None
                 or not strategy.availability(
-                    request.config.cli_cmd, project_root, lookup
+                    request.config.cli_cmd,
+                    project_root,
+                    lookup,
+                    request.environment if request.config.environment else None,
                 ).available
             ):
                 continue

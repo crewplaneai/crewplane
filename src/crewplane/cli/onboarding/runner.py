@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
-from crewplane.core.config import Config, load_config
+from crewplane.adapters.invokers.cli_invoker import (
+    DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    CliDiscoveryRequest,
+)
+from crewplane.core.config import AgentConfig, Config, load_config
 from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME
@@ -26,6 +31,7 @@ from .constants import (
 )
 from .detection import ProviderDetection, detect_providers
 from .history import find_successful_mock_run_evidence
+from .plugin_setup import prepare_local_agent
 from .rendering import (
     OnboardingRenderingError,
     render_provider_ready_config,
@@ -48,6 +54,7 @@ class OnboardingOptions:
     read_input: ReadInput
     which_fn: WhichFunction
     write_text: TextWriter
+    discovery_timeout_seconds: float = DEFAULT_DISCOVERY_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -68,9 +75,14 @@ class OnboardingProjectState:
     default_workflow: str
 
 
-def run_onboarding_command() -> None:
-    console = Console()
-    run_onboarding(default_onboarding_options(console))
+def run_onboarding_command(
+    discovery_timeout_seconds: float = DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+) -> None:
+    options = replace(
+        default_onboarding_options(Console()),
+        discovery_timeout_seconds=discovery_timeout_seconds,
+    )
+    run_onboarding(options)
 
 
 def default_onboarding_options(console: Console) -> OnboardingOptions:
@@ -101,6 +113,7 @@ class OnboardingRunner:
     def __init__(self, options: OnboardingOptions) -> None:
         self.options = options
         self.console = options.console
+        self.local_agent: AgentConfig | None = None
 
     def run(self) -> None:
         messages.print_title(self.console)
@@ -204,6 +217,23 @@ class OnboardingRunner:
     def apply_provider_handoff(
         self, providers: tuple[str, ...], project_state: OnboardingProjectState
     ) -> bool:
+        if "local" in providers:
+            self.local_agent = prepare_local_agent(
+                CliDiscoveryRequest(
+                    self.options.project_root,
+                    os.environ.copy(),
+                    self.options.which_fn,
+                    self.options.discovery_timeout_seconds,
+                ),
+                self.console,
+                self.prompt_raw,
+            )
+            if self.local_agent is None:
+                messages.print_no_files_changed(self.console)
+                return False
+            self.console.print(
+                f"Selected local model: {self.local_agent.default_model}", markup=False
+            )
         if not self.confirm_file_preparation(", ".join(providers)):
             messages.print_declined_changes(self.console)
             return False
@@ -359,7 +389,9 @@ class OnboardingRunner:
         ):
             return None
         try:
-            config_text = render_provider_ready_config(default_config, providers)
+            config_text = render_provider_ready_config(
+                default_config, providers, self.local_agent
+            )
             workflow_text = render_provider_ready_workflow(default_workflow, providers)
         except OnboardingRenderingError as exc:
             messages.print_manual_fallback(self.console, providers, str(exc))

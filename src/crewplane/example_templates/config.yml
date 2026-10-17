@@ -27,6 +27,8 @@ agents:
   # local:
   #   cli_cmd: ["ollama", "run"]
   #   provider_kind: "ollama"
+  #   environment:
+  #     OLLAMA_HOST: "http://127.0.0.1:11434"
   #   prompt_transport: "stdin"
   #   default_model: "<installed-local-text-model>"
   #   invocation_timeout_seconds: 900
