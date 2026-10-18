@@ -174,16 +174,18 @@ Install your AI tools before onboarding, and sign in if they require an account.
 For providers such as Codex and Claude, Crewplane checks that their commands
 are available; it does not check your account or access to a particular model.
 
-Onboarding leaves files you have edited unchanged. It also leaves your
-settings unchanged if you have already switched from mock mode to real
-providers. It updates only the starter workflow; extra examples keep their
-own provider choices.
+When switching from mock mode, onboarding updates only starter files you
+haven't edited. Extra examples keep their own provider choices.
 
-For Ollama, start your server first. Select Ollama, choose a server and a
-downloaded model, then confirm. The list includes only models that generate
-text locally. Crewplane saves your choices in `.crewplane/config.yml` and sends
-a short test prompt to check that the model works. This may load the model
-into memory and use your graphics card.
+For Ollama, start your server, then select Ollama, a server, and a downloaded
+text model. Crewplane saves your choices in `.crewplane/config.yml` and tests
+the model with a short prompt. This may load the model into memory and use
+your graphics card.
+
+If you already use real providers, rerun `crewplane onboarding` to add or
+update the Ollama connection, even if you've edited your settings. Your
+workflows and existing model choice stay the same. This setup skips the model
+test; run `crewplane validate` on a workflow that uses `local` to check it.
 
 By default, Crewplane looks for Ollama on the same computer. In Windows
 Subsystem for Linux (WSL), it also checks for an Ollama server running in

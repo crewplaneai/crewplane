@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from yaml import YAMLError
 
 from crewplane.adapters.invokers.cli_invoker import (
     DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
@@ -33,6 +34,7 @@ from .constants import (
 )
 from .detection import ProviderDetection, ProviderStatus, detect_providers
 from .history import find_successful_mock_run_evidence
+from .local_connection import configure_local_connection
 from .plugin_setup import LocalSetupFailure, prepare_local_agent
 from .rendering import (
     OnboardingRenderingError,
@@ -140,6 +142,18 @@ class OnboardingRunner:
         if not self.is_interactive():
             messages.print_non_tty_stop(self.console)
             return None
+        if self.path(CONFIG_RELATIVE_PATH).is_file():
+            try:
+                config = load_config(self.path(CONFIG_RELATIVE_PATH))
+            except (OSError, ValueError, TypeError, YAMLError):
+                # The initialization path below reports invalid configs.
+                config = None
+            if config is not None and uses_cli_invoker(config):
+                if not configure_local_connection(
+                    self.options, self.prompt_raw, self.confirm
+                ):
+                    self.print_existing_cli_config_stop(rendered_default_workflow())
+                return None
         if not self.ensure_generated_files():
             return None
 

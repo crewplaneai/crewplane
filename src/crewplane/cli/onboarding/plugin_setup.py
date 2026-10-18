@@ -27,7 +27,10 @@ class LocalSetupFailure(StrEnum):
 
 
 def prepare_local_agent(
-    request: CliDiscoveryRequest, console: Console, prompt: Callable[[str], str]
+    request: CliDiscoveryRequest,
+    console: Console,
+    prompt: Callable[[str], str],
+    existing: AgentConfig | None = None,
 ) -> AgentConfig | LocalSetupFailure:
     """Load only the selected official recipe; plugin callbacks own discovery."""
     console.print("Inspecting Ollama clients and servers (read-only checks)...")
@@ -56,6 +59,13 @@ def prepare_local_agent(
             return LocalSetupFailure.CANCELLED
         endpoint = discovery.endpoints[index]
         console.print(f"Selected endpoint: {endpoint.label}", markup=False)
+        if existing is not None:
+            return existing.model_copy(
+                update={
+                    "cli_cmd": [discovery.command[0], *existing.cli_cmd[1:]],
+                    "environment": {**existing.environment, **endpoint.environment},
+                }
+            )
         available = run_discovery_callback(
             partial(onboarding.list_models, request, endpoint)
         )

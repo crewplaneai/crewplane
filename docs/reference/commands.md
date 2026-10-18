@@ -125,9 +125,13 @@ crewplane onboarding
 
 Use this after `crewplane init`, `crewplane validate`, and a mock
 `crewplane run` when you want to connect real providers without editing
-config by hand. The command checks generated config and workflow files, detects
-supported provider CLIs on `PATH`, prompts for one or more providers, updates unchanged
-generated defaults, and validates the result.
+config by hand. For the generated mock setup, the command checks config and
+workflow files, detects supported provider CLIs on `PATH`, prompts for one or
+more providers, updates unchanged generated defaults, and validates the result.
+
+For projects already using CLI providers, onboarding offers Ollama connection
+setup without changing workflows. After saving, run `crewplane validate` on a
+workflow that uses `local` to check the model.
 
 The command does not install provider software or authenticate providers.
 If `.crewplane/` or generated files are missing, it may offer a
