@@ -54,7 +54,8 @@ def test_ci_package_smoke_and_typechecks_precede_artifact_upload() -> None:
     inspection = next(
         i
         for i, step in enumerate(steps)
-        if "python -m zipfile --test dist/*.whl" in step.get("run", "")
+        if 'for wheel in dist/*.whl; do python -m zipfile --test "$wheel"; done'
+        in step.get("run", "")
     )
     upload = next(
         i
@@ -340,7 +341,7 @@ def test_testpypi_checks_full_suite_and_installed_artifact_before_upload() -> No
         for i, command in enumerate(commands)
         if "scripts/run_tests.py --profile testpypi" in command
     )
-    build = commands.index("uv build")
+    build = commands.index("make package-build")
     acceptance = next(
         i
         for i, command in enumerate(commands)

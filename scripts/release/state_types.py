@@ -191,11 +191,11 @@ class ReleaseContext:
 
     @property
     def sdist_filename(self) -> str:
-        return f"{self.package_name}-{self.version.python}.tar.gz"
+        return f"{self.package_name.replace('-', '_')}-{self.version.python}.tar.gz"
 
     @property
     def wheel_filename(self) -> str:
-        return f"{self.package_name}-{self.version.python}-py3-none-any.whl"
+        return f"{self.package_name.replace('-', '_')}-{self.version.python}-py3-none-any.whl"
 
     @property
     def npm_filename(self) -> str:

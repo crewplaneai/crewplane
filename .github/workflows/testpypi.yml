@@ -42,7 +42,7 @@ jobs:
         run: uv run --locked --extra dev python scripts/run_tests.py --profile testpypi
 
       - name: Build package
-        run: uv build
+        run: make package-build
 
       - name: Verify wheel metadata
         run: uv run --locked --extra dev twine check dist/*

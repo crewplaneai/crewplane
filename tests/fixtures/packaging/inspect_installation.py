@@ -2,6 +2,8 @@ import importlib.metadata as metadata
 import json
 import sys
 
+import crewplane_ollama
+
 import crewplane
 from crewplane.cli import templates
 from crewplane.version import SCHEMA_VERSION
@@ -10,6 +12,8 @@ print(
     json.dumps(
         {
             "origin": crewplane.__file__,
+            "ollama_origin": crewplane_ollama.__file__,
+            "ollama_version": metadata.version("crewplane-ollama"),
             "prefix": sys.prefix,
             "version": metadata.version("crewplane"),
             "interpreter": sys.executable,

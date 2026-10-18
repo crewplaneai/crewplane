@@ -153,7 +153,7 @@ jobs:
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile windows
 
       - name: Build installed-wheel fixtures
-        run: uv build
+        run: uv run --locked --extra dev python scripts/release.py package-build
 
       - name: Smoke-test pip installation outside checkout
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
@@ -209,7 +209,7 @@ jobs:
       - name: Inspect dist
         run: |
           ls -la dist
-          python -m zipfile --test dist/*.whl
+          for wheel in dist/*.whl; do python -m zipfile --test "$wheel"; done
           uv run --locked --extra dev twine check dist/*
 
       - name: Upload dist artifact

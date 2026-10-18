@@ -50,7 +50,7 @@ jobs:
 
       - name: Build Windows wheel
         if: ${{ runner.os == 'Windows' }}
-        run: uv build
+        run: uv run --locked --extra dev python scripts/release.py package-build
 
       - name: Smoke-test installed Windows wheels
         shell: pwsh

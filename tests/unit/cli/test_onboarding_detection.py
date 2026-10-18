@@ -46,9 +46,11 @@ def test_missing_ollama_package_has_installation_guidance(tmp_path, monkeypatch)
 def test_detection_finds_opencode_without_launch(tmp_path, present) -> None:
     found = {"opencode": "/test/opencode"} if present else {}
     detections = detect_providers(rendered_default_config(), tmp_path, found.get)
-    assert [item.provider for item in detections if item.available] == (
-        ["opencode"] if present else []
-    )
+    assert [
+        item.provider
+        for item in detections
+        if item.available and item.provider != "local"
+    ] == (["opencode"] if present else [])
 
 
 @pytest.mark.parametrize(
@@ -69,9 +71,11 @@ def test_detection_requires_dsh_from_the_generated_deepseek_command(
         *known_provider_names(),
         "local",
     )
-    assert [item.provider for item in detections if item.available] == (
-        ["deepseek"] if "dsh" in found else []
-    )
+    assert [
+        item.provider
+        for item in detections
+        if item.available and item.provider != "local"
+    ] == (["deepseek"] if "dsh" in found else [])
 
 
 def test_detection_preserves_existing_family_executable_lookups(tmp_path) -> None:
@@ -79,7 +83,11 @@ def test_detection_preserves_existing_family_executable_lookups(tmp_path) -> Non
         name: f"/test/{name}" for name in known_provider_names() if name != "deepseek"
     }
     detections = detect_providers(rendered_default_config(), tmp_path, found.get)
-    assert {item.provider for item in detections if item.available} == set(found)
+    assert {
+        item.provider
+        for item in detections
+        if item.available and item.provider != "local"
+    } == set(found)
 
 
 @requires_posix
@@ -92,4 +100,8 @@ def test_detection_uses_profile_command_edits_and_env_search_context(tmp_path) -
         'cli_cmd: ["pi"]', "cli_cmd: [env, -C, native, PATH=., renamed-pi]"
     )
     detections = detect_providers(profile, tmp_path, {"env": "/usr/bin/env"}.get)
-    assert [item.provider for item in detections if item.available] == ["pi"]
+    assert [
+        item.provider
+        for item in detections
+        if item.available and item.provider != "local"
+    ] == ["pi"]

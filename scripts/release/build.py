@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from .plugins import release_plugins
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
     MANIFEST_PATH,
@@ -82,11 +83,21 @@ def build_release_artifacts(
     wheel = context.root / "dist" / context.wheel_filename
     ensure_file(sdist)
     ensure_file(wheel)
-    return {
+    artifacts = {
         "pypi_sdist": artifact_identity(sdist, context.root, "pypi_sdist"),
         "pypi_wheel": artifact_identity(wheel, context.root, "pypi_wheel"),
         "npm_tarball": artifact_identity(npm_artifact, context.root, "npm_tarball"),
     }
+    for plugin in release_plugins(context):
+        for kind, filename in (
+            ("sdist", plugin.context.sdist_filename),
+            ("wheel", plugin.context.wheel_filename),
+        ):
+            key = plugin.artifact_key(kind)
+            artifacts[key] = artifact_identity(
+                context.root / "dist" / filename, context.root, key
+            )
+    return artifacts
 
 
 def build_python_artifacts(context: ReleaseContext, runner: CommandRunner) -> None:
@@ -104,14 +115,34 @@ def build_python_artifacts(context: ReleaseContext, runner: CommandRunner) -> No
         timeout=COMMAND_TIMEOUT_SECONDS,
     )
 
+    for plugin in release_plugins(context):
+        runner.run(
+            [
+                sys.executable,
+                "-m",
+                "build",
+                "--sdist",
+                "--wheel",
+                "--outdir",
+                str(context.root / "dist"),
+                str(plugin.source),
+            ],
+            cwd=context.root,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+
 
 def run_twine_check(context: ReleaseContext, runner: CommandRunner) -> None:
-    sdist = context.root / "dist" / context.sdist_filename
-    wheel = context.root / "dist" / context.wheel_filename
-    ensure_file(sdist)
-    ensure_file(wheel)
+    packages = [context, *(plugin.context for plugin in release_plugins(context))]
+    artifacts = [
+        context.root / "dist" / filename
+        for package in packages
+        for filename in (package.sdist_filename, package.wheel_filename)
+    ]
+    for artifact in artifacts:
+        ensure_file(artifact)
     runner.run(
-        [sys.executable, "-m", "twine", "check", str(sdist), str(wheel)],
+        [sys.executable, "-m", "twine", "check", *map(str, artifacts)],
         cwd=context.root,
     )
 
@@ -139,6 +170,12 @@ def build_wheelhouse(context: ReleaseContext, runner: CommandRunner) -> None:
     wheelhouse.mkdir(parents=True, exist_ok=True)
     wheel = context.root / "dist" / context.wheel_filename
     ensure_file(wheel)
+    plugins = release_plugins(context)
+    plugin_wheels = [
+        str(context.root / "dist" / plugin.context.wheel_filename) for plugin in plugins
+    ]
+    for plugin_wheel in plugin_wheels:
+        ensure_file(Path(plugin_wheel))
     if command_exists("uv"):
         requirements = context.root / ".release" / "runtime-requirements.txt"
         runner.run(
@@ -148,6 +185,11 @@ def build_wheelhouse(context: ReleaseContext, runner: CommandRunner) -> None:
                 "--frozen",
                 "--no-dev",
                 "--no-emit-project",
+                *[
+                    arg
+                    for plugin in plugins
+                    for arg in ("--no-emit-package", plugin.context.package_name)
+                ],
                 "--no-hashes",
                 "--format",
                 "requirements.txt",
@@ -166,13 +208,15 @@ def build_wheelhouse(context: ReleaseContext, runner: CommandRunner) -> None:
                 "-r",
                 str(requirements),
                 str(wheel),
+                *plugin_wheels,
             ],
             cwd=context.root,
             timeout=COMMAND_TIMEOUT_SECONDS,
         )
         return
     runner.run(
-        pip_download_command() + ["download", "--dest", str(wheelhouse), str(wheel)],
+        pip_download_command()
+        + ["download", "--dest", str(wheelhouse), str(wheel), *plugin_wheels],
         cwd=context.root,
         timeout=COMMAND_TIMEOUT_SECONDS,
     )
@@ -244,7 +288,7 @@ def bind_release_manifest(
     if read_clean_source_commit(context.root, runner) != source_commit:
         raise ReleaseError("release source commit changed during validation")
     issues = verify_local_manifest_artifacts(
-        context, manifest, ("pypi_sdist", "pypi_wheel", "npm_tarball")
+        context, manifest, tuple(manifest.artifacts)
     )
     if issues:
         raise ReleaseError(

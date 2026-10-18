@@ -9,6 +9,7 @@ from typing import Any
 from packaging.markers import InvalidMarker, Marker
 from packaging.version import InvalidVersion, Version
 
+from .plugins import release_plugins
 from .state_types import (
     ArtifactIdentity,
     CommandRunner,
@@ -528,6 +529,9 @@ def required_homebrew_resources(context: ReleaseContext) -> set[str]:
     build_roots = lock_backed_build_roots(context, packages)
     names = collect_transitive_lock_dependencies(packages, runtime_roots | build_roots)
     names.discard(context.package_name)
+    names.difference_update(
+        plugin.context.package_name for plugin in release_plugins(context)
+    )
     return names
 
 
@@ -723,6 +727,8 @@ def verify_present_pypi_artifacts(
         remote = release.files.get(artifact.filename)
         if remote is None:
             continue
+        if remote.yanked:
+            issues.append(f"PyPI artifact is yanked: {artifact.filename}")
         if remote.sha256 != artifact.sha256:
             issues.append(f"PyPI hash mismatch for {artifact.filename}")
         if remote.size and remote.size != artifact.size:

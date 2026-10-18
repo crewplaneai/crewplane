@@ -10,7 +10,7 @@ Accepted
 
 ## Decision
 
-Support separately installed Python plugins through explicit configuration at
+Support separately packaged Python plugins through explicit configuration at
 existing extension boundaries. Plugins implement documented public contracts;
 the component that owns each contract validates and loads its implementations.
 Adapter-hosted plugins can compose with built-in behavior without changes to
@@ -81,6 +81,10 @@ built-in registry.
 Plugins are installed into Crewplane's Python environment. Imports execute
 trusted Python code and must be free of side effects by contract. Registration
 validation is not a sandbox or a package provenance guarantee.
+
+The official Ollama package is a required dependency of standard Crewplane
+installs. Installation does not activate it: selection or explicit registration
+still controls loading, and the user owns the Ollama server and models.
 
 ### Canonical Identity And Reuse
 

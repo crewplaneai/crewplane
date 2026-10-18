@@ -162,9 +162,9 @@ crewplane onboarding
 The command guides you through setup:
 
 - Looks for supported AI commands your terminal can run.
-- Offers Ollama when its official plugin is installed; see
-  [Ollama installation](provider-setup.md#local-ollama-text-generation) for what
-  you need to install first.
+- Offers Ollama through its included plugin; see
+  [Ollama setup](provider-setup.md#local-ollama-text-generation) for server and
+  model prerequisites.
 - Asks you to choose at least one provider by entering numbers separated by
   commas, such as `1,2`.
 - Updates the starter settings and workflow to use your chosen providers, then
@@ -179,7 +179,7 @@ settings unchanged if you have already switched from mock mode to real
 providers. It updates only the starter workflow; extra examples keep their
 own provider choices.
 
-For Ollama, start your server first. Select `local`, choose a server and a
+For Ollama, start your server first. Select Ollama, choose a server and a
 downloaded model, then confirm. The list includes only models that generate
 text locally. Crewplane saves your choices in `.crewplane/config.yml` and sends
 a short test prompt to check that the model works. This may load the model

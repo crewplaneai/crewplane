@@ -168,6 +168,12 @@ def release_check(root: Path, runner: CommandRunner) -> int:
     formula = read_formula_state(context)
     git = inspect_git_state(context, runner)
     state = derive_release_state(context, pypi, npm, formula, git, manifest)
+    if pypi.exists:
+        plugin_issues = publish.plugin_publication_issues(context, manifest)
+        if plugin_issues:
+            raise ReleaseError(
+                "Plugin publication is incomplete: " + "; ".join(plugin_issues)
+            )
     print_state(state)
     if state.status == ReleaseStatus.COMPLETE:
         print(

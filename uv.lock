@@ -283,6 +283,7 @@ version = "0.3.8"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "crewplane-ollama" },
     { name = "markdown-it-py" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -313,6 +314,7 @@ stress = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.3" },
     { name = "click", specifier = ">=8.0.0" },
+    { name = "crewplane-ollama", editable = "plugins/crewplane-ollama" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1,<1" },
     { name = "markdown-it-py", specifier = ">=4.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18" },
@@ -332,6 +334,21 @@ requires-dist = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 provides-extras = ["dev", "stress"]
+
+[[package]]
+name = "crewplane-ollama"
+version = "0.1.0"
+source = { editable = "plugins/crewplane-ollama" }
+dependencies = [
+    { name = "crewplane" },
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crewplane", specifier = ">=0.3.8" },
+    { name = "httpx", specifier = ">=0.28.1,<1" },
+]
 
 [[package]]
 name = "cryptography"

@@ -136,7 +136,9 @@ Operational notes:
   environment under `Settings -> Environments`, then register a free pending
   publisher at <https://test.pypi.org/manage/account/publishing/> with project
   `crewplane`, owner `crewplaneai`, repository `crewplane`, workflow
-  `testpypi.yml`, and environment `testpypi`. No repository secret is required.
+  `testpypi.yml`, and environment `testpypi`. Register the same publisher for
+  `crewplane-ollama`, which is uploaded by the same workflow. No repository
+  secret is required.
 
 ## Cleanup and Deletion
 
@@ -212,7 +214,12 @@ the newest stable release. Publishing the tested bottles remains a manual
 ### 1. Prepare and validate
 
 Update the version in `pyproject.toml` and add its section to `CHANGELOG.md`
-with any notable user-facing changes. Review the changelog, then prepare the
+with any notable user-facing changes. When the Ollama plugin changes, also bump
+its version in `plugins/crewplane-ollama/pyproject.toml` and ensure the core
+dependency accepts it. `make setup` installs both packages from this checkout;
+run `uv lock` after changing their requirements or versions.
+
+Review the changelog, then prepare the
 release with npm installed:
 
 ```bash
@@ -239,8 +246,11 @@ Configure the PyPI and npm credentials, then run:
 make release
 ```
 
-Confirm the exact version when prompted. A successful run publishes PyPI,
-publishes npm with the `latest` dist-tag, and pushes the annotated Git tag.
+Confirm the exact version when prompted. A successful run publishes the Ollama
+plugin to PyPI before Crewplane, publishes npm with the `latest` dist-tag, and
+pushes the annotated Git tag. PyPI credentials must permit uploads to both
+projects. Existing plugin artifacts are verified and reused; changed artifacts
+require a new plugin version.
 
 For a non-interactive npm release that requires two-factor authentication, set
 `NPM_PUBLISH_OTP` or `NPM_OTP`. A separate npm `latest` recovery uses
@@ -288,9 +298,10 @@ the Git tag. Do not run `make clean` or `make release-prepare` during recovery.
 
 ### TestPyPI
 
-Use `.github/workflows/testpypi.yml` for TestPyPI Trusted Publishing. It may be
-dispatched from any selected ref and stops if that package version already
-exists on TestPyPI.
+Use `.github/workflows/testpypi.yml` for TestPyPI Trusted Publishing. It publishes
+Crewplane and its default plugins from the selected ref. Each distribution needs
+a version that has not been uploaded to TestPyPI; the workflow stops on an
+existing version.
 
 ## Module and Test Map
 
@@ -439,3 +450,9 @@ requirements above.
 isolated environment. For changes to the Ollama integration, also verify
 readiness, output handoff, failure handling, and cancellation with a live model
 on Linux and macOS.
+
+`make package-build` builds Crewplane and the default plugins declared under
+`tool.crewplane.release.plugins` into `dist/`. The core source archive includes
+their sources so Homebrew can install them in its managed environment. Install
+checks use these local wheels; release publication verifies and uploads the
+plugin distributions before the core distribution.

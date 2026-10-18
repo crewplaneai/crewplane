@@ -67,10 +67,12 @@ The entry name is the `provider_kind` used in agent profiles. It must match
 `gemini`, `kilo`, `pi`, `deepseek`, `opencode`, or `generic`. Every agent profile
 must name a built-in or registered provider, even if the workflow does not use it.
 
-Install the plugin in Crewplane's Python environment before configuring it.
+The official Ollama plugin is installed with Crewplane. Install additional
+plugins in Crewplane's Python environment before configuring them.
 Plugins load through explicit registration or an explicitly selected official
-onboarding recipe. Crewplane does not scan for arbitrary plugins or install
-them. Use trusted packages, since their Python code runs with Crewplane's permissions.
+onboarding recipe. Onboarding and workflow runs do not install packages or scan
+for arbitrary plugins. Use trusted packages, since their Python code runs with
+Crewplane's permissions.
 
 Validation fails if a package is missing, its object cannot be loaded, or the
 object is not a valid capability with a matching `provider_kind`. Changing a

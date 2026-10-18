@@ -37,6 +37,8 @@ def check_wheel(wheel: Path) -> None:
                 "pip",
                 "install",
                 "--disable-pip-version-check",
+                "--find-links",
+                str(resolved_wheel.parent),
                 str(resolved_wheel),
             ],
             check=True,

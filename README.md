@@ -165,7 +165,7 @@ crewplane run
 
 `crewplane onboarding` finds the supported provider CLIs already installed on
 your machine, lets you choose one or more, and configures Crewplane to use them.
-With the optional [Ollama plugin](docs/getting-started/provider-setup.md#local-ollama-text-generation),
+With the included [Ollama plugin](docs/getting-started/provider-setup.md#local-ollama-text-generation),
 it also discovers servers and installed text models, saves your selection, and
 runs a short readiness prompt.
 ***Crewplane does not install provider software or manage provider credentials.***

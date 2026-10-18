@@ -59,7 +59,7 @@ help:
 		'  uninstall          Uninstall the package from the active environment' \
 		'' \
 		'Package validation:' \
-		'  package-build      Build wheel and sdist into dist/' \
+		'  package-build      Build core and default plugin distributions into dist/' \
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
 		'  ollama-package-build Rebuild the Ollama wheel and sdist in its dist/' \
 		'  ollama-package-check Build and validate core and Ollama distributions' \
@@ -136,10 +136,10 @@ ollama-package-build:
 	rm -rf $(OLLAMA_PACKAGE)/dist
 	$(RUN_PYTHON) -m build --outdir $(OLLAMA_PACKAGE)/dist $(OLLAMA_PACKAGE)
 
-ollama-package-check: package-build ollama-package-build
-	$(RUN_PYTHON) -m twine check dist/* $(OLLAMA_PACKAGE)/dist/*
+ollama-package-check: package-build
+	$(RUN_PYTHON) -m twine check dist/*
 	$(RUN_PYTHON) tests/helpers/check_cli_provider_packages.py \
-		--crewplane-wheel dist/*.whl --ollama-wheel $(OLLAMA_PACKAGE)/dist/*.whl
+		--crewplane-wheel dist/crewplane-*.whl --ollama-wheel dist/crewplane_ollama-*.whl
 
 package-check:
 	$(RUN_RELEASE) package-check
@@ -148,7 +148,7 @@ package-wheelhouse:
 	$(RUN_RELEASE) package-wheelhouse
 
 wheel-typecheck:
-	$(RUN_PYTHON) scripts/check_wheel_consumer_types.py $$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)
+	$(RUN_PYTHON) scripts/check_wheel_consumer_types.py $$(find dist -maxdepth 1 -type f -name 'crewplane-*.whl' -print -quit)
 
 changelog-check:
 	$(RUN_RELEASE) changelog-check

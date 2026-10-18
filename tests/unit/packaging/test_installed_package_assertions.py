@@ -10,7 +10,15 @@ from tests.helpers import installed_package_assertions as acceptance
 
 
 @pytest.mark.parametrize(
-    "invalid", ["version", "checkout-origin", "outside-prefix", "resources"]
+    "invalid",
+    [
+        "version",
+        "checkout-origin",
+        "outside-prefix",
+        "resources",
+        "missing-plugin",
+        "plugin-checkout-origin",
+    ],
 )
 def test_acceptance_rejects_invalid_installations_before_cli_launch(
     tmp_path, monkeypatch, invalid
@@ -24,6 +32,8 @@ def test_acceptance_rejects_invalid_installations_before_cli_launch(
         "config_resource": True,
         "default_workflow_resource": True,
         "library_resources": 1,
+        "ollama_version": "0.1.0",
+        "ollama_origin": str(prefix / "crewplane_ollama/__init__.py"),
     }
     if invalid == "version":
         metadata["version"] = "0.0.0"
@@ -31,8 +41,14 @@ def test_acceptance_rejects_invalid_installations_before_cli_launch(
         metadata["origin"] = str(checkout / "src/crewplane/__init__.py")
     elif invalid == "outside-prefix":
         metadata["origin"] = str(tmp_path / "ambient/crewplane/__init__.py")
-    else:
+    elif invalid == "resources":
         metadata["library_resources"] = 0
+    elif invalid == "missing-plugin":
+        metadata["ollama_version"] = ""
+    else:
+        metadata["ollama_origin"] = str(
+            checkout / "plugins/crewplane_ollama/__init__.py"
+        )
 
     def inspect_installation(*args):
         del args

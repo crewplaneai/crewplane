@@ -3,8 +3,8 @@
 Crewplane's official Ollama plugin generates text with a local model and passes
 the answer to downstream workflow nodes through ordinary artifacts.
 
-Install this distribution alongside Crewplane 0.3.8+ in the same Python 3.13+
-environment. See [provider setup](../../docs/getting-started/provider-setup.md#local-ollama-text-generation)
+Standard Crewplane installs include this distribution in the same Python 3.13+
+environment. It requires Crewplane 0.3.8+. See [provider setup](../../docs/getting-started/provider-setup.md#local-ollama-text-generation)
 for package installation, server configuration, and the bundled text-generation
 example. Generated configs include a commented `local` agent and plugin
 registration; enable both manually or follow the
