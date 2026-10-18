@@ -36,7 +36,17 @@ def configure_local_connection(
     prompt: Callable[[str], str],
     confirm: Callable[[str, bool], bool],
 ) -> bool:
-    """Offer connection setup without requiring or changing a workflow."""
+    """Offer Ollama connection setup without reading or changing workflows.
+
+    After initial confirmation, OSError, ValueError, and YAMLError are reported
+    as handled failures unless they carry unconfirmed process cleanup evidence.
+    Other exceptions, including prompt interruptions, propagate.
+
+    Returns:
+        False if the plugin is missing or the initial offer is declined. True
+        for all handled outcomes after acceptance, including successful saves,
+        failed or cancelled setup, and a declined save.
+    """
     try:
         metadata.version("crewplane-ollama")
     except metadata.PackageNotFoundError:
@@ -47,27 +57,8 @@ def configure_local_connection(
     path = options.project_root / CONFIG_RELATIVE_PATH
     try:
         original = path.read_bytes()
-        config = load_config_mapping(original.decode("utf-8"), "existing config")
-        if not uses_cli_invoker(config):
-            raise OnboardingRenderingError(
-                "The active invoker changed; run onboarding again."
-            )
-        existing = config.agents.get("local")
-        if existing is not None and existing.provider_kind != "ollama":
-            raise OnboardingRenderingError(
-                "Agent 'local' already belongs to another provider."
-            )
-        agent = prepare_local_agent(
-            CliDiscoveryRequest(
-                options.project_root,
-                os.environ.copy(),
-                connection_executable_lookup(options, existing),
-                options.discovery_timeout_seconds,
-            ),
-            options.console,
-            prompt,
-            existing,
-        )
+        existing = _load_existing_local_agent(original)
+        agent = _prepare_connection_agent(options, prompt, existing)
         if not isinstance(agent, AgentConfig):
             messages.print_ollama_unconfigured(
                 options.console, agent == LocalSetupFailure.CANCELLED
@@ -90,9 +81,50 @@ def configure_local_connection(
     return True
 
 
+def _load_existing_local_agent(original: bytes) -> AgentConfig | None:
+    config = load_config_mapping(original.decode("utf-8"), "existing config")
+    if not uses_cli_invoker(config):
+        raise OnboardingRenderingError(
+            "The active invoker changed; run onboarding again."
+        )
+    existing = config.agents.get("local")
+    if existing is not None and existing.provider_kind != "ollama":
+        raise OnboardingRenderingError(
+            "Agent 'local' already belongs to another provider."
+        )
+    return existing
+
+
+def _prepare_connection_agent(
+    options: OnboardingOptions,
+    prompt: Callable[[str], str],
+    existing: AgentConfig | None,
+) -> AgentConfig | LocalSetupFailure:
+    return prepare_local_agent(
+        CliDiscoveryRequest(
+            options.project_root,
+            os.environ.copy(),
+            connection_executable_lookup(options, existing),
+            options.discovery_timeout_seconds,
+        ),
+        options.console,
+        prompt,
+        existing,
+    )
+
+
 def connection_executable_lookup(
     options: OnboardingOptions, existing: AgentConfig | None
 ) -> Callable[[str], str | None]:
+    """Build discovery lookup with the configured Ollama executable preferred.
+
+    With no existing agent, return options.which_fn unchanged. Otherwise, look
+    up the platform's standard Ollama name using existing.cli_cmd[0] first.
+    Resolve command paths and relative agent PATH entries against project_root;
+    an agent PATH overrides the fallback lookup for the configured command.
+    If that command is unavailable, try options.which_fn for the standard name.
+    All other executable names go directly to options.which_fn.
+    """
     if existing is None:
         return options.which_fn
     configured = existing.cli_cmd[0]
@@ -116,6 +148,22 @@ def save_local_connection(
     updated: str,
     write_text: Callable[[Path, str], None],
 ) -> None:
+    """Stage updated text and replace the config if its bytes still match.
+
+    Resolve symlinks and stage beside the resolved target, keeping the symlinks
+    intact and copying the target's current permission bits before replacement.
+    The writer must write the supplied text to the supplied temporary path;
+    this function owns replacement and temporary-file cleanup. Writer and
+    filesystem exceptions propagate.
+
+    Reject changes observed before replacement without overwriting them. This
+    optimistic comparison does not lock out concurrent writers. The temporary
+    file is removed on success or failure.
+
+    Raises:
+        OnboardingRenderingError: The target's bytes no longer match original.
+        OSError: Resolving, staging, writing, replacing, or cleanup fails.
+    """
     path = path.resolve(strict=True)
     with NamedTemporaryFile(
         dir=path.parent, prefix=".ollama-", delete=False

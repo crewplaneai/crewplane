@@ -5,6 +5,7 @@ from collections import deque
 from dataclasses import replace
 from importlib import metadata
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import typer
@@ -15,6 +16,7 @@ import crewplane.cli.app as cli
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.architecture.loader import resolve_implementation_path
 from crewplane.artifacts.naming import build_run_key_name
+from crewplane.cli import workflow_runner
 from crewplane.cli.onboarding import (
     CONFIG_RELATIVE_PATH,
     ONBOARDING_COMMAND_HELP,
@@ -23,20 +25,33 @@ from crewplane.cli.onboarding import (
     run_onboarding,
     write_text_file,
 )
+from crewplane.cli.onboarding.generated_files import GeneratedOnboardingFiles
 from crewplane.cli.onboarding.rendering import (
     render_provider_ready_config,
     render_provider_ready_workflow,
     rendered_default_config,
     rendered_default_workflow,
 )
-from crewplane.cli.onboarding.runner import OnboardingRunner, read_stdin_line
+from crewplane.cli.onboarding.runner import (
+    OnboardingRunner,
+    ProviderReadinessFailure,
+    read_stdin_line,
+)
 from crewplane.cli.project_init import initialize_project_templates
 from crewplane.cli.run.preflight import (
     compile_workflow_preview,
     raise_for_preflight_preview_errors,
 )
 from crewplane.core.config import load_config
-from crewplane.core.preflight import load_workflow_source_for_preflight
+from crewplane.core.preflight import (
+    PreflightCompilationPreview,
+    load_workflow_source_for_preflight,
+)
+from crewplane.core.preflight.diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from crewplane.core.provider_names import known_provider_names
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest, write_run_manifest
@@ -254,18 +269,18 @@ def test_generated_file_read_failure_stops_without_traceback(
     write_successful_mock_history(tmp_path)
     config_path = tmp_path / CONFIG_RELATIVE_PATH
     default_config = config_path.read_text(encoding="utf-8")
-    original_generated_files_exist = OnboardingRunner.generated_files_exist
+    original_generated_files_exist = GeneratedOnboardingFiles.generated_files_exist
 
     def generated_files_exist_then_remove_workflow(
-        runner: OnboardingRunner,
+        files: GeneratedOnboardingFiles,
     ) -> bool:
-        generated_files_exist = original_generated_files_exist(runner)
+        generated_files_exist = original_generated_files_exist(files)
         if generated_files_exist:
             (tmp_path / WORKFLOW_RELATIVE_PATH).unlink()
         return generated_files_exist
 
     monkeypatch.setattr(
-        OnboardingRunner,
+        GeneratedOnboardingFiles,
         "generated_files_exist",
         generated_files_exist_then_remove_workflow,
     )
@@ -698,6 +713,182 @@ def test_validation_failure_keeps_written_files_without_rollback(
     assert "    providers: [codex]" in (tmp_path / WORKFLOW_RELATIVE_PATH).read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.parametrize(
+    "failed_paths",
+    [
+        (),
+        (CONFIG_RELATIVE_PATH,),
+        (WORKFLOW_RELATIVE_PATH,),
+        (CONFIG_RELATIVE_PATH, WORKFLOW_RELATIVE_PATH),
+    ],
+)
+def test_file_writes_and_reports_remain_in_config_workflow_order(
+    tmp_path: Path, failed_paths: tuple[Path, ...]
+) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    stream = io.StringIO()
+    calls: list[Path] = []
+
+    def write(path: Path, content: str) -> None:
+        if calls:
+            report = "Could not update" if calls[-1] in failed_paths else "Updated"
+            assert f"{report} {calls[-1]}" in stream.getvalue()
+        calls.append(path.relative_to(tmp_path))
+        if calls[-1] in failed_paths:
+            raise OSError("write blocked")
+        write_text_file(path, content)
+
+    result = run_onboarding(
+        make_options(
+            tmp_path,
+            stream,
+            ["1", "1", ""],
+            WhichRecorder({"codex": "/usr/bin/codex"}),
+            write_text=write,
+        )
+    )
+
+    assert result is None
+    assert calls == [CONFIG_RELATIVE_PATH, WORKFLOW_RELATIVE_PATH]
+    for path in calls:
+        expected = (
+            rendered_default_config()
+            if path == CONFIG_RELATIVE_PATH
+            else rendered_default_workflow()
+        )
+        assert ((tmp_path / path).read_text(encoding="utf-8") == expected) == (
+            path in failed_paths
+        )
+    assert ("Onboarding complete." in stream.getvalue()) == (not failed_paths)
+
+
+@pytest.mark.parametrize("failed_path", [CONFIG_RELATIVE_PATH, WORKFLOW_RELATIVE_PATH])
+def test_non_os_write_errors_propagate_and_stop_remaining_writes(
+    tmp_path: Path, failed_path: Path
+) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    stream = io.StringIO()
+    calls: list[Path] = []
+    error = ValueError("writer rejected content")
+
+    def write(path: Path, content: str) -> None:
+        calls.append(path.relative_to(tmp_path))
+        if calls[-1] == failed_path:
+            raise error
+        write_text_file(path, content)
+
+    with pytest.raises(ValueError) as caught:
+        run_onboarding(
+            make_options(
+                tmp_path,
+                stream,
+                ["1", "1", ""],
+                WhichRecorder({"codex": "/usr/bin/codex"}),
+                write_text=write,
+            )
+        )
+
+    assert caught.value is error
+    assert calls == (
+        [CONFIG_RELATIVE_PATH]
+        if failed_path == CONFIG_RELATIVE_PATH
+        else [CONFIG_RELATIVE_PATH, WORKFLOW_RELATIVE_PATH]
+    )
+    assert "Validate provider-ready setup" not in stream.getvalue()
+    assert "Could not update" not in stream.getvalue()
+    assert (
+        load_config(
+            tmp_path / CONFIG_RELATIVE_PATH
+        ).settings.integrations.invoker.implementation
+        == "cli"
+    ) == (failed_path == WORKFLOW_RELATIVE_PATH)
+    assert (
+        tmp_path / WORKFLOW_RELATIVE_PATH
+    ).read_text() == rendered_default_workflow()
+
+
+@pytest.mark.parametrize(
+    ("other_code", "other_severity", "failure_type"),
+    [
+        (PreflightDiagnosticCode.PROVIDER_CLI, "error", ProviderReadinessFailure),
+        (PreflightDiagnosticCode.DAG, "error", typer.Exit),
+        (PreflightDiagnosticCode.DAG, "warning", ProviderReadinessFailure),
+    ],
+)
+def test_validation_recovers_only_when_all_errors_are_provider_checks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    other_code,
+    other_severity,
+    failure_type,
+) -> None:
+    initialize_default_project(tmp_path)
+    stream = io.StringIO()
+    runner = OnboardingRunner(make_options(tmp_path, stream, [], WhichRecorder()))
+    preview = PreflightCompilationPreview(
+        diagnostics=[
+            PreflightDiagnostic(
+                code=PreflightDiagnosticCode.PROVIDER_CLI,
+                message="provider unavailable",
+                phase=PreflightDiagnosticPhase.PROVIDER,
+            ),
+            PreflightDiagnostic(
+                code=other_code,
+                severity=other_severity,
+                message="other diagnostic",
+                phase=PreflightDiagnosticPhase.VALIDATION,
+            ),
+        ]
+    )
+    compile_preview = Mock(return_value=preview)
+    monkeypatch.setattr(workflow_runner, "compile_workflow_preview", compile_preview)
+
+    with pytest.raises(typer.Exit) as caught:
+        runner.validate_provider_ready_setup("codex")
+
+    assert type(caught.value) is failure_type
+    assert caught.value.exit_code == 1
+    assert "Saved settings for codex did not pass validation." in stream.getvalue()
+    assert "Preflight plan compiled" not in stream.getvalue()
+    arguments = compile_preview.call_args.kwargs
+    assert arguments["no_live"] is True
+    assert arguments["fingerprint_key_policy"] == "read_only"
+    assert arguments["check_cli_availability"] is True
+    assert arguments["workspace_real_execution"] is False
+    assert arguments["project_root"] == tmp_path
+    assert arguments["state_dir"] == tmp_path / ".crewplane"
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError("invalid preview"), typer.Exit(code=7), KeyboardInterrupt()]
+)
+def test_validation_preserves_exception_conversion_and_interruptions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    initialize_default_project(tmp_path)
+    stream = io.StringIO()
+    runner = OnboardingRunner(make_options(tmp_path, stream, [], WhichRecorder()))
+    monkeypatch.setattr(
+        workflow_runner, "compile_workflow_preview", Mock(side_effect=error)
+    )
+    expected_type = typer.Exit if isinstance(error, ValueError) else type(error)
+
+    with pytest.raises(expected_type) as caught:
+        runner.validate_provider_ready_setup("codex")
+
+    if isinstance(error, ValueError):
+        assert caught.value.__cause__ is error
+        assert caught.value.exit_code == 1
+        assert "Validation failed: invalid preview" in stream.getvalue()
+    else:
+        assert caught.value is error
+    assert (
+        "Saved settings for codex did not pass validation." in stream.getvalue()
+    ) == (not isinstance(error, KeyboardInterrupt))
 
 
 def run_onboarding_in_project(
