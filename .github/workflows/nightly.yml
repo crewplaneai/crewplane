@@ -111,9 +111,13 @@ jobs:
           retention-days: 7
 
   focused-race-loop:
-    name: focused race loop (ubuntu py3.13)
-    runs-on: ubuntu-latest
+    name: focused race loop (${{ matrix.os }} py3.13)
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     env:
       FOCUSED_RACE_ITERATIONS: "5"
       TZ: UTC
@@ -152,7 +156,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nightly-race
+          name: nightly-race-${{ runner.os }}
           path: test-results/
           include-hidden-files: true
           if-no-files-found: ignore

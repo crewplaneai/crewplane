@@ -369,7 +369,8 @@ constraints live in [AGENTS.md](AGENTS.md#change-guidance).
 - Mark individual tests with `@pytest.mark.race` when they exercise a specific
   concurrency or cancellation interleaving and assert the affected invariant.
   Use controlled synchronization and bounded cleanup. Run them with
-  `make test TEST_PROFILE=race`; nightly CI repeats this selection five times.
+  `make test TEST_PROFILE=race`; nightly CI repeats this selection five times on
+  Linux and native Windows with Python 3.13.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
 - Production code and typing fixtures must pass strict mypy via `make typecheck`;
   CI also validates the built wheel's public typing.

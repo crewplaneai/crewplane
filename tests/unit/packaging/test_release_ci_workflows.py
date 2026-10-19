@@ -106,7 +106,19 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
     ]
     focused = nightly["jobs"]["focused-race-loop"]
     assert focused["env"]["FOCUSED_RACE_ITERATIONS"] == "5"
-    assert shuffled["runs-on"] == focused["runs-on"] == "ubuntu-latest"
+    assert shuffled["runs-on"] == "ubuntu-latest"
+    assert focused["runs-on"] == "${{ matrix.os }}"
+    assert set(focused["strategy"]["matrix"]["os"]) == {
+        "ubuntu-latest",
+        "windows-latest",
+    }
+    assert focused["strategy"]["fail-fast"] == "false"
+    upload = next(
+        step
+        for step in focused["steps"]
+        if step.get("name") == "Upload test diagnostics"
+    )
+    assert upload["with"]["name"] == "nightly-race-${{ runner.os }}"
 
 
 @pytest.mark.parametrize("job_id", ["shuffled-suite", "focused-race-loop"])

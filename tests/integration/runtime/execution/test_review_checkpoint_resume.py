@@ -539,6 +539,7 @@ def test_invalid_remediation_keeps_boundary_observation_separate(
     asyncio.run(run())
 
 
+@pytest.mark.race
 def test_concurrent_checkpoint_publications_are_attributed_and_observation_is_uncertain(
     tmp_path: Path,
 ) -> None:
@@ -622,29 +623,42 @@ def test_concurrent_checkpoint_publications_are_attributed_and_observation_is_un
                     fast_reviewed.set()
 
         invoker = ConcurrentInvoker()
-        async with asyncio.timeout(10):
-            await asyncio.gather(
-                *(
-                    execute_sequential_stage(node, output, runtime, invoker, telemetry)
-                    for node in runtime.plan.nodes
+        try:
+            # Events establish overlap; the watchdog allows for durable Windows I/O.
+            async with asyncio.timeout(60), asyncio.TaskGroup() as stages:
+                for node in runtime.plan.nodes:
+                    stages.create_task(
+                        execute_sequential_stage(
+                            node, output, runtime, invoker, telemetry
+                        ),
+                        name=node.id,
+                    )
+            for node in runtime.plan.nodes:
+                marker = output.read_review_checkpoint(node.id)
+                assert isinstance(marker, OpenReviewCheckpoint)
+                assert (
+                    marker.next_phase == "finalize"
+                    and not marker.project_observation.reliable
                 )
+                assert (
+                    output.stages_dir / review_checkpoint_relative_path(node.id)
+                    in runtime.runtime_publications.snapshot()[0]
+                )
+            frontier = validate_resume_frontier(
+                write_manifest(output, runtime, "failed"),
+                runtime.plan,
+                observation(runtime, output),
             )
-        for node in runtime.plan.nodes:
-            marker = output.read_review_checkpoint(node.id)
-            assert isinstance(marker, OpenReviewCheckpoint)
-            assert (
-                marker.next_phase == "finalize"
-                and not marker.project_observation.reliable
+            assert not frontier.checkpoints
+        except TimeoutError as error:
+            error.add_note(
+                f"Handshake: peer started={slow_started.is_set()}, "
+                f"review completed={fast_reviewed.is_set()}; "
+                f"invocations={[(call['node_id'], call['role']) for call in invoker.calls]}; "
+                f"checkpoint nodes={sorted(runtime.review_checkpoints)}"
             )
-            assert (
-                output.stages_dir / review_checkpoint_relative_path(node.id)
-                in runtime.runtime_publications.snapshot()[0]
-            )
-        frontier = validate_resume_frontier(
-            write_manifest(output, runtime, "failed"),
-            runtime.plan,
-            observation(runtime, output),
-        )
-        assert not frontier.checkpoints
+            raise
+        finally:
+            runtime.runtime_publications.close()
 
     asyncio.run(run())

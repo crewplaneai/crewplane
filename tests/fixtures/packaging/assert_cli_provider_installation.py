@@ -4,7 +4,6 @@ import asyncio
 import copy
 import importlib.metadata
 import json
-import socket
 import sys
 from functools import partial
 from pathlib import Path
@@ -34,15 +33,35 @@ def rejects(action, match):
 async def check_installed_discovery():
     onboarding = crewplane_ollama.OLLAMA.onboarding
     assert onboarding is not None
-    with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", 0))
-        endpoint = f"http://127.0.0.1:{reserved.getsockname()[1]}"
-        request = CliDiscoveryRequest(Path.cwd(), {"OLLAMA_HOST": endpoint}, {}.get, 10)
-        result = await onboarding.discover(request)
-    assert result.endpoints == ()
-    assert any("ConnectError" in item for item in result.diagnostics), (
-        result.diagnostics
-    )
+    requests = []
+
+    async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        try:
+            header = await reader.readuntil(b"\r\n\r\n")
+            requests.append(header.split(b" ")[1])
+            writer.write(
+                b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async with asyncio.timeout(30), asyncio.TaskGroup() as connections:
+
+        def accept(reader, writer):
+            connections.create_task(respond(reader, writer))
+
+        server = await asyncio.start_server(accept, "127.0.0.1", 0)
+        async with server:
+            endpoint = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+            request = CliDiscoveryRequest(Path.cwd(), {"OLLAMA_HOST": endpoint}, {}.get)
+            result = await onboarding.discover(request)
+            assert result.endpoints == ()
+            assert any("HTTPStatusError" in item for item in result.diagnostics), (
+                result.diagnostics
+            )
+    assert requests == [b"/api/version"]
 
 
 def main():

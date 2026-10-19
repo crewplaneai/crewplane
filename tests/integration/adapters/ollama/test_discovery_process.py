@@ -3,7 +3,6 @@ import importlib
 import io
 import json
 import os
-import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -48,17 +47,40 @@ def test_discovery_worker_ignores_project_modules(
         encoding="utf-8",
     )
 
-    with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", 0))
-        endpoint = f"http://127.0.0.1:{reserved.getsockname()[1]}"
-        result = asyncio.run(
-            module.discover(
-                CliDiscoveryRequest(tmp_path, {"OLLAMA_HOST": endpoint}, {}.get)
-            )
-        )
+    async def run():
+        requests = []
 
-    assert result.endpoints == ()
-    assert any("ConnectError" in item for item in result.diagnostics)
+        async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+            try:
+                header = await reader.readuntil(b"\r\n\r\n")
+                requests.append(header.split(b" ")[1])
+                body = b'{"version":"test"}'
+                writer.write(
+                    f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+                    + body
+                )
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        async with asyncio.TaskGroup() as connections:
+
+            def accept(reader, writer):
+                connections.create_task(respond(reader, writer))
+
+            server = await asyncio.start_server(accept, "127.0.0.1", 0)
+            async with server:
+                endpoint = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+                result = await module.discover(
+                    CliDiscoveryRequest(tmp_path, {"OLLAMA_HOST": endpoint}, {}.get)
+                )
+                assert tuple(item.label for item in result.endpoints) == (endpoint,), (
+                    result.diagnostics
+                )
+        assert requests == [b"/api/version"]
+
+    asyncio.run(asyncio.wait_for(run(), 30))
     assert not marker.exists()
     assert not list(captures.iterdir())
 
