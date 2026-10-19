@@ -4,7 +4,7 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
-## [0.3.8] - Unreleased
+## [0.3.8] - 2026-10-18
 
 ### Added
 
