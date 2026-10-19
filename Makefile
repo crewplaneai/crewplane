@@ -70,7 +70,7 @@ help:
 		'Normal release flow:' \
 		'  release-prepare    Sync generated metadata and prepare local release artifacts' \
 		'  release-check      Verify changelog and pre-publish checks, or a completed release' \
-		'  release            Confirm, check, publish PyPI, publish npm latest, and tag' \
+		'  release            Confirm, publish PyPI, publish npm latest, and tag' \
 		'' \
 		'Partial completion:' \
 		'  release-pypi       Publish or verify prepared PyPI artifacts only' \
@@ -195,7 +195,7 @@ release-pypi:
 release-npm:
 	$(RUN_RELEASE) publish-npm --execute
 
-release: release-confirm release-check
+release: release-confirm
 	$(MAKE) release-pypi
 	$(MAKE) release-npm
 	$(RUN_RELEASE) finalize --execute

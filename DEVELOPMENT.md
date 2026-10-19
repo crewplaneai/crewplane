@@ -240,7 +240,8 @@ messages before continuing.
 
 ### 2. Publish packages and the Git tag
 
-Configure the PyPI and npm credentials, then run:
+After `make release-check` passes, configure the PyPI and npm credentials, then
+run:
 
 ```bash
 make release

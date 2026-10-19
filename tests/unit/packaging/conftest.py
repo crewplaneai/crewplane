@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from tests.unit.packaging.release_tool_support import loaded_release_script
+from scripts.release import retry
+from tests.unit.packaging.release_tool_support import loaded_release_script, no_op
+
+
+@pytest.fixture(autouse=True)
+def no_release_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(retry, "time", SimpleNamespace(sleep=no_op))
 
 
 @pytest.fixture

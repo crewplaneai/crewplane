@@ -6,6 +6,7 @@ from collections.abc import Callable
 from .state_types import RetryableRegistryError
 
 VERIFICATION_ATTEMPTS = 24
+FIRST_CHECK_DELAY_SECONDS = 10
 INITIAL_DELAY_SECONDS = 2
 MAX_DELAY_SECONDS = 30
 
@@ -16,6 +17,7 @@ def wait_for_verification(
     attempts: int = VERIFICATION_ATTEMPTS,
     initial_delay_seconds: int = INITIAL_DELAY_SECONDS,
 ) -> list[str]:
+    time.sleep(FIRST_CHECK_DELAY_SECONDS)  # Add initial delay to allow registry to start up before first check.
     issues: list[str] = []
     for attempt in range(1, attempts + 1):
         try:

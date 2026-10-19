@@ -148,7 +148,7 @@ def test_brew_smoke_preserves_an_existing_installation(tmp_path: Path) -> None:
     assert not runner.tap_root.exists()
 
 
-def test_post_publish_npm_check_retries_after_two_seconds(
+def test_post_publish_npm_check_retries_with_exponential_backoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -164,6 +164,7 @@ def test_post_publish_npm_check_retries_after_two_seconds(
         nonlocal calls
         del context_arg, runner_arg
         calls += 1
+        assert sleeps == [10, 2, 4][:calls]
         if calls < 3:
             raise state.ReleaseError("package is not visible yet")
 
@@ -173,7 +174,7 @@ def test_post_publish_npm_check_retries_after_two_seconds(
     smoke.post_publish_npm_check(context, state.CommandRunner(), attempts=3)
 
     assert calls == 3
-    assert sleeps == [2, 4]
+    assert sleeps == [10, 2, 4]
 
 
 def test_install_check_prepares_each_artifact_set_once(

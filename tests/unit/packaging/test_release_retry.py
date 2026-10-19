@@ -17,7 +17,7 @@ from tests.unit.packaging.release_tool_support import (
 
 
 @pytest.mark.parametrize("registry", ["pypi", "npm"])
-@pytest.mark.parametrize("visible_after", [180, None])
+@pytest.mark.parametrize("visible_after", [190, None])
 def test_publish_waits_for_registry_processing_without_reuploading(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -68,7 +68,7 @@ def test_publish_waits_for_registry_processing_without_reuploading(
     if visible_after is None:
         with pytest.raises(state.ReleaseError, match=f"rerun make release-{registry}"):
             command(tmp_path, runner, execute=True)
-        assert sum(delays) == 600
+        assert sum(delays) == 610
     else:
         assert command(tmp_path, runner, execute=True) == 0
         assert sum(delays) == visible_after
@@ -79,7 +79,7 @@ def test_publish_waits_for_registry_processing_without_reuploading(
 
 
 @pytest.mark.parametrize("registry", ["pypi", "npm"])
-@pytest.mark.parametrize("visible_after", [180, None])
+@pytest.mark.parametrize("visible_after", [190, None])
 def test_post_publish_installs_use_the_same_extended_retry_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -111,7 +111,7 @@ def test_post_publish_installs_use_the_same_extended_retry_policy(
             state.ReleaseError, match="post-publish install check did not pass"
         ):
             check(context, FakeRunner())
-        assert sum(delays) == 600
+        assert sum(delays) == 610
     else:
         check(context, FakeRunner())
         assert sum(delays) == visible_after
