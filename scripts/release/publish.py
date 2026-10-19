@@ -4,12 +4,14 @@ import os
 import re
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
 from . import retry, smoke
+from .plugins import release_plugins
 from .state import (
     ORIGIN_MASTER_ANCESTRY_ERROR,
     CommandRunner,
@@ -97,6 +99,7 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         raise ReleaseError("PyPI publication is blocked:\n  " + "\n  ".join(issues))
     missing_keys = missing_pypi_artifact_keys(pypi, manifest)
     if not missing_keys:
+        publish_plugin_dependencies(context, runner, manifest)
         print(
             f"PyPI already has {context.package_name} {context.version.project}; verified existing files."
         )
@@ -107,19 +110,8 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         raise ReleaseError("PyPI publication is blocked:\n  " + "\n  ".join(issues))
     require_pypi_auth()
     fail_if_local_artifacts_stale(context, manifest, missing_keys, "PyPI")
-    command = [
-        sys.executable,
-        "-m",
-        "twine",
-        "upload",
-        "--repository",
-        os.environ.get("PYPI_REPOSITORY", "pypi"),
-    ]
-    command.extend(shlex.split(os.environ.get("TWINE_UPLOAD_ARGS", "")))
-    command.extend(
-        str(context.root / manifest.artifact(key).path) for key in missing_keys
-    )
-    runner.run(command, cwd=context.root, env=pypi_upload_env(), capture_output=False)
+    publish_plugin_dependencies(context, runner, manifest)
+    upload_pypi_artifacts(context, runner, manifest, missing_keys)
     issues = retry.wait_for_verification(
         "PyPI registry",
         lambda: pypi_publication_issues(context, manifest),
@@ -132,6 +124,75 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         )
     smoke.post_publish_pypi_check(context, runner)
     return 0
+
+
+def publish_plugin_dependencies(
+    context: ReleaseContext, runner: CommandRunner, manifest: ReleaseManifest
+) -> None:
+    pending = []
+    for plugin in release_plugins(context):
+        plugin_manifest = plugin.manifest(manifest)
+        remote = query_pypi_release(plugin.context)
+        issues = verify_present_pypi_artifacts(plugin.context, remote, plugin_manifest)
+        if issues:
+            raise ReleaseError(
+                "Plugin publication is blocked:\n  " + "\n  ".join(issues)
+            )
+        missing = missing_pypi_artifact_keys(remote, plugin_manifest)
+        fail_if_local_artifacts_stale(plugin.context, plugin_manifest, missing, "PyPI")
+        if missing:
+            pending.append((plugin.context, plugin_manifest, missing))
+    if not pending:
+        return
+    require_pypi_auth()
+    for plugin_context, plugin_manifest, missing in pending:
+        upload_pypi_artifacts(plugin_context, runner, plugin_manifest, missing)
+        issues = retry.wait_for_verification(
+            f"PyPI {plugin_context.package_name}",
+            partial(python_package_publication_issues, plugin_context, plugin_manifest),
+        )
+        if issues:
+            raise ReleaseError(
+                "Plugin upload verification failed:\n  " + "\n  ".join(issues)
+            )
+
+
+def upload_pypi_artifacts(
+    context: ReleaseContext,
+    runner: CommandRunner,
+    manifest: ReleaseManifest,
+    artifact_keys: tuple[str, ...],
+) -> None:
+    """Upload selected manifest artifacts with the configured Twine options."""
+    command = [
+        sys.executable,
+        "-m",
+        "twine",
+        "upload",
+        "--repository",
+        os.environ.get("PYPI_REPOSITORY", "pypi"),
+        *shlex.split(os.environ.get("TWINE_UPLOAD_ARGS", "")),
+        *(str(context.root / manifest.artifact(key).path) for key in artifact_keys),
+    ]
+    runner.run(command, cwd=context.root, env=pypi_upload_env(), capture_output=False)
+
+
+def python_package_publication_issues(
+    context: ReleaseContext, manifest: ReleaseManifest
+) -> list[str]:
+    return verify_pypi_artifacts(context, query_pypi_release(context), manifest)
+
+
+def plugin_publication_issues(
+    context: ReleaseContext, manifest: ReleaseManifest
+) -> list[str]:
+    return [
+        issue
+        for plugin in release_plugins(context)
+        for issue in python_package_publication_issues(
+            plugin.context, plugin.manifest(manifest)
+        )
+    ]
 
 
 def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
@@ -154,6 +215,7 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
     issues = release_source_issues(manifest, git.head_commit)
     issues.extend(verify_existing_npm(context, npm, manifest))
     issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+    issues.extend(plugin_publication_issues(context, manifest))
     issues.extend(npm_latest_publication_issues(context, npm))
     if issues:
         raise ReleaseError("npm publication is blocked:\n  " + "\n  ".join(issues))
@@ -200,6 +262,11 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
     )
     formula = read_formula_state(context)
     state = derive_release_state(context, pypi, npm, formula, git, manifest)
+    plugin_issues = plugin_publication_issues(context, manifest)
+    if plugin_issues:
+        raise ReleaseError(
+            "Plugin publication is incomplete: " + "; ".join(plugin_issues)
+        )
     if state.status == ReleaseStatus.COMPLETE:
         print(f"{context.version.tag} already exists locally and on origin.")
         return 0
@@ -236,7 +303,13 @@ def verify_completed_release(
     npm = query_npm_release(context)
     formula = read_formula_state(context)
     git = inspect_release_tag_state(context, runner, expected_tag=expected_tag)
-    return derive_release_state(context, pypi, npm, formula, git, manifest)
+    state = derive_release_state(context, pypi, npm, formula, git, manifest)
+    issues = plugin_publication_issues(context, manifest)
+    if issues:
+        return replace(
+            state, status=ReleaseStatus.BLOCKED, reasons=state.reasons + tuple(issues)
+        )
+    return state
 
 
 def verify_complete_release(
@@ -255,9 +328,14 @@ def verified_github_release_plan(
     manifest = read_manifest(root)
     manifest_issues = manifest_context_issues(context, manifest)
     expected_artifact_keys = {"pypi_sdist", "pypi_wheel", "npm_tarball"}
+    expected_artifact_keys.update(
+        plugin.artifact_key(kind)
+        for plugin in release_plugins(context)
+        for kind in ("sdist", "wheel")
+    )
     if set(manifest.artifacts) != expected_artifact_keys:
         manifest_issues.append(
-            "release manifest must contain exactly the sdist, wheel, and npm tarball"
+            "release manifest must contain exactly the sdist, wheel, and npm tarball plus declared plugin artifacts"
         )
     fail_github_release_verification(manifest_issues)
 
@@ -266,7 +344,7 @@ def verified_github_release_plan(
         verify_local_manifest_artifacts(
             context,
             manifest,
-            ("pypi_sdist", "pypi_wheel", "npm_tarball"),
+            tuple(sorted(expected_artifact_keys)),
         )
     )
     fail_github_release_verification(local_issues)
@@ -277,6 +355,7 @@ def verified_github_release_plan(
     git = inspect_release_tag_state(context, runner, expected_tag=expected_tag)
     issues = release_source_issues(manifest, git.head_commit)
     issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+    issues.extend(plugin_publication_issues(context, manifest))
     issues.extend(verify_npm_artifact(context, npm, manifest))
     issues.extend(verify_formula_state_for_release(context, formula, manifest))
     issues.extend(verify_git_tag_state(git))
@@ -301,13 +380,22 @@ def github_release_bundle_issues(
         "pypi_wheel": Path("dist") / context.wheel_filename,
         "npm_tarball": Path(".release") / "npm" / context.npm_filename,
     }
+    for plugin in release_plugins(context):
+        expected_paths[plugin.artifact_key("sdist")] = (
+            Path("dist") / plugin.context.sdist_filename
+        )
+        expected_paths[plugin.artifact_key("wheel")] = (
+            Path("dist") / plugin.context.wheel_filename
+        )
     issues: list[str] = []
     for key, expected_path in expected_paths.items():
         if Path(manifest.artifact(key).path) != expected_path:
             issues.append(f"release manifest artifact {key} has an unexpected path")
 
     expected_directories = {
-        Path("dist"): {context.sdist_filename, context.wheel_filename},
+        Path("dist"): {
+            path.name for path in expected_paths.values() if path.parent == Path("dist")
+        },
         Path(".release") / "npm": {context.npm_filename},
     }
     for relative_directory, expected_names in expected_directories.items():
@@ -429,6 +517,7 @@ def pypi_publication_issues(
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
     issues = verify_pypi_artifacts(context, pypi, manifest)
+    issues.extend(plugin_publication_issues(context, manifest))
     issues.extend(verify_existing_npm(context, npm, manifest))
     return issues
 

@@ -79,7 +79,7 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
         "--locked",
         "--extra",
         "dev",
-        "--no-emit-project",
+        "--no-emit-local",
         "--format",
         "requirements-txt",
         "--output-file",
@@ -104,6 +104,28 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
     assert set(audited_build_requirements) == {"hatchling", "packaging"}
     assert audit_inputs[0][0] != audit_inputs[1][0]
     assert all(not path.exists() for path, _contents in audit_inputs)
+
+
+def test_export_omits_local_packages_and_keeps_hashed_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dependency_audit = load_dependency_audit_script()
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setenv("UV_PYTHON", sys.executable)
+    output_path = tmp_path / "requirements.txt"
+
+    dependency_audit.export_locked_requirements(ROOT, output_path)
+
+    exported = output_path.read_text(encoding="utf-8")
+    requirements = [
+        line
+        for line in exported.splitlines()
+        if line and not line.startswith(("#", " "))
+    ]
+    assert not any(line.startswith(("-e ", "./", "file://")) for line in requirements)
+    assert any(line.startswith("httpx==") for line in requirements)
+    assert any(line.startswith("httpcore==") for line in requirements)
+    assert "--hash=sha256:" in exported
 
 
 @pytest.mark.parametrize(

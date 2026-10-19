@@ -121,7 +121,7 @@ class ConfigTests(unittest.TestCase):
             AgentConfig(
                 cli_cmd=["echo"],
                 default_model="test-model",
-                provider_kind="unsupported",
+                provider_kind="unsupported.kind",
             )
 
     def test_agent_config_defaults_prompt_transport_to_stdin(self) -> None:

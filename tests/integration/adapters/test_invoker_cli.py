@@ -36,7 +36,7 @@ def test_create_invoker_returns_default_invoker() -> None:
 def test_create_invoker_rejects_unknown_options() -> None:
     adapter = CliInvokerAdapter()
     config = Config(version=SCHEMA_VERSION, agents={})
-    with pytest.raises(ValueError, match="options: \\{}"):
+    with pytest.raises(ValueError, match="Unsupported cli invoker options"):
         adapter.create_invoker(config=config, options={"x": 1})
 
 

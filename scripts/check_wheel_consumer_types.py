@@ -11,6 +11,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONSUMERS = (
     REPOSITORY_ROOT / "tests" / "typecheck" / "public_artifacts_consumer.py",
     REPOSITORY_ROOT / "tests" / "typecheck" / "public_observer_consumer.py",
+    REPOSITORY_ROOT / "tests" / "typecheck" / "public_cli_provider_consumer.py",
 )
 
 
@@ -36,6 +37,8 @@ def check_wheel(wheel: Path) -> None:
                 "pip",
                 "install",
                 "--disable-pip-version-check",
+                "--find-links",
+                str(resolved_wheel.parent),
                 str(resolved_wheel),
             ],
             check=True,

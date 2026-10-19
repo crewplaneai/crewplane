@@ -103,7 +103,8 @@ settings use dotted paths in the left column.
 | Field | Description |
 | --- | --- |
 | `cli_cmd` | Provider command and its arguments, as a non-empty list. |
-| `provider_kind` | `claude`, `codex`, `copilot`, `gemini`, `kilo`, `pi`, `deepseek`, `opencode`, or `generic`. Defaults to `generic`. |
+| `environment` | String-to-string environment overrides for this agent's CLI. Defaults to `{}`. Applied during validation and execution; changes affect reuse of saved results. |
+| `provider_kind` | A lowercase ASCII identifier matching `[a-z][a-z0-9_-]*`. Built-ins are `claude`, `codex`, `copilot`, `gemini`, `kilo`, `pi`, `deepseek`, `opencode`, and `generic` (default). External identifiers require an explicit CLI capability registration. |
 | `default_model` | Model to use when the workflow provider omits `model`. Leave both fields unset for DeepSeek and choose its model in DeepSeek's settings. |
 | `model_arg` | Model flag for `provider_kind: generic`. Defaults to `--model`; set it to `null` to send no model flag. The built-in CLI invoker ignores it for other provider kinds and warns before the run. |
 | `prompt_transport` | `stdin` sends the prompt through standard input; `argv` passes it as a command argument. Defaults to `stdin`. |
@@ -135,8 +136,15 @@ model and reasoning fields, and configure the model, credentials, and permission
 in DeepSeek. The [DeepSeek setup guide](../getting-started/provider-setup.md#deepseek-headless-mode)
 includes the required command and saved permission preset.
 
-Crewplane records command arguments in run files. Prefer environment variables
-or the provider's credential store for credentials. For recognized secret options
+Agent `environment` values override inherited process variables without changing
+Crewplane's own environment. Windows variable names are case-insensitive.
+Runtime-controlled workspace Git values and removals take precedence. Names
+must be nonblank and contain neither `=` nor NUL; values must not contain NUL.
+Use this mapping for non-secret settings such as `OLLAMA_HOST`. Values live in
+your YAML file; prefer inherited environment variables or the provider's
+credential store for credentials.
+
+Crewplane records command arguments in run files. For recognized secret options
 in `cli_cmd`, `extra_args`, or workspace setup commands, Crewplane hides the values
 in saved run files and error messages. Changes to those values still affect run
 reuse without saving the credentials themselves.
@@ -270,18 +278,30 @@ before starting provider commands.
 
 ### `cli` invoker
 
-Runs configured `agents` commands against real provider CLIs instead of the
-deterministic `mock` invoker. It has no options.
+Runs configured `agents` commands against real provider CLIs. Its only option is
+`providers`, an explicit map of installed capabilities. See the
+[registration contract](integrations.md#cli) for authored and canonical records.
 
 When switching the generated config from `mock` to `cli`, replace the generated
-mock invoker `options:` block with `options: {}`. Leaving mock options such as
-`output_mode`, `seed`, or delay settings under the `cli` invoker is a config
-error.
+mock invoker `options:` block with `options: {}` for built-in providers, or an
+`options.providers` registration map for plugins. Leaving mock options such as
+`output_mode`, `seed`, or delay settings under the `cli` invoker is a config error.
 
 Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and
 records artifacts; it does not sandbox them.
+
+The generated config includes a commented `local` agent and an Ollama plugin
+registration. Enable both after installing `crewplane-ollama` in Crewplane's
+Python environment. The agent uses `cli_cmd: [ollama, run]`,
+`provider_kind: ollama`, a nonblank `default_model` (or workflow `model`), and
+`prompt_transport: stdin`. Omit `prompt_transport_arg`, `model_arg`, and workflow
+`reasoning`. Register `crewplane_ollama:OLLAMA` from distribution
+`crewplane-ollama` under `options.providers.ollama`. Follow
+[local Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
+to install the package and provision the server/model. `model_arg` is ignored
+for external capabilities as it is for other non-generic providers.
 
 ### `mock` invoker
 

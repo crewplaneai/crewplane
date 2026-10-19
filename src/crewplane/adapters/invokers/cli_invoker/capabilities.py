@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from .providers import (
     pi,
 )
 
-CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
+CAPABILITIES: dict[str, CliProviderCapability] = {
     ProviderKind.CLAUDE: claude.CLAUDE,
     ProviderKind.CODEX: codex.CODEX,
     ProviderKind.COPILOT: copilot.COPILOT,
@@ -39,10 +40,13 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
 }
 
 
-def get_cli_provider_capability(provider_kind: ProviderKind) -> CliProviderCapability:
+def get_cli_provider_capability(
+    provider_kind: str,
+    providers: Mapping[str, CliProviderCapability] | None = None,
+) -> CliProviderCapability:
     """Fail explicitly when a schema family has no installed implementation."""
     try:
-        return CAPABILITIES[ProviderKind(provider_kind)]
+        return (CAPABILITIES if providers is None else providers)[provider_kind]
     except KeyError as exc:
         raise ValueError(
             f"No CLI capability registered for {provider_kind!r}."
@@ -56,10 +60,11 @@ def build_cli_invocation_plan(
     output_file: Path,
     invocation_context: InvocationContext | None = None,
     working_directory: Path | None = None,
+    providers: Mapping[str, CliProviderCapability] | None = None,
 ) -> InvocationPlan:
     """Validate before allocation, then transfer ownership of a complete plan."""
     strategy = command_strategy.command_strategy()
-    capability = get_cli_provider_capability(config.provider_kind)
+    capability = get_cli_provider_capability(config.provider_kind, providers)
     request = CliInvocationRequest(
         config=config,
         command_strategy=strategy,
@@ -99,9 +104,12 @@ def build_cli_invocation_plan(
         raise
 
 
-def build_cli_log_presentation(config: AgentConfig) -> LogPresentationDescriptor:
+def build_cli_log_presentation(
+    config: AgentConfig,
+    providers: Mapping[str, CliProviderCapability] | None = None,
+) -> LogPresentationDescriptor:
     """Return display-only log metadata declared by the provider capability."""
-    capability = get_cli_provider_capability(config.provider_kind)
+    capability = get_cli_provider_capability(config.provider_kind, providers)
     return LogPresentationDescriptor(
         format=capability.log_presentation_format,
         profile=capability.log_presentation_profile,

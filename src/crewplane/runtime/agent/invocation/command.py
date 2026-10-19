@@ -17,6 +17,7 @@ from crewplane.architecture.contracts import (
     InvocationPlan,
     LogLevel,
 )
+from crewplane.core.agent_environment import merge_agent_environment
 from crewplane.runtime.workspace.state_evidence import (
     confirm_workspace_process_drain,
     record_unresolved_workspace_process_drain,
@@ -383,8 +384,7 @@ def _child_process_env(
 ) -> dict[str, str] | None:
     if child_environment is None:
         return None
-    env = dict(os.environ)
-    for key in child_environment.unset:
+    env = merge_agent_environment(os.environ, {})
+    for key in merge_agent_environment({}, dict.fromkeys(child_environment.unset, "")):
         env.pop(key, None)
-    env.update(child_environment.set)
-    return env
+    return merge_agent_environment(env, child_environment.set)

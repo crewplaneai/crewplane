@@ -1,22 +1,33 @@
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from yaml import YAMLError
 
-from crewplane.core.config import Config, load_config
-from crewplane.core.preflight import load_workflow_source_for_preflight
+from crewplane.adapters.invokers.cli_invoker import (
+    DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    CliDiscoveryRequest,
+    unconfirmed_process_cleanup,
+)
+from crewplane.core.config import AgentConfig, Config, load_config
+from crewplane.core.preflight import (
+    PreflightCompilationPreview,
+    load_workflow_source_for_preflight,
+)
+from crewplane.core.preflight.diagnostics import PreflightDiagnosticCode
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME
 
 from .. import workflow_runner
-from ..project_init import initialize_project_templates
 from ..run.preflight import uses_cli_invoker, uses_mock_invoker
+from . import generated_files as _generated_files
 from . import messages
 from .constants import (
     CONFIG_RELATIVE_PATH,
@@ -24,23 +35,31 @@ from .constants import (
     PROVIDER_SETUP_URL,
     WORKFLOW_RELATIVE_PATH,
 )
-from .detection import ProviderDetection, detect_providers
+from .detection import ProviderDetection, ProviderStatus, detect_providers
 from .history import find_successful_mock_run_evidence
-from .rendering import (
-    OnboardingRenderingError,
-    render_provider_ready_config,
-    render_provider_ready_workflow,
-    rendered_default_config,
-    rendered_default_workflow,
-)
+from .local_connection import configure_local_connection
+from .plugin_setup import LocalSetupFailure, prepare_local_agent
+from .rendering import rendered_default_config, rendered_default_workflow
 
 TextWriter = Callable[[Path, str], None]
 WhichFunction = Callable[[str], str | None]
 ReadInput = Callable[[], str]
+WriteResult = _generated_files.WriteResult
 
 
 @dataclass(frozen=True)
 class OnboardingOptions:
+    """Caller-owned I/O and discovery settings for synchronous onboarding.
+
+    project_root anchors project files and discovery; callers should supply an
+    absolute project directory. No chdir or root normalization is performed.
+    Both terminal flags must be true to prompt or mutate files. read_input
+    returns one answer without a prompt; which_fn resolves an executable name
+    or returns None. write_text writes supplied text to the supplied path.
+    Callbacks run sequentially and retain ownership of their resources;
+    interruptions and unhandled callback failures propagate from run_onboarding.
+    """
+
     project_root: Path
     console: Console
     input_is_terminal: bool
@@ -48,16 +67,7 @@ class OnboardingOptions:
     read_input: ReadInput
     which_fn: WhichFunction
     write_text: TextWriter
-
-
-@dataclass(frozen=True)
-class WriteResult:
-    updated: tuple[Path, ...]
-    not_updated: tuple[Path, ...]
-
-    @property
-    def complete(self) -> bool:
-        return not self.not_updated
+    discovery_timeout_seconds: float = DEFAULT_DISCOVERY_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -68,12 +78,27 @@ class OnboardingProjectState:
     default_workflow: str
 
 
-def run_onboarding_command() -> None:
-    console = Console()
-    run_onboarding(default_onboarding_options(console))
+def run_onboarding_command(
+    discovery_timeout_seconds: float = DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+) -> None:
+    """Run onboarding in the resolved cwd using process streams and filesystem I/O.
+
+    Apply discovery_timeout_seconds to local-provider discovery. Filesystem and
+    failure behavior follow run_onboarding; unhandled failures propagate.
+    """
+    options = replace(
+        default_onboarding_options(Console()),
+        discovery_timeout_seconds=discovery_timeout_seconds,
+    )
+    run_onboarding(options)
 
 
 def default_onboarding_options(console: Console) -> OnboardingOptions:
+    """Capture the resolved cwd and terminal flags without changing project files.
+
+    Use input, shutil.which, and UTF-8 writes with the caller-owned console.
+    Resolving the cwd can raise OSError; callbacks are invoked only during a run.
+    """
     return OnboardingOptions(
         project_root=Path.cwd().resolve(strict=False),
         console=console,
@@ -90,39 +115,61 @@ def read_stdin_line() -> str:
 
 
 def write_text_file(path: Path, content: str) -> None:
+    """Create or overwrite path with UTF-8 text, closing the file before returning.
+
+    Relative paths use the cwd; parent directories must already exist. Writes
+    are non-atomic, without backups; filesystem and encoding errors propagate.
+    """
     path.write_text(content, encoding="utf-8")
 
 
 def run_onboarding(options: OnboardingOptions) -> None:
+    """Interactively prepare provider settings under options.project_root.
+
+    Return None on completion or a handled stop. Accepted initialization creates
+    missing templates without overwriting files. Provider handoff rechecks the
+    defaults, then writes config before workflow, independently and without
+    backups. OSError writes are reported and the next file is still attempted.
+    Validation may probe Ollama after saving; failure retains saved files unless
+    the user accepts recovery. Existing CLI setups may update their Ollama
+    connection. Handled validation failures raise typer.Exit; prompt interrupts,
+    unconfirmed process cleanup, and other unhandled I/O/callback errors propagate.
+    """
     OnboardingRunner(options).run()
+
+
+class ProviderReadinessFailure(typer.Exit):
+    """Provider checks failed after settings were saved."""
 
 
 class OnboardingRunner:
     def __init__(self, options: OnboardingOptions) -> None:
         self.options = options
         self.console = options.console
+        self.local_agent: AgentConfig | None = None
+        self.provider_choices: tuple[ProviderDetection, ...] = ()
+        self.files = _generated_files.GeneratedOnboardingFiles(options, self.confirm)
 
     def run(self) -> None:
         messages.print_title(self.console)
         project_state = self.load_project_state()
         if project_state is None:
             return
-
         providers = self.choose_onboarding_providers(project_state)
-        if providers is None:
+        if not providers:
             return
-
-        if not self.apply_provider_handoff(providers, project_state):
+        providers = self.prepare_selected_providers(providers)
+        if not providers or not self.apply_provider_handoff(providers, project_state):
             return
-
-        self.validate_provider_ready_setup(", ".join(providers))
-        messages.print_final_success(self.console, ", ".join(providers))
+        self.finish_onboarding(providers, project_state)
 
     def load_project_state(self) -> OnboardingProjectState | None:
         if not self.is_interactive():
             messages.print_non_tty_stop(self.console)
             return None
-        if not self.ensure_generated_files():
+        if self.configure_existing_cli_setup():
+            return None
+        if not self.files.ensure_generated_files():
             return None
 
         config = self.load_config_for_onboarding()
@@ -133,7 +180,7 @@ class OnboardingRunner:
         default_workflow = rendered_default_workflow()
         if not self.config_can_be_onboarded(config, default_workflow):
             return None
-        if not self.generated_files_are_safe_to_update(
+        if not self.files.generated_files_are_safe_to_update(
             default_config, default_workflow
         ):
             return None
@@ -144,6 +191,20 @@ class OnboardingRunner:
             default_config=default_config,
             default_workflow=default_workflow,
         )
+
+    def configure_existing_cli_setup(self) -> bool:
+        if not self.path(CONFIG_RELATIVE_PATH).is_file():
+            return False
+        try:
+            config = load_config(self.path(CONFIG_RELATIVE_PATH))
+        except (OSError, ValueError, TypeError, YAMLError):
+            # The initialization path reports invalid configs.
+            return False
+        if not uses_cli_invoker(config):
+            return False
+        if not configure_local_connection(self.options, self.prompt_raw, self.confirm):
+            self.print_existing_cli_config_stop(rendered_default_workflow())
+        return True
 
     def load_config_for_onboarding(self) -> Config | None:
         try:
@@ -166,7 +227,7 @@ class OnboardingRunner:
         return False
 
     def print_existing_cli_config_stop(self, default_workflow: str) -> None:
-        if self.workflow_matches_default(default_workflow):
+        if self.files.workflow_matches_default(default_workflow):
             messages.print_partial_update(
                 self.console,
                 (CONFIG_RELATIVE_PATH,),
@@ -196,10 +257,68 @@ class OnboardingRunner:
 
     def found_provider_detections(self) -> tuple[ProviderDetection, ...]:
         detections = self.detect_providers()
-        found = tuple(detection for detection in detections if detection.found)
-        if not found:
+        self.provider_choices = tuple(item for item in detections if item.available)
+        plugin_missing = any(
+            item.status == ProviderStatus.PLUGIN_MISSING for item in detections
+        )
+        if plugin_missing and not self.continue_without_ollama(installation=True):
+            return ()
+        if not self.provider_choices:
             messages.print_no_providers_stop(self.console)
-        return found
+        return self.provider_choices
+
+    def continue_without_ollama(self, installation: bool = False) -> bool:
+        messages.print_ollama_choices(self.console, installation)
+        if (
+            self.prompt_choice(messages.OPTIONAL_PROVIDER_PROMPT, ("1", "2"), "1")
+            == "1"
+        ):
+            return True
+        if installation:
+            messages.print_ollama_setup_link(self.console)
+        return False
+
+    def prepare_selected_providers(self, providers: tuple[str, ...]) -> tuple[str, ...]:
+        if "local" not in providers:
+            return providers
+        result = self.prepare_local_provider()
+        if isinstance(result, AgentConfig):
+            self.local_agent = result
+            self.console.print(
+                f"Selected Ollama model: {result.default_model}", markup=False
+            )
+            return providers
+        messages.print_ollama_unconfigured(
+            self.console, result == LocalSetupFailure.CANCELLED
+        )
+        if not self.continue_without_ollama():
+            return ()
+        return self.choose_without_ollama(providers)
+
+    def prepare_local_provider(self) -> AgentConfig | LocalSetupFailure:
+        return prepare_local_agent(
+            CliDiscoveryRequest(
+                self.options.project_root,
+                os.environ.copy(),
+                self.options.which_fn,
+                self.options.discovery_timeout_seconds,
+            ),
+            self.console,
+            self.prompt_raw,
+        )
+
+    def choose_without_ollama(self, providers: tuple[str, ...]) -> tuple[str, ...]:
+        self.local_agent = None
+        self.provider_choices = tuple(
+            item for item in self.provider_choices if item.provider != "local"
+        )
+        remaining = tuple(provider for provider in providers if provider != "local")
+        if remaining:
+            return remaining
+        if self.provider_choices:
+            return self.choose_providers(self.provider_choices)
+        messages.print_no_providers_stop(self.console)
+        return ()
 
     def apply_provider_handoff(
         self, providers: tuple[str, ...], project_state: OnboardingProjectState
@@ -207,95 +326,16 @@ class OnboardingRunner:
         if not self.confirm_file_preparation(", ".join(providers)):
             messages.print_declined_changes(self.console)
             return False
-        write_result = self.prepare_files(
-            providers,
-            project_state.default_config,
-            project_state.default_workflow,
+        write_result = self.files.prepare_files(
+            providers, project_state, self.local_agent
         )
-        return self.write_result_is_complete(write_result)
-
-    def write_result_is_complete(self, write_result: WriteResult | None) -> bool:
-        if write_result is None:
-            return False
-        if write_result.complete:
-            return True
-        self.print_incomplete_write_result(write_result)
-        return False
-
-    def print_incomplete_write_result(self, write_result: WriteResult) -> None:
-        if len(write_result.updated) == 1:
-            messages.print_partial_update(
-                self.console, write_result.updated, write_result.not_updated
-            )
-            return
-        messages.print_no_files_updated(self.console)
+        return self.files.write_result_is_complete(write_result)
 
     def is_interactive(self) -> bool:
         return self.options.input_is_terminal and self.options.output_is_terminal
 
     def path(self, relative_path: Path) -> Path:
         return self.options.project_root / relative_path
-
-    def ensure_generated_files(self) -> bool:
-        state_dir = self.options.project_root / STATE_DIR_NAME
-        if not state_dir.exists():
-            return self.handle_missing_state_dir()
-        if self.generated_files_exist():
-            return True
-        return self.handle_missing_generated_files()
-
-    def handle_missing_state_dir(self) -> bool:
-        messages.print_missing_state_dir(self.console, self.options.project_root)
-        return self._recover_missing_generated_files()
-
-    def handle_missing_generated_files(self) -> bool:
-        messages.print_missing_generated_files(self.console)
-        return self._recover_missing_generated_files()
-
-    def _recover_missing_generated_files(self) -> bool:
-        if not self.confirm(messages.INIT_RECOVERY_PROMPT, False):
-            messages.print_no_files_changed(self.console)
-            return False
-        initialize_project_templates(self.console, self.options.project_root)
-        return self.generated_files_exist()
-
-    def generated_files_exist(self) -> bool:
-        return (
-            self.path(CONFIG_RELATIVE_PATH).is_file()
-            and self.path(WORKFLOW_RELATIVE_PATH).is_file()
-        )
-
-    def workflow_matches_default(self, default_workflow: str) -> bool:
-        try:
-            return (
-                self.path(WORKFLOW_RELATIVE_PATH).read_text(encoding="utf-8")
-                == default_workflow
-            )
-        except OSError:
-            return False
-
-    def generated_files_are_safe_to_update(
-        self, default_config: str, default_workflow: str
-    ) -> bool:
-        try:
-            if self.files_match_defaults(default_config, default_workflow):
-                return True
-        except (OSError, UnicodeError) as exc:
-            messages.print_user_owned_stop(
-                self.console,
-                f"Onboarding cannot confirm generated files are unchanged: {exc}",
-            )
-            return False
-        messages.print_edited_files_stop(self.console)
-        return False
-
-    def files_match_defaults(self, default_config: str, default_workflow: str) -> bool:
-        return (
-            self.path(CONFIG_RELATIVE_PATH).read_text(encoding="utf-8")
-            == default_config
-            and self.path(WORKFLOW_RELATIVE_PATH).read_text(encoding="utf-8")
-            == default_workflow
-        )
 
     def confirm_mock_run_evidence(
         self, config: Config, source: PreflightWorkflowSource
@@ -323,15 +363,7 @@ class OnboardingRunner:
         detections = detect_providers(
             rendered_default_config(), self.options.project_root, self.options.which_fn
         )
-        messages.print_provider_detection(
-            self.console,
-            tuple((detection.provider, detection.found) for detection in detections),
-        )
-        for detection in detections:
-            if detection.diagnostic is not None:
-                self.console.print(
-                    f"{detection.provider}: {detection.diagnostic}", markup=False
-                )
+        messages.print_provider_detection(self.console, detections)
         return detections
 
     def choose_providers(
@@ -351,91 +383,70 @@ class OnboardingRunner:
         messages.print_file_preparation_confirmation(self.console, provider)
         return self.confirm(messages.APPLY_CHANGES_PROMPT, True)
 
-    def prepare_files(
-        self, providers: tuple[str, ...], default_config: str, default_workflow: str
-    ) -> WriteResult | None:
-        if not self.recheck_generated_files(
-            providers, default_config, default_workflow
-        ):
-            return None
+    def finish_onboarding(
+        self, providers: tuple[str, ...], project_state: OnboardingProjectState
+    ) -> None:
         try:
-            config_text = render_provider_ready_config(default_config, providers)
-            workflow_text = render_provider_ready_workflow(default_workflow, providers)
-        except OnboardingRenderingError as exc:
-            messages.print_manual_fallback(self.console, providers, str(exc))
-            return None
-
-        return self.write_prepared_files(
-            config_text, workflow_text, ", ".join(providers)
-        )
-
-    def recheck_generated_files(
-        self, providers: tuple[str, ...], default_config: str, default_workflow: str
-    ) -> bool:
-        try:
-            if self.files_match_defaults(default_config, default_workflow):
-                return True
-        except (OSError, UnicodeError) as exc:
-            messages.print_manual_fallback(
-                self.console,
-                providers,
-                f"Generated files could not be re-read before writing: {exc}",
-            )
-            return False
-        messages.print_manual_fallback(
-            self.console, providers, "Generated files changed before writing."
-        )
-        return False
-
-    def write_prepared_files(
-        self, config_text: str, workflow_text: str, provider: str
-    ) -> WriteResult:
-        updates = (
-            (CONFIG_RELATIVE_PATH, config_text, f"for {provider}"),
-            (WORKFLOW_RELATIVE_PATH, workflow_text, f"to use {provider}"),
-        )
-        updated: list[Path] = []
-        not_updated: list[Path] = []
-        for relative_path, content, message in updates:
-            try:
-                self.options.write_text(self.path(relative_path), content)
-            except OSError as exc:
-                not_updated.append(relative_path)
-                messages.print_write_failure(self.console, relative_path, str(exc))
-                continue
-            updated.append(relative_path)
-            messages.print_write_success(self.console, relative_path, message)
-        return WriteResult(tuple(updated), tuple(not_updated))
+            self.validate_provider_ready_setup(", ".join(providers))
+        except ProviderReadinessFailure:
+            if "local" not in providers or not self.continue_without_ollama():
+                raise
+            providers = self.choose_without_ollama(providers)
+            if not self.files.replace_saved_setup(providers, project_state):
+                raise
+            if not providers:
+                self.console.print(
+                    "Original mock settings restored. No real provider was configured."
+                )
+                return
+            self.validate_provider_ready_setup(", ".join(providers))
+        messages.print_final_success(self.console, ", ".join(providers))
 
     def validate_provider_ready_setup(self, provider: str) -> None:
         messages.print_validation_header(self.console)
+        provider_checks_failed = False
         try:
-            config = load_config(self.path(CONFIG_RELATIVE_PATH))
-            source = load_workflow_source_for_preflight(
-                self.path(WORKFLOW_RELATIVE_PATH),
-                project_root=self.options.project_root,
-            )
-            preview = workflow_runner.compile_workflow_preview(
-                config=config,
-                source=source,
-                console=self.console,
-                no_live=True,
-                fingerprint_key_policy="read_only",
-                project_root=self.options.project_root,
-                state_dir=self.options.project_root / STATE_DIR_NAME,
-                check_cli_availability=True,
-                which_fn=self.options.which_fn,
-                workspace_real_execution=False,
-            )
+            preview = self.compile_provider_ready_preview()
+            provider_checks_failed = self.only_provider_checks_failed(preview)
             workflow_runner.raise_for_preflight_preview_errors(preview, self.console)
-        except typer.Exit:
+        except typer.Exit as exc:
             messages.print_validation_failure(self.console, provider)
+            if provider_checks_failed:
+                raise ProviderReadinessFailure(code=1) from exc
             raise
         except Exception as exc:
+            if unconfirmed_process_cleanup(exc) is not None:
+                raise
             messages.print_validation_exception(self.console, str(exc))
             messages.print_validation_failure(self.console, provider)
             raise typer.Exit(code=1) from exc
         messages.print_validation_success(self.console, len(preview.nodes))
+
+    def compile_provider_ready_preview(self) -> PreflightCompilationPreview:
+        config = load_config(self.path(CONFIG_RELATIVE_PATH))
+        source = load_workflow_source_for_preflight(
+            self.path(WORKFLOW_RELATIVE_PATH),
+            project_root=self.options.project_root,
+        )
+        return workflow_runner.compile_workflow_preview(
+            config=config,
+            source=source,
+            console=self.console,
+            no_live=True,
+            fingerprint_key_policy="read_only",
+            project_root=self.options.project_root,
+            state_dir=self.options.project_root / STATE_DIR_NAME,
+            check_cli_availability=True,
+            which_fn=self.options.which_fn,
+            workspace_real_execution=False,
+        )
+
+    @staticmethod
+    def only_provider_checks_failed(preview: PreflightCompilationPreview) -> bool:
+        errors = [item for item in preview.diagnostics if item.severity == "error"]
+        return bool(errors) and all(
+            item.code == PreflightDiagnosticCode.PROVIDER_CLI for item in errors
+        )
 
     def confirm(self, prompt: str, default: bool) -> bool:
         while True:

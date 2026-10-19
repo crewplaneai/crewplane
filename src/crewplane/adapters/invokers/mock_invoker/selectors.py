@@ -86,9 +86,18 @@ def _integer_criterion(criteria: dict[str, str | int], key: str) -> int | None:
     return optional_strict_int(criteria.get(key))
 
 
-def validate_fail_selectors(value: object) -> tuple[MockInvokerFailSelector, ...]:
+def validate_fail_selectors(
+    value: object, canonical: bool = False
+) -> tuple[MockInvokerFailSelector, ...]:
     if not isinstance(value, list):
         raise ValueError("mock invoker option 'fail_when' must be a list of selectors")
+    if canonical:
+        value = [
+            {key: item for key, item in selector.items() if item is not None}
+            if isinstance(selector, dict) and selector.keys() == _SELECTOR_KEYS
+            else selector
+            for selector in value
+        ]
     return tuple(
         _validate_and_build_selector(raw_selector, index)
         for index, raw_selector in enumerate(value)

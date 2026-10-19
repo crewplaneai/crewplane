@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import (
@@ -28,6 +29,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.runtime.execution.runtime_context import CompiledRuntimeContext
 from tests.integration.architecture.preflight_plan.preflight_plan_secret_fingerprints_support import (
     FIXED_FINGERPRINT_KEY,
 )
@@ -145,6 +147,53 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
     key_path = tmp_path / ".crewplane" / "preflight" / "fingerprint.key"
     assert key_path.exists()
     assert key_path.stat().st_size == 32
+
+
+@pytest.mark.parametrize(
+    ("name", "sensitive"),
+    [
+        ("SERVICE_TOKEN", True),
+        ("service.token", True),
+        ("service.max_tokens", True),
+        ("service.mode", False),
+    ],
+)
+def test_agent_environment_round_trip_preserves_literal_names(
+    tmp_path: Path, name: str, sensitive: bool
+) -> None:
+    value = "configured-environment-value"
+    config = mock_config()
+    config.agents["mock"].environment = {name: value}
+    snapshot = build_runtime_config_snapshot(
+        config=config, console=Console(file=None), no_live=True
+    )
+    preview = compile_preflight_preview(
+        source=make_source(literal_workflow()),
+        config=config,
+        runtime_snapshot=snapshot.snapshot,
+        options=PreflightCompileOptions(
+            project_root=tmp_path,
+            state_dir=tmp_path / ".crewplane",
+            fingerprint_key_policy="read_only",
+        ),
+    )
+    assert not preview.diagnostics
+    plan = PreflightExecutionPlan.from_preview(
+        preview=preview,
+        run_id="run",
+        run_key_name="demo-run",
+        project_root=tmp_path.as_posix(),
+        context_root=(tmp_path / "demo-run").as_posix(),
+        manifest_root=(tmp_path / "demo-run/manifests").as_posix(),
+        created_at=datetime(2026, 6, 3),
+    )
+    if sensitive:
+        assert value not in plan.model_dump_json()
+
+    runtime = CompiledRuntimeContext(plan=plan, secret_context=preview.secret_context)
+    restored = runtime.agent_config_for_provider(plan.nodes[0].provider_records[0])
+
+    assert restored.environment == {name: value}
 
 
 def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(

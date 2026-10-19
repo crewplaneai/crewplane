@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import shutil
 import unittest
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,8 @@ def test_repetition_starts_and_stops_observers_per_pass(
             del result
             events.append("stop")
 
-    def which(executable: str) -> str | None:
+    def which(executable: str, path: str | None = None) -> str | None:
+        del path
         return "/usr/bin/tmux" if executable == "tmux" and tmux_available else None
 
     stream = io.StringIO()
@@ -60,7 +62,7 @@ def test_repetition_starts_and_stops_observers_per_pass(
         "Console",
         ConsoleFactory(file=stream, force_terminal=True, color_system=None, width=120),
     )
-    monkeypatch.setattr(cli.shutil, "which", which)
+    monkeypatch.setattr(shutil, "which", which)
     monkeypatch.setattr(tmux_adapter, "TmuxCompactRuntime", RecordingObserver)
     result = project.run(*(["--no-live"] if no_live else []))
     assert result.exit_code == 0, (result.output, result.exception, stream.getvalue())
@@ -209,7 +211,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
-            original_which = cli.shutil.which
+            original_which = shutil.which
             captured_kwargs: dict[str, object] = {}
             captured_live_config: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
@@ -244,9 +246,11 @@ class CliLiveDashboardTests(unittest.TestCase):
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
             cli.ObservabilityHub = StubHub  # type: ignore[assignment]
             tmux_adapter_module.TmuxCompactRuntime = StubObserver  # type: ignore[assignment]
-            cli.shutil.which = (  # type: ignore[assignment]
-                lambda value: (
-                    "/usr/bin/tmux" if value == "tmux" else original_which(value)
+            shutil.which = (  # type: ignore[assignment]
+                lambda value, **kwargs: (
+                    "/usr/bin/tmux"
+                    if value == "tmux"
+                    else original_which(value, **kwargs)
                 )
             )
             try:
@@ -260,7 +264,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
-                cli.shutil.which = original_which  # type: ignore[assignment]
+                shutil.which = original_which  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
             self.assertIn("event_sink", captured_kwargs)
@@ -410,7 +414,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_hub = cli.ObservabilityHub
-            original_which = cli.shutil.which
+            original_which = shutil.which
             original_execute_workflow = cli.execute_workflow
             captured_live_config: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
@@ -461,9 +465,11 @@ class CliLiveDashboardTests(unittest.TestCase):
             )
             tmux_adapter_module.TmuxCompactRuntime = StubObserver  # type: ignore[assignment]
             cli.ObservabilityHub = StubHub  # type: ignore[assignment]
-            cli.shutil.which = (  # type: ignore[assignment]
-                lambda value: (
-                    "/usr/bin/tmux" if value == "tmux" else original_which(value)
+            shutil.which = (  # type: ignore[assignment]
+                lambda value, **kwargs: (
+                    "/usr/bin/tmux"
+                    if value == "tmux"
+                    else original_which(value, **kwargs)
                 )
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
@@ -477,7 +483,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             finally:
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
-                cli.shutil.which = original_which  # type: ignore[assignment]
+                shutil.which = original_which  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -537,7 +543,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_which = cli.shutil.which
+            original_which = shutil.which
             captured_kwargs: dict[str, object] = {}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -551,8 +557,10 @@ class CliLiveDashboardTests(unittest.TestCase):
                 height=40,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            cli.shutil.which = (  # type: ignore[assignment]
-                lambda value: None if value == "tmux" else original_which(value)
+            shutil.which = (  # type: ignore[assignment]
+                lambda value, **kwargs: (
+                    None if value == "tmux" else original_which(value, **kwargs)
+                )
             )
             try:
                 cli.run(
@@ -562,7 +570,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                cli.shutil.which = original_which  # type: ignore[assignment]
+                shutil.which = original_which  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -582,7 +590,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
-            original_which = cli.shutil.which
+            original_which = shutil.which
             captured_kwargs: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
 
@@ -617,9 +625,11 @@ class CliLiveDashboardTests(unittest.TestCase):
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
             cli.ObservabilityHub = StubHub  # type: ignore[assignment]
             tmux_adapter_module.TmuxCompactRuntime = StubObserver  # type: ignore[assignment]
-            cli.shutil.which = (  # type: ignore[assignment]
-                lambda value: (
-                    "/usr/bin/tmux" if value == "tmux" else original_which(value)
+            shutil.which = (  # type: ignore[assignment]
+                lambda value, **kwargs: (
+                    "/usr/bin/tmux"
+                    if value == "tmux"
+                    else original_which(value, **kwargs)
                 )
             )
             try:
@@ -630,7 +640,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                cli.shutil.which = original_which  # type: ignore[assignment]
+                shutil.which = original_which  # type: ignore[assignment]
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]

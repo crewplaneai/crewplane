@@ -17,6 +17,7 @@ from crewplane.core.config import (
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
     Config,
     FileAccessSettings,
+    ProviderIdentifier,
     TokenPricing,
 )
 from crewplane.core.token_budget import TokenBudgetSettings
@@ -88,7 +89,8 @@ class RuntimeAgentConfigSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str | JsonObject]
-    provider_kind: ProviderKind = ProviderKind.GENERIC
+    environment: dict[str, str | JsonObject] = Field(default_factory=dict)
+    provider_kind: ProviderIdentifier = ProviderKind.GENERIC.value
     default_model: str | None = None
     model_arg: str | JsonObject | None = "--model"
     prompt_transport: PromptTransport = "stdin"
@@ -142,6 +144,9 @@ def _field_default_is_none(config: BaseModel, field_name: str) -> bool:
 
 def _model_payload_preserving_non_default_nulls(config: BaseModel) -> JsonObject:
     payload = cast(JsonObject, config.model_dump(mode="json", exclude_none=True))
+    # Empty overrides preserve execution identities authored before this field.
+    if payload.get("environment") == {}:
+        payload.pop("environment")
     for field_name in sorted(config.model_fields_set):
         if getattr(config, field_name) is None and not _field_default_is_none(
             config,

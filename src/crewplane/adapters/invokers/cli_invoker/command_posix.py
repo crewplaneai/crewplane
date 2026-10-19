@@ -13,6 +13,7 @@ from crewplane.core.workflow.models import WorkflowPlan
 
 from .command_types import CommandAvailability, ResolvedCommand, contains_path_separator
 from .env_command import EnvCommandContext, parse_env_command_context
+from .environment import environment_executable_lookup
 
 if TYPE_CHECKING:
     from .capability import CliInvocationRequest
@@ -45,12 +46,16 @@ def _collect_availability_errors(
             agent_config = config.agents.get(provider.provider)
             if agent_config is None:
                 continue
+            agent_lookup = environment_executable_lookup(
+                agent_config.environment, executable_base_dir, executable_lookup
+            )
             for requirement in _required_cli_executables(
                 agent_config.cli_cmd,
                 executable_base_dir,
-                executable_lookup,
+                agent_lookup,
+                {**os.environ, **agent_config.environment},
             ):
-                if _cli_executable_available(requirement, executable_lookup):
+                if _cli_executable_available(requirement, agent_lookup):
                     continue
                 location = f"workflow '{workflow.name}' -> node '{node.id}'"
                 missing_cli_locations.setdefault(
@@ -84,6 +89,7 @@ def _required_cli_executables(
     cli_command: list[str],
     executable_base_dir: Path,
     executable_lookup: Callable[[str], str | None],
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[_ExecutableRequirement, ...]:
     wrapper = _ExecutableRequirement(
         executable=cli_command[0],
@@ -92,7 +98,9 @@ def _required_cli_executables(
     if not _is_platform_env_wrapper(wrapper, executable_lookup):
         return (wrapper,)
 
-    wrapped = _env_wrapped_executable_requirement(cli_command, executable_base_dir)
+    wrapped = _env_wrapped_executable_requirement(
+        cli_command, executable_base_dir, environment
+    )
     if wrapped is None or wrapped == wrapper:
         return (wrapper,)
     return wrapper, wrapped
@@ -117,11 +125,14 @@ def _is_platform_env_wrapper(
 def _env_wrapped_executable_requirement(
     cli_command: list[str],
     executable_base_dir: Path,
+    environment: Mapping[str, str] | None = None,
 ) -> _ExecutableRequirement | None:
     try:
         command_context = parse_env_command_context(
             cli_command,
-            inherited_value=os.environ.get("PATH"),
+            inherited_value=(os.environ if environment is None else environment).get(
+                "PATH"
+            ),
             tracked_environment_name="PATH",
         )
     except ValueError:
@@ -268,10 +279,17 @@ class PosixCommandStrategy:
         return _collect_availability_errors(workflow, config, lookup, root)
 
     def availability(
-        self, command: list[str], root: Path, lookup: Callable[[str], str | None]
+        self,
+        command: list[str],
+        root: Path,
+        lookup: Callable[[str], str | None],
+        environment: Mapping[str, str] | None = None,
     ) -> CommandAvailability:
+        lookup = environment_executable_lookup(environment or {}, root, lookup)
         executable_lookup = cache(lookup)
-        requirements = _required_cli_executables(command, root, executable_lookup)
+        requirements = _required_cli_executables(
+            command, root, executable_lookup, environment
+        )
         return CommandAvailability(
             all(
                 _cli_executable_available(item, executable_lookup)
@@ -283,11 +301,20 @@ class PosixCommandStrategy:
         pass
 
     def prepare_executable(self, executable: str, request: CliInvocationRequest) -> str:
-        del request
+        if "PATH" in request.config.environment:
+            return resolve_command(
+                executable, request.working_directory, request.environment
+            ).executable
         return resolved_cli_executable(executable)
 
     def prepare_arguments(
         self, command: list[str], request: CliInvocationRequest
     ) -> list[str]:
-        del request
+        if "PATH" in request.config.environment:
+            return [
+                resolve_command(
+                    command[0], request.working_directory, request.environment
+                ).executable,
+                *command[1:],
+            ]
         return command

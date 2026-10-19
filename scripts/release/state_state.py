@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .plugins import release_plugins
 from .state_checks import (
     _verify_required_homebrew_resource_specs as _verify_homebrew_specs,
 )
@@ -15,6 +16,7 @@ from .state_types import (
     NpmRelease,
     PypiRelease,
     ReleaseContext,
+    ReleaseError,
     ReleaseManifest,
     ReleaseStatus,
 )
@@ -173,7 +175,13 @@ def manifest_context_issues(
     }
     if actual != expected:
         return ["release manifest package identity does not match pyproject.toml"]
-    return _pypi_manifest_filename_issues(context, manifest)
+    issues = _pypi_manifest_filename_issues(context, manifest)
+    for plugin in release_plugins(context):
+        try:
+            plugin.manifest(manifest)
+        except ReleaseError as exc:
+            issues.append(str(exc))
+    return issues
 
 
 def _pypi_manifest_filename_issues(

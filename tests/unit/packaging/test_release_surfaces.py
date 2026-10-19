@@ -103,6 +103,7 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
         "README.md",
         "pyproject.toml",
         f"src/{IMPORT_PACKAGE}",
+        "plugins/crewplane-ollama",
     ]
     assert "include" not in sdist_config
 
@@ -127,6 +128,16 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
         if dep.name in {"typer", "click", "shellingham", "rich"}
     )
     assert not dependencies["typer"].extras
+
+
+def test_standard_install_requires_the_official_ollama_plugin() -> None:
+    dependencies = parse_requirement_map(load_pyproject()["project"]["dependencies"])
+    plugin = tomllib.loads(
+        (ROOT / "plugins/crewplane-ollama/pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+    requirement = dependencies[plugin["name"]]
+    assert Version(plugin["version"]) in requirement.specifier
+    assert requirement.marker is None
 
 
 def test_uv_lock_tracks_editable_crewplane_package() -> None:

@@ -4,9 +4,9 @@ from rich.console import Console
 
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.cli.run.invoker_preflight import run_request_validation_errors
 from crewplane.cli.run.preflight import (
     BUILTIN_CLI_INVOKER_IDENTITY,
-    run_request_validation_errors,
 )
 from crewplane.core.config import (
     AgentConfig,

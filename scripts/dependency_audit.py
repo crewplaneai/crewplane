@@ -58,7 +58,7 @@ def export_locked_requirements(root: Path, output_path: Path) -> None:
             "--locked",
             "--extra",
             "dev",
-            "--no-emit-project",
+            "--no-emit-local",
             "--format",
             "requirements-txt",
             "--output-file",

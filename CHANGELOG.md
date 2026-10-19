@@ -4,6 +4,13 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.8] - Unreleased
+
+### Added
+
+- Explicitly registered CLI provider packages, with the official Ollama plugin installed automatically for local text-generation workflows.
+- Ollama onboarding discovers clients, servers, and installed text models, including Windows-hosted servers from WSL, and saves the selected endpoint for future runs. Discovery and readiness timeouts can be adjusted for slower hardware.
+- Per-agent environment settings for CLI validation and execution.
 
 ## [0.3.7] - 2026-10-09
 

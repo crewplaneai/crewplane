@@ -10,6 +10,7 @@ from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
 from crewplane.architecture.contracts import (
+    CanonicalIntegrationConfig,
     ObserverCapabilities,
     build_findings_filename,
     build_result_filename,
@@ -105,12 +106,12 @@ class MissingPresentationInvokerAdapter:
         resolved_identity: str,
         options: object | None = None,  # noqa: ARG002 - Required by protocol.
     ) -> object:
-        return {
-            "implementation": implementation,
-            "resolved_identity": resolved_identity,
-            "options": {},
-            "option_scopes": {},
-        }
+        return CanonicalIntegrationConfig(
+            implementation=implementation,
+            resolved_identity=resolved_identity,
+            options={},
+            option_scopes={},
+        )
 
     def create_invoker(
         self,

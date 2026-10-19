@@ -83,8 +83,9 @@ class AvailabilityInvokerAdapter(NoAvailabilityInvokerAdapter):
         config: Config,
         project_root: Path,
         executable_lookup: Callable[[str], str | None] | None = None,
+        options: dict[str, object] | None = None,
     ) -> tuple[str, ...]:
-        del workflow, config, project_root, executable_lookup
+        del workflow, config, project_root, executable_lookup, options
         type(self).calls += 1
         return ("custom invoker is unavailable",)
 
@@ -365,14 +366,15 @@ def test_invalid_availability_hook_return_fails_adapter_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def invalid_availability_errors(
+    async def invalid_availability_errors(
         adapter: CliInvokerAdapter,
         workflow: WorkflowPlan,
         config: Config,
         project_root: Path,
         executable_lookup: Callable[[str], str | None] | None = None,
+        options: dict[str, object] | None = None,
     ) -> list[str]:
-        del adapter, workflow, config, project_root, executable_lookup
+        del adapter, workflow, config, project_root, executable_lookup, options
         return ["invalid return type"]
 
     monkeypatch.setattr(
@@ -396,14 +398,15 @@ def test_availability_hook_exception_fails_adapter_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def failing_availability_errors(
+    async def failing_availability_errors(
         adapter: CliInvokerAdapter,
         workflow: WorkflowPlan,
         config: Config,
         project_root: Path,
         executable_lookup: Callable[[str], str | None] | None = None,
+        options: dict[str, object] | None = None,
     ) -> tuple[str, ...]:
-        del adapter, workflow, config, project_root, executable_lookup
+        del adapter, workflow, config, project_root, executable_lookup, options
         raise RuntimeError("probe failed")
 
     monkeypatch.setattr(
@@ -450,8 +453,9 @@ def test_invalid_builtin_reasoning_hook_return_fails_adapter_contract(
         workflow: WorkflowPlan,
         config: Config,
         working_directory: Path | None = None,
+        options: dict[str, object] | None = None,
     ) -> list[str]:
-        del adapter, workflow, config, working_directory
+        del adapter, workflow, config, working_directory, options
         return ["invalid return type"]
 
     monkeypatch.setattr(
@@ -481,8 +485,9 @@ def test_builtin_reasoning_hook_exception_fails_adapter_contract(
         workflow: WorkflowPlan,
         config: Config,
         working_directory: Path | None = None,
+        options: dict[str, object] | None = None,
     ) -> tuple[str, ...]:
-        del adapter, workflow, config, working_directory
+        del adapter, workflow, config, working_directory, options
         raise RuntimeError("reasoning validation failed")
 
     monkeypatch.setattr(

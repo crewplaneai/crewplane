@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .plugin_profile import ollama_provider_options
 from .rendering_errors import OnboardingRenderingError
 from .rendering_yaml_loading import load_config_mapping
 
@@ -14,17 +15,18 @@ def validate_provider_ready_config(
         )
     for provider in providers:
         provider_kind = config.agents[provider].provider_kind
-        if provider_kind.value != provider:
+        if provider_kind != ("ollama" if provider == "local" else provider):
             raise OnboardingRenderingError(
                 f"Provider-ready config for {provider} has provider_kind "
-                f"{provider_kind.value!r}."
+                f"{provider_kind!r}."
             )
     invoker = config.settings.integrations.invoker
     if invoker.implementation != "cli":
         raise OnboardingRenderingError(
             "Provider-ready config must activate the cli invoker."
         )
-    if invoker.options != {}:
+    expected_options = ollama_provider_options() if "local" in providers else {}
+    if invoker.options != expected_options:
         raise OnboardingRenderingError(
             "Provider-ready config must not leave mock options under cli."
         )

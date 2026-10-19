@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -23,7 +23,11 @@ class CommandStrategy(Protocol):
         root: Path,
     ) -> list[str]: ...
     def availability(
-        self, command: list[str], root: Path, lookup: Callable[[str], str | None]
+        self,
+        command: list[str],
+        root: Path,
+        lookup: Callable[[str], str | None],
+        environment: Mapping[str, str] | None = None,
     ) -> CommandAvailability: ...
     def validate_request(self, request: CliInvocationRequest) -> None: ...
     def prepare_executable(

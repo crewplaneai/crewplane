@@ -1,17 +1,14 @@
-# Quickstart: See The Control Plane
+# Quickstart: Run Your First Workflow
 
-Use this walkthrough after [installing Crewplane](installation.md). You will
-create a local `.crewplane/` directory, validate the generated workflow, run
-the workflow, and inspect the run record Crewplane writes to disk.
+After [installing Crewplane](installation.md), follow this guide to set up your
+project, run an example workflow, and inspect the files it saves. A workflow is
+a set of steps Crewplane runs to complete a task.
 
-In a fresh project, the generated `.crewplane/config.yml` selects the mock
-invoker. With that config, `crewplane run` does not require a model call,
-provider CLI startup, credentials, API keys, provider account access, token
-spend, or config edits. `tmux` is optional; when it is missing, Crewplane warns
-and continues without the live dashboard.
+New projects start in **mock mode**, which uses built-in sample responses.
+This lets you try Crewplane without an AI account, API key, or AI usage charges.
+Later, you can connect an AI tool to do real work.
 
-Start in the project where you want Crewplane to create local workflow files
-and run records:
+Open a terminal in your project folder and run:
 
 ```bash
 crewplane init
@@ -19,9 +16,8 @@ crewplane validate
 crewplane run
 ```
 
-These commands initialize the project, validate the selected workflow, and run
-the workflow selected by `.crewplane/config.yml`. In a fresh project, the
-generated config selects the mock invoker.
+These commands create the project settings, check the starter workflow, and
+run it. The steps below explain what to expect.
 
 ## 1. Initialize The Project
 
@@ -29,27 +25,23 @@ generated config selects the mock invoker.
 crewplane init
 ```
 
-`crewplane init` creates Crewplane's local working area. In a fresh project, the
-command creates:
+`crewplane init` creates a `.crewplane/` folder in your project. It contains:
 
-- `.crewplane/config.yml`: the project configuration file, including provider
-  settings and other parameters
-- `.crewplane/workflows/`: your workflow definitions, preloaded with example
-  workflows
-- `.crewplane/workflows/single-agent-review.task.md`: the example single-agent
-  workflow used during the quickstart
-- `.crewplane/preflight/fingerprint.key`: the fingerprint key used for
-  idempotency during resume and rerun
+- `.crewplane/config.yml`: settings for your project and AI tools
+- `.crewplane/workflows/`: your workflows and extra examples
+- `.crewplane/workflows/single-agent-review.task.md`: the starter workflow used
+  in this guide
+- `.crewplane/preflight/fingerprint.key`: a key Crewplane uses when checking
+  whether it can reuse previous results
 
-Only one `.task.md` file is created directly in `.crewplane/workflows/`, so the
-next `crewplane validate` and `crewplane run` commands inspect and execute that
-workflow by default. The additional examples live under
-`.crewplane/workflows/example-templates/` and are not selected automatically.
+In a new project, the starter workflow is the only `.task.md` file directly in
+`.crewplane/workflows/`, so Crewplane chooses it automatically when you check
+or run a workflow. Extra examples are in
+`.crewplane/workflows/example-templates/`; you choose one later by giving its
+file path.
 
-Initialization stops before provider setup. It does not install provider CLIs
-or authenticate provider accounts. `crewplane init` does not overwrite, which
-means that running it again will create missing generated files and leave
-existing files unchanged.
+You can run `crewplane init` again to create missing files. It leaves existing
+files unchanged. Installing AI tools and signing in to them comes later.
 
 ## 2. Validate The Workflow
 
@@ -57,14 +49,11 @@ existing files unchanged.
 crewplane validate
 ```
 
-Before Crewplane runs anything, ask it to compile the workflow. Validation
-parses and composes the default Markdown workflow, checks its schema, nodes,
-dependencies, providers, and policies, then builds a preflight execution-plan
-preview.
+This command checks the workflow file, its steps, the order they run in, and
+their settings. It then shows a preview of the planned run.
 
-This is still a dry structural check. It does not invoke providers, write run
-artifacts, or check provider CLI availability when you are using the generated
-mock config.
+With the starter mock settings, this check does not run any AI tools, require
+them to be installed, or save run results.
 
 The command should end with output like this:
 
@@ -79,16 +68,13 @@ Valid: 1 nodes across 1 execution wave(s)
 crewplane run
 ```
 
-Now run the generated workflow. The default config uses Crewplane's mock
-invoker, so the workflow executes with deterministic output instead of provider
-CLI calls. If `tmux` is available, Crewplane opens the live dashboard; if it is
-missing, the run still continues in the terminal.
+This runs the starter workflow using sample responses. If `tmux` is installed,
+Crewplane opens a live dashboard. Otherwise, it shows progress in the terminal.
 
-A mock run writes the same run-record structure a real provider run writes:
-logs, preflight artifacts, manifests, node outputs, and final results under
-`.crewplane/`.
-
-Mock output is scaffolding for validating Crewplane behavior, not model output.
+A mock run saves logs, step outputs, and final results under `.crewplane/`,
+using the same folder layout as a run with a real AI tool. Use the sample
+responses to check that your setup works; they are not an AI review of your
+project.
 
 The run should start with:
 
@@ -96,8 +82,8 @@ The run should start with:
 Mock invoker active: no provider CLI commands will be started.
 ```
 
-It should also print a console `Run Summary` with `Run ID` and `Status: succeeded`,
-like this:
+When the run finishes, look for a `Run Summary` with a `Run ID` and
+`Status: succeeded`:
 
 ```text
 Run Summary
@@ -108,34 +94,32 @@ Run Summary
   Nodes: pending=0 running=0 succeeded=1 blocked=0 failed=0
 ```
 
-The `Stages:` and `Results:` lines point to run-specific directories:
+The `Stages:` and `Results:` lines show where Crewplane saved the files for
+this run:
 
-- `.crewplane/execution-stages/<run-key>/` for runtime stage files
-- `.crewplane/execution-results/<run-key>/` for final result files
+- `.crewplane/execution-stages/<run-key>/` for logs and details about each step
+- `.crewplane/execution-results/<run-key>/` for final results
 
-The `<run-key>` includes the run ID printed in the summary.
+The `<run-key>` is the folder name for this run. It includes the run ID shown
+in the summary.
 
 ## 4. Inspect The Run Record
 
-The mock text is not the important part. The run record is. After the mock run
-succeeds, you have verified that:
+After a successful mock run, you know Crewplane can:
 
-- config can load
-- workflow Markdown can parse and compose
-- preflight can compile
-- the DAG can execute
-- artifacts are written under `.crewplane/`
-- no real provider was invoked
+- read your settings and workflow
+- plan and run the workflow's steps
+- save logs and results under `.crewplane/`
 
-This is a good time to read
-[Workflow Authoring](../guides/workflow-authoring.md), because you now have a
-local run record to compare against the workflow model.
+To start writing your own workflows, see
+[Workflow Authoring](../guides/workflow-authoring.md). You can compare its
+examples with the files from this run.
 
-![Run-record inspection flow showing console workflow execution, console Run Summary, run results, run stages, and debug details with the same run key across stage and result paths.](../images/run-records/run-record-read-order.png)
+![Read the terminal summary, open the saved results, then check the logs and step details.](../images/run-records/run-record-read-order.png)
 
-In short: run the workflow, read the console summary, inspect the saved result,
-then use the stage files for timeline, logs, manifests, and support details.
-If the terminal output scrolled away, find the latest stage run directory:
+Start with the terminal summary, then open the saved results. Use the stage
+files to see what happened during each step or investigate a problem.
+If the terminal output has scrolled away, find the latest run folder:
 
 ```bash
 ls -1td .crewplane/execution-stages/*/ | head -n 1
@@ -151,11 +135,9 @@ In that example, the run key is
 `single-agent-review--5e34bc54c79a-20260629-202539`. Use that value wherever
 the docs show `<run-key>`.
 
-Run keys always follow the format
-`<workflow-name>--<short-id>-<YYYYMMDD>-<HHMMSS>`, where the embedded timestamp
-tells you when the run started. The short id is a stable fingerprint of the
-workflow and project, so repeated runs of the same workflow share the same
-prefix and differ only by date and time.
+Run folders are named `<workflow-name>--<short-id>-<YYYYMMDD>-<HHMMSS>`.
+The short ID identifies the workflow and project. The date and time show when
+the run started, so you can tell repeated runs apart.
 
 Then list everything that was written:
 
@@ -164,33 +146,65 @@ find .crewplane/execution-stages -maxdepth 4 -type f | sort
 find .crewplane/execution-results -maxdepth 3 -type f | sort
 ```
 
-Use this tree as a compact map of the folders you just inspected:
+This diagram shows where to find each kind of file:
 
-![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-records/run-record-tree.png)
+![Folder layout: execution-stages contains logs and step details; execution-results contains final outputs and findings.](../images/run-records/run-record-tree.png)
 
 ## 5. Onboard A Provider
 
-After the generated mock run succeeds and you have inspected the run record,
-run onboarding when you are **ready to prepare real providers**:
+Crewplane calls the AI tools it works with **providers**. After trying the mock
+run, use onboarding to choose the providers you want to use:
 
 ```bash
 crewplane onboarding
 ```
 
-Onboarding prepares the generated project for one or more real providers:
+The command guides you through setup:
 
-- Checks for supported provider CLI commands on `PATH`.
-- Lets you choose providers using comma-separated numbers (for example, `1,2`).
-  Select at least one; you can select all listed providers.
-- Updates the generated config and workflow to use all selected providers.
-- Comments out the mock setup and enables the CLI invoker.
-- Validates that the project is ready for a real CLI-backed run.
+- Looks for supported AI commands your terminal can run.
+- Offers Ollama through its included plugin; see
+  [Ollama setup](provider-setup.md#local-ollama-text-generation) for server and
+  model prerequisites.
+- Asks you to choose at least one provider by entering numbers separated by
+  commas, such as `1,2`.
+- Updates the starter settings and workflow to use your chosen providers, then
+  checks the setup.
 
-It still does not start provider CLIs, authenticate providers, or check provider
-account/model readiness. Onboarding updates the starter workflow; library
-examples keep their own provider selections.
+Install your AI tools before onboarding, and sign in if they require an account.
+For providers such as Codex and Claude, Crewplane checks that their commands
+are available; it does not check your account or access to a particular model.
 
-When onboarding finishes, you choose when to start the first real provider run:
+When switching from mock mode, onboarding updates only starter files you
+haven't edited. Extra examples keep their own provider choices.
+
+For Ollama, start your server, then select Ollama, a server, and a downloaded
+text model. Crewplane saves your choices in `.crewplane/config.yml` and tests
+the model with a short prompt. This may load the model into memory and use
+your graphics card.
+
+If you already use real providers, rerun `crewplane onboarding` to add or
+update the Ollama connection, even if you've edited your settings. Your
+workflows and existing model choice stay the same. This setup skips the model
+test; run `crewplane validate` on a workflow that uses `local` to check it.
+
+By default, Crewplane looks for Ollama on the same computer. In Windows
+Subsystem for Linux (WSL), it also checks for an Ollama server running in
+Windows. You need the Linux Ollama command installed inside WSL; see
+[Windows server setup](provider-setup.md#windows-hosted-ollama-from-wsl).
+To choose a specific server, set the `OLLAMA_HOST` environment variable to its
+address before running onboarding.
+
+Crewplane uses the saved server address for future checks and runs. If the
+address changes, update `agents.local.environment.OLLAMA_HOST` in
+`.crewplane/config.yml` and run `crewplane validate`.
+
+If the search for servers or models takes too long, Crewplane shows what it
+found and tells you the search is incomplete. Give each search up to 60 seconds
+by running
+`crewplane onboarding --discovery-timeout 60`. See the
+[option reference](../reference/commands.md#crewplane-onboarding) for details.
+
+When setup finishes, start your first run with real providers when you are ready:
 
 ```bash
 crewplane run
@@ -200,16 +214,15 @@ crewplane run
 
 To see the same flow with a real provider, watch the Codex walkthrough:
 
-> Note: this video shows the manual version of the provider switch. It comments
-> out the mock CLI config, uncomments the Codex CLI config, and then runs the
-> workflow with a real provider CLI.
+> This video switches from mock mode to Codex by editing the settings file.
+> It then runs the workflow with Codex.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real run demo with Codex"></video>
 </div>
 
-> Alternatively, this video shows the full walkthrough: install Crewplane, initialize a
-> project, run the first mock workflow, inspect artifacts, and onboard a real provider.
+> This video shows the full walkthrough: install Crewplane, set up a project,
+> try a mock run, inspect the saved files, and connect a real provider.
 
 <div align="center" style="margin-bottom: 0;">
   <video src="https://github.com/user-attachments/assets/b6573226-ba31-473e-aaae-ba3ddca2d3cd" controls width="80%"></video>
@@ -217,43 +230,33 @@ To see the same flow with a real provider, watch the Codex walkthrough:
 
 ## Try Another Workflow
 
-The quickstart used the one workflow created directly in
-`.crewplane/workflows/`. The extra templates stay under
-`.crewplane/workflows/example-templates/`, so Crewplane will not select them
-automatically. Those examples may name providers you did not select during
-onboarding. Enable their matching agent profiles before validation.
+You can find more examples in `.crewplane/workflows/example-templates/`.
+They may use providers you did not choose during onboarding. Before trying an
+example, follow the [examples guide](../examples/index.md) to enable the
+provider settings it needs and prepare its input files.
 
-You can try them without real provider calls: enable the required named profiles
-and keep or restore the `mock` invoker. The invoker setting determines whether
-commands run, regardless of the agent names. Follow the
-[examples guide](../examples/index.md) for provider requirements, sample inputs,
-and review policy. `crewplane init` leaves existing copies unchanged when you
-run it again.
+To try an example with sample responses, keep mock mode enabled or
+[switch back to mock mode](provider-setup.md#turn-mock-mode-onoff). Mock mode
+uses sample responses for every provider named in the workflow.
 
-To validate or run one of those templates, pass its path:
+Choose an example by including its path in the command:
 
 ```bash
 crewplane validate .crewplane/workflows/example-templates/code-review-example.task.md
 crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
 ```
 
-If you later keep multiple `.task.md` files directly under
-`.crewplane/workflows/`, use the same pattern and pass the workflow path you
-want.
+If you add more `.task.md` files directly to `.crewplane/workflows/`, include
+the path of the workflow you want to use in the same way.
 
 For your next real task, try [fixing a reported bug](../examples/bug-fix.md) or
 [reviewing an existing change](../examples/review-existing-change.md). Both need
-existing code and an edited task brief; their sample inputs do not establish
-that your project has a bug or a change to review.
+existing code and a description of your task. Replace their sample inputs with
+details of the actual bug or change you want Crewplane to work on.
 
 ## Next
 
-At this point, you have initialized a project, validated and run the generated
-workflow, inspected the saved run record, and prepared the config for one real
-provider. Use `crewplane run` when you are ready to start that provider-backed
-workflow.
-
-For manual configuration, edited generated files, or additional providers,
-continue to [Provider setup](provider-setup.md).
+To change settings by hand, work with files you have already edited, or add
+more providers, continue to [Provider setup](provider-setup.md).
 
 Or return to the [documentation index](../index.md).

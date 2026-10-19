@@ -25,6 +25,7 @@ User task guidance lives in the public docs sections linked from
 - [ADR 0012: Preflight compiled runtime execution plan](adr/0012-preflight-compiled-runtime-execution-plan.md)
 - [ADR 0014: Artifact-backed resume](adr/0014-artifact-backed-node-boundary-resume.md)
 - [ADR 0018: Native Windows support](adr/0018-native-windows-support.md)
+- [ADR 0019: Explicit plugin system](adr/0019-explicit-plugin-system.md)
 
 Key architectural constraints:
 

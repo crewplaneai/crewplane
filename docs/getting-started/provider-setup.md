@@ -158,8 +158,9 @@ settings:
 ```
 
 With `implementation: "cli"`, `crewplane run` starts the external commands
-configured under `agents`. Keep `options: {}`; the built-in CLI invoker does
-not accept additional options.
+configured under `agents`. Keep `options: {}` when using only built-in providers.
+For a provider plugin, add its settings under `options.providers`, as shown in
+the Ollama example below.
 
 ## Choose A Provider Kind
 
@@ -167,7 +168,7 @@ not accept additional options.
 choose command options, read answers and usage reports, recognize usage limits,
 and format logs. Install the provider CLI and configure its credentials separately.
 
-Supported values:
+Built-in values:
 
 - `claude`
 - `codex`
@@ -180,6 +181,7 @@ Supported values:
 - `generic`
 
 Use `generic` for a CLI without a dedicated provider kind.
+Provider plugins can add other `provider_kind` values, such as `ollama`.
 
 Check that each provider CLI you plan to use is installed. For example:
 
@@ -189,6 +191,131 @@ codex --version
 gemini --version
 copilot version
 ```
+
+## Local Ollama Text Generation
+
+Crewplane installs its official `crewplane-ollama` plugin automatically. Use it
+to generate text with a local Ollama model.
+This setup targets Ollama 0.40.2 and requires Python 3.13+ and Crewplane 0.3.8+.
+Before continuing, install Ollama, start its server, and download a text model.
+
+All [standard installation methods](installation.md) install the plugin in
+Crewplane's Python environment. To configure it, run `crewplane onboarding`
+and select Ollama, or follow the manual configuration below. Installing
+Crewplane does not install the Ollama application, start its server, or download
+models.
+
+To keep generation local, disable Ollama's cloud features on the computer
+running its server. Set `disable_ollama_cloud` to `true` in
+`~/.ollama/server.json`, or set `OLLAMA_NO_CLOUD=1` for the Ollama server.
+Restart Ollama and check that its logs report cloud features disabled. Setting
+this only in the terminal where you run Crewplane does not change an already
+running server. See [Ollama's cloud settings](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features).
+
+New configs from `crewplane init` include a commented `local` agent and Ollama
+plugin registration. After installing the packages and preparing the server,
+uncomment the `local` agent, switch the invoker to `cli`, and replace its mock
+options with the commented Ollama `options` block. Replace
+`<installed-local-text-model>` with the name of your downloaded model.
+
+`crewplane init` preserves existing configs. If yours does not include these
+examples, merge the following settings into `.crewplane/config.yml`:
+
+```yaml
+agents:
+  local:
+    cli_cmd: [ollama, run]
+    provider_kind: ollama
+    default_model: "<installed-local-text-model>"
+    prompt_transport: stdin
+    invocation_timeout_seconds: 900
+settings:
+  integrations:
+    invoker:
+      implementation: cli
+      options:
+        providers:
+          ollama:
+            implementation: crewplane_ollama:OLLAMA
+            distribution: crewplane-ollama
+```
+
+Use `providers: [local]` on workflow steps that should use this model. A model
+chosen in the workflow overrides `default_model`.
+
+Try the included example, which summarizes a file and passes the summary to
+the next step:
+
+```bash
+crewplane validate .crewplane/workflows/example-templates/text-generation-example.task.md
+crewplane run --no-live --tasks .crewplane/workflows/example-templates/text-generation-example.task.md
+```
+
+`crewplane validate` tests the selected model with a short prompt.
+`crewplane run` makes the same check before starting the workflow. Each model
+check uses the agent's `invocation_timeout_seconds` for model lookup and inference
+together, with a 60-second limit when that setting is `null`. Increase the
+setting for slower hardware or model loading.
+The check may use GPU memory and processing time.
+If the server is unavailable or the model cannot answer, Crewplane reports an
+error and the workflow does not start. `--dry-run` skips the model check.
+Validation and dry-run save no run files.
+
+Cancelling a workflow leaves the Ollama server running, and the model may
+continue generating. Check Ollama if you need to stop that work. Choose how
+many tasks to run at once based on your machine's available memory; Crewplane
+does not limit GPU memory use. Keep the model installed while the workflow runs:
+Ollama may try to download it again if it is removed.
+
+This setup generates text; it cannot open or edit files. Supply file contents
+with `{{file:path}}` or a previous step's answer with `{{upstream.output}}`.
+`{{upstream.output_path}}` supplies only a filename. See
+[Inspecting Run Records](../guides/inspecting-artifacts.md) to find answers and logs.
+If you replace a model or plugin without changing its name or version, use
+`crewplane run --force` to avoid reusing earlier results.
+
+### Windows-hosted Ollama from WSL
+
+Keep the Ollama server and downloaded models on Windows. In WSL, install the
+Linux Ollama command-line tool using the
+[manual Linux installation](https://docs.ollama.com/linux#manual-install).
+Install the client only; skip the server startup and service setup steps.
+Configure `cli_cmd` to use the Linux `ollama` command.
+
+Check which command your WSL terminal will use:
+
+```bash
+command -v ollama
+```
+
+With WSL's default networking, set the Windows computer's address as the
+Ollama server address:
+
+```bash
+export OLLAMA_HOST="http://$(ip -4 route show default | awk '{print $3; exit}'):11434"
+curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 5 "$OLLAMA_HOST/api/version"
+ollama --version
+ollama list
+```
+
+The `curl` command should print the server version, and `ollama list` should
+show your Windows models. If you use WSL's mirrored networking mode, set
+`OLLAMA_HOST=http://127.0.0.1:11434` instead. See
+[Microsoft's WSL networking guide](https://learn.microsoft.com/en-us/windows/wsl/networking).
+
+If Ollama works on Windows but these WSL commands cannot connect, check the
+Windows firewall and Ollama's network settings. For WSL's default networking,
+you may need to set `OLLAMA_HOST=0.0.0.0:11434` on Windows and allow connections
+from the WSL network through the firewall. Limit that access to WSL, then fully
+quit and restart Ollama. Follow the
+[Windows setup instructions](https://docs.ollama.com/faq#setting-environment-variables-on-windows).
+Keep cloud features disabled on the Windows server.
+
+The Windows setting controls where Ollama accepts connections. The WSL setting
+tells the client where to find that server. If
+`agents.local.environment.OLLAMA_HOST` is set in `.crewplane/config.yml`, update
+it to the Windows server address; it overrides the shell's value. Otherwise,
+run Crewplane from the terminal where you set `OLLAMA_HOST`.
 
 ## Pi Text Mode
 
@@ -477,6 +604,9 @@ agents:
 See the [configuration reference](../reference/configuration.md) for every
 config field.
 
+For Ollama, usage-limit retries are disabled and `quota_reached_on_contains`
+is ignored. Your normal error retry settings still apply.
+
 ## Next
 
 After provider setup, start the real provider run:
@@ -485,8 +615,9 @@ After provider setup, start the real provider run:
 crewplane run
 ```
 
-`crewplane run` checks the workflow and config before starting provider CLIs.
-If those checks fail, no provider command starts.
+`crewplane run` checks the workflow and provider setup before starting the
+workflow's tasks. Some providers send a short test prompt during these checks.
+If a check fails, the workflow does not start.
 
 Continue to [Running workflows](../guides/running-workflows.md) to run the
 configured workflow and learn about validation, resuming interrupted runs,

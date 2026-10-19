@@ -35,6 +35,7 @@ def run(command: list[str], cwd: Path, env: dict[str, str]) -> str:
 
 
 def install(wheel: Path, root: Path, installer: str) -> tuple[Path, Path]:
+    plugin_wheel = next(wheel.parent.glob("crewplane_ollama-*.whl"))
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
     if installer == "pip":
@@ -42,7 +43,20 @@ def install(wheel: Path, root: Path, installer: str) -> tuple[Path, Path]:
         venv.EnvBuilder(with_pip=True).create(environment)
         binary = environment / ("Scripts" if os.name == "nt" else "bin")
         python = binary / ("python.exe" if os.name == "nt" else "python")
-        run([str(python), "-m", "pip", "install", str(wheel)], root, env)
+        run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--find-links",
+                str(wheel.parent),
+                str(wheel),
+                str(plugin_wheel),
+            ],
+            root,
+            env,
+        )
     else:
         uv = shutil.which("uv")
         if uv is None:
@@ -50,7 +64,22 @@ def install(wheel: Path, root: Path, installer: str) -> tuple[Path, Path]:
         env.update(
             UV_TOOL_DIR=str(root / "tools"), UV_TOOL_BIN_DIR=str(root / "tool-bin")
         )
-        run([uv, "tool", "install", "--python", sys.executable, str(wheel)], root, env)
+        run(
+            [
+                uv,
+                "tool",
+                "install",
+                "--python",
+                sys.executable,
+                "--find-links",
+                str(wheel.parent),
+                "--with",
+                str(plugin_wheel),
+                str(wheel),
+            ],
+            root,
+            env,
+        )
         binary = root / "tools/crewplane" / ("Scripts" if os.name == "nt" else "bin")
         python = binary / ("python.exe" if os.name == "nt" else "python")
     return python, binary / ("crewplane.exe" if os.name == "nt" else "crewplane")

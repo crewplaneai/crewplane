@@ -221,14 +221,16 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             workflow = runner_workflow()
             config = mock_runner_config(invoker_implementation="cli")
 
-            def failing_availability_errors(
+            async def failing_availability_errors(
                 adapter: object,
                 checked_workflow: WorkflowPlan,
                 checked_config: Config,
                 project_root: Path,
                 executable_lookup: Callable[[str], str | None] | None = None,
+                options: dict[str, object] | None = None,
             ) -> tuple[str, ...]:
                 del (
+                    options,
                     adapter,
                     checked_workflow,
                     checked_config,
