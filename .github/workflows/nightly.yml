@@ -45,6 +45,10 @@ jobs:
       - name: Run tests
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly
 
+      - name: Run Dots host plugin tests
+        if: ${{ runner.os != 'Windows' }}
+        run: make dots-host-check
+
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
 

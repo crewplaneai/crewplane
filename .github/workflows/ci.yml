@@ -84,6 +84,9 @@ jobs:
       - name: Run tests
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev --extra stress python scripts/run_tests.py --profile ${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }}
 
+      - name: Run Dots host plugin tests
+        run: make dots-host-check
+
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
 
