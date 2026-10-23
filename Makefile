@@ -115,7 +115,12 @@ format:
 format-check:
 	$(RUN_RUFF) format --check src tests scripts $(PLUGIN_SOURCES)
 
-check: lint format-check typecheck uv-bootstrap-check test
+check: lint format-check typecheck uv-bootstrap-check test dots-host-check
+
+.PHONY: dots-host-check
+dots-host-check:
+	uv pip install --no-deps -e plugins/crewplane-dots-host
+	$(RUN_PYTHON) -m pytest plugins/crewplane-dots-host/tests -q
 
 actionlint:
 	scripts/actionlint.sh

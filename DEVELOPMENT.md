@@ -45,7 +45,8 @@ make typecheck    # strict type checking for package and fixtures
 make lint         # project-env ruff check src tests scripts
 make format       # modifies files: ruff import fixes + format src tests scripts
 make format-check # project-env ruff format --check src tests scripts
-make check        # lint + format-check + typing + uv pin check + tests
+make check        # lint + format-check + typing + uv pin check + core and dots-host tests
+make dots-host-check # install optional local bridge and run its protocol tests
 make uv-bootstrap-check  # verify all pinned uv versions and checksums agree
 make uv-bootstrap-update # update all uv pins and checksums to the latest release
 make help         # list package and release targets
@@ -68,6 +69,10 @@ relevant checks locally.
 By default, `make test` and `make check` run the full suite with minimum coverage
 of 96% statements and 90% branches. Use `--coverage off` for
 [focused test runs](#testing-expectations).
+
+The optional Dots host plugin has a separate suite: `make dots-host-check`
+installs it and runs its tests. This target is included in `make check`, Linux
+pull-request CI, and Linux/macOS nightly CI.
 
 Git fixtures require Git 2.34.1 or newer. Dependent tests skip locally if it is
 unavailable; CI profiles fail. Set `CREWPLANE_REQUIRED_GIT=1` to require it locally.

@@ -1,0 +1,25 @@
+version: "1.0"
+agents:
+  dots:
+    cli_cmd: ["crewplane-dots-host", "--queue", ".crewplane/dots-host", "invoke"]
+    provider_kind: dots_host
+    prompt_transport: stdin
+    default_model: gpt-6.1-sol
+    extra_args: ["--reasoning", "xhigh", "--timeout", "1800"]
+    invocation_timeout_seconds: 1900
+    invocation_idle_timeout_seconds: null
+settings:
+  workspace:
+    enabled: false
+  integrations:
+    invoker:
+      implementation: crewplane_dots_host.adapter:DotsHostInvokerAdapter
+      options:
+        providers:
+          dots_host:
+            implementation: crewplane_dots_host.provider:DOTS_HOST
+            distribution: crewplane-dots-host
+    artifacts:
+      implementation: filesystem
+      options:
+        log_cli_output: true
