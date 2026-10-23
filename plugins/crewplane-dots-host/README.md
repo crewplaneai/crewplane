@@ -1,29 +1,163 @@
 # Crewplane Dots host (experimental)
 
-This optional CLI plugin submits work to an **active agent running in OpenAI Dots**. That Dots agent is the host: it uses its terminal and native-agent tools to operate the bridge autonomously. There is no human-operated terminal, manual queue servicing, or interactive user input in this protocol. It does not call an SDK, simulate a model, or provide an unattended native-model daemon. Crewplane still owns DAG order, retries, manifests and output artifacts. The `crewplane_dots_host.adapter:DotsHostInvokerAdapter` invoker reuses Crewplane's CLI transport and declares managed workspaces unsupported. No core runtime change is required. The explicit `dots_host` capability treats successful receipt prose as output, never as provider quota diagnostics. The plugin is registered in example config by `crewplane_dots_host.provider:DOTS_HOST` and its installed distribution version.
+Run [Crewplane](../../README.md) workflows using native agents from an active
+OpenAI Dots session.
 
-The Dots agent installs the plugin with `uv pip install -e plugins/crewplane-dots-host` in the same environment as Crewplane and puts that environment's bin directory on PATH. The runnable example is `plugins/crewplane-dots-host/examples/review-and-summary/`. From the repository root, the agent launches `crewplane run -c plugins/crewplane-dots-host/examples/review-and-summary/config.yml -t plugins/crewplane-dots-host/examples/review-and-summary/review.task.md --no-live` in a background or yielding terminal session, then services the queue concurrently. It must keep servicing the queue while the workflow runs. This is an integration reference; the bridge depends on the active Dots agent for native dispatch.
+`crewplane-dots-host` connects Crewplane to the Dots agent in your session,
+called the **host**. Crewplane queues tasks, manages their dependencies and
+retries, and saves results. The host uses its terminal and native-agent tools
+to pick up each task, run it, and return the output.
 
-## Host protocol
+## Who is it for?
 
-Using its terminal tool, the Dots agent first runs `cd plugins/crewplane-dots-host/examples/review-and-summary` from the repository root. Crewplane resolves this example's relative queue path from the directory containing `config.yml`, so the host must use that same directory. All commands below then start with `crewplane-dots-host --queue .crewplane/dots-host`:
+Use this package if you already work in Dots and want repeatable, multi-step
+agent workflows with prompts and results saved on disk. The included
+[review-and-summary example](examples/review-and-summary/review.task.md) runs
+a read-only code review, then passes the saved review to a summary task.
 
-1. `list` exports readable JSON requests, state, lease tokens and receipts from the transactional local SQLite store.
-2. `claim JOB_ID --lease-seconds 300` atomically grants one host a token. The request contains prompt, working directory, requested model/reasoning, and expiration. The host must inspect these before dispatch and apply its own authorization/sandbox policy.
-3. The host dispatches the prompt using its actual native-agent tool. It must not execute arbitrary instructions from unrelated files. Tool support, requested settings and actual dispatch must be verified. `renew JOB_ID --token TOKEN --lease-seconds 300` keeps a live lease valid.
-4. `complete JOB_ID --token TOKEN --receipt result.json` accepts an actual agent result. Receipt schema: `{"output":"...","host_agent_id":"...","confirmed":{"model":"gpt-6.1-sol","reasoning":"xhigh"},"evidence":"host tool dispatch/result reference"}`. Unknown confirmed values must be null. A non-null requested setting must match the confirmed dispatch setting, otherwise completion fails. This is a host attestation, not independent backend/model attestation or proof of billing. Never fill confirmation merely by copying the request. Capabilities are not negotiated by this v1 transport; the host must verify needed tools before accepting work and otherwise cancel, with no capability fallback.
-5. `cancel JOB_ID` fences results; `reconcile` expires overdue jobs. Hosts must poll state and interrupt their own native agent on cancellation/expiry. Cancellation fences output; the shell process cannot stop an agent owned by the conversation host.
+**The Dots host must stay active throughout the run.** Installing the package
+does not start native agents or provide an unattended service. The host performs
+the queue operations below using its tools; you do not need to relay tasks or
+results manually.
 
-Queue IDs identify invocation attempts, not workflow nodes. Crewplane retains workflow/run correlation in its logs (each invocation emits its queue ID to stderr). Exact replay of the same successful receipt is idempotent. Different receipts, wrong tokens and stale completions fail. Expired work is never automatically reclaimed, avoiding duplicate native dispatch; the Dots agent must stop/reconcile its original native agent before an already-authorized Crewplane retry creates a new invocation. Signal handling is installed before request publication. A filesystem cancellation marker fences results independently of SQLite write locks; database busy waits are bounded to 50ms, below the core 250ms TERM grace. Queue initialization, request submission and invocation polling retry temporary SQLite busy/locked errors within the same invocation timeout; startup waits do not reset that deadline, and submission retries preserve the prompt and invocation ID. The agent's `cancel` command automatically retries temporary contention for up to five seconds across queue initialization and cancellation. Cancelling an already completed job remains a no-op. Other database errors fail immediately. Claims and renewals acquire write ownership before sampling time. Abrupt SIGKILL cannot run a handler and remains bounded by the request deadline even before claim. Timeout does not roll back side effects; this example is read-only.
+## Try the example
 
-The Dots agent checks every command's exit status and handles failures itself. After a nonzero exit, it inspects job state and retries only when safe within the remaining request and lease deadlines. A failed cancellation command is not confirmation that the job was cancelled. If recovery cannot finish within those limits, the agent stops its owned native work and reports failure; it does not wait for human intervention or redispatch work whose outcome is unresolved.
+You need a Crewplane checkout, Python 3.13+, `uv`, `make`, and a Dots agent with
+terminal access and native-agent tools. See the
+[development setup](../../DEVELOPMENT.md#setup) for repository setup details.
+Use Linux, macOS, or WSL; native Windows support is pending.
 
-## Boundaries and limitations
+### 1. Install the package
 
-Managed workspaces are unsupported by this bridge. Keep `settings.workspace.enabled: false`, as in the example. Set `settings.integrations.invoker.implementation` to `crewplane_dots_host.adapter:DotsHostInvokerAdapter`; existing configurations using `cli` must switch to this adapter. It rejects managed workspace execution during real-run preflight, before creating a checkout or submitting a queue request. `validate` and `--dry-run` remain previews. Registering the capability directly under the generic `cli` adapter bypasses the guard and is unsupported. The native agent is owned by the active Dots host; stopping the bridge cannot prove that agent has stopped before Crewplane resets or removes a managed checkout. The host remains responsible for stopping its native work on cancellation or expiry.
+From the repository root:
 
-Local trusted filesystem only. SQLite locking is the cross-process ownership boundary; do not place the queue on an unsupported network filesystem or expose it to untrusted users. Prompt and output contents are stored on disk, so use the same protections as Crewplane's other artifacts. No credentials, persistent authorization, network service, or new account is created. The bridge does not sandbox native work; the host does. Windows acceptance has not been performed. The Dots host must remain active, renew leases, and reconcile cancellation. If the host disappears, the invocation fails rather than switching models or pretending success. Output-idle timeouts are disabled because the bridge emits its answer only after host completion; use `--timeout` or `invocation_timeout_seconds` to limit elapsed time.
+```bash
+make setup
+uv pip install -e plugins/crewplane-dots-host
+export PATH="$PWD/.venv/bin:$PATH"
+```
 
-Native reasoning is explicit in this CLI's `--reasoning` argument; the Dots provider intentionally rejects a competing workflow-level reasoning field. Changing workflow models uses standard `model`/`default_model` ; the provider owns `--model` and rejects competing CLI model flags. No model IDs are remapped. The review example requests GPT-6.1 Sol with xhigh reasoning. Test doubles in protocol tests are not native execution evidence.
+This optional package must be installed in the same environment as Crewplane.
+Ensure the checkout's `.venv/bin` is on `PATH` in each terminal session the host
+uses.
 
-Tests: `python -m pytest plugins/crewplane-dots-host/tests -q`. Core tests remain unchanged; `make dots-host-check` explicitly installs this optional package and runs its tests. `make check` includes that check. Standalone plugin is intentionally not registered as a built-in provider alias or bundled default dependency. It uses the supported registered CLI capability contract.
+### 2. Preview the workflow
+
+```bash
+cd plugins/crewplane-dots-host/examples/review-and-summary
+crewplane validate -c config.yml review.task.md
+crewplane run -c config.yml -t review.task.md --dry-run --no-live
+```
+
+Validation should succeed, and the preview should show `review` followed by
+`summarize`. These commands do not dispatch native agents or verify the host's
+tools. The [example configuration](examples/review-and-summary/config.yml)
+requests `gpt-6.1-sol` with `xhigh` reasoning and allows 30 minutes per invocation;
+the host must be able to use and confirm those settings before you run it.
+
+### 3. Run with the Dots host
+
+Ask the Dots agent to launch this command from the example directory in a
+background or yielding terminal session, then follow the
+[host instructions](#host-instructions) while the workflow runs:
+
+```bash
+crewplane run -c config.yml -t review.task.md --no-live
+```
+
+The host must service the queue concurrently with Crewplane. Running the command
+without a host leaves it waiting until it times out.
+
+On success, Crewplane saves the review and summary under
+`.crewplane/execution-stages/` and `.crewplane/execution-results/` in the example
+directory. The queue is at `.crewplane/dots-host` in that same directory. Use
+that directory for the host commands too, so both sides address the same queue.
+
+## Use it in your own workflow
+
+Start from the example's [config](examples/review-and-summary/config.yml) and
+[workflow](examples/review-and-summary/review.task.md). Change the task prompts
+and dependencies, keeping the `dots_host` provider registration and
+`crewplane_dots_host.adapter:DotsHostInvokerAdapter` invoker from the config.
+Keep `settings.workspace.enabled: false`.
+
+Select a model with the agent's `default_model` or a workflow `model` override.
+Set reasoning with `--reasoning` in the agent's `extra_args`; the workflow-level
+`reasoning` field is unsupported. The plugin passes model IDs through unchanged
+and requires the host to confirm the requested settings; it has no fallback
+model.
+
+## Current limits
+
+- **Managed workspaces are unsupported.** Tasks use the existing checkout. Use
+  the example's Dots invoker adapter rather than the generic `cli` adapter.
+- **Cancellation needs the host's cooperation.** Cancelling or expiring a job
+  prevents its result from being accepted, but cannot stop a native agent owned
+  by the host or undo its side effects. The host must monitor jobs, renew active
+  leases, and stop its native work when required.
+- **Results arrive on completion.** Native output is not streamed, and
+  output-idle timeouts are disabled. Use `--timeout` or Crewplane's
+  `invocation_timeout_seconds` to bound elapsed time. `--timeout` includes reading
+  stdin; if the prompt stream stays open past the deadline, no job is submitted.
+- **Use a trusted local filesystem.** Prompts and results are stored on disk.
+  Keep the queue private and off network filesystems. The host is responsible
+  for permissions, sandboxing, and checking that its tools can perform the task.
+- **Native execution needs separate verification.** Local tests cover the
+  bridge protocol. An end-to-end run requires an active Dots host; a successful
+  dry run does not establish that native dispatch works.
+
+## Host instructions
+
+<details>
+<summary>Claim tasks, run native agents, and return results</summary>
+
+These steps are for the active Dots agent. Run these commands from the example
+directory while keeping Crewplane running. Prefix every command below with
+`crewplane-dots-host --queue .crewplane/dots-host`.
+
+1. Run `list` to inspect requests and job states. For a pending job, check its
+   prompt, working directory, requested model and reasoning, and expiration.
+   Verify that the work is authorized and your native tools support it. If it
+   cannot be performed as requested, use `cancel JOB_ID` and report the reason.
+2. Run `claim JOB_ID --lease-seconds 300`, replacing `JOB_ID` with the ID from
+   `list`. A successful claim returns a `token`; use it as `TOKEN` below. Only
+   dispatch after the claim succeeds.
+3. Run the prompt with your actual native-agent tool in the requested working
+   directory. While it runs, renew the lease before it expires with
+   `renew JOB_ID --token TOKEN --lease-seconds 300`. Run `reconcile` and `list`
+   to check for expiration or cancellation, and stop your native agent if either
+   occurs. Renewing a lease does not extend the request's deadline.
+4. Save the actual result to `result.json` and run
+   `complete JOB_ID --token TOKEN --receipt result.json`. Use this receipt shape,
+   replacing the sample text and confirming settings from the actual dispatch:
+
+   ```json
+   {
+     "output": "The native agent's actual result",
+     "host_agent_id": "Actual native-agent ID",
+     "confirmed": {"model": "gpt-6.1-sol", "reasoning": "xhigh"},
+     "evidence": "Actual host tool dispatch/result reference"
+   }
+   ```
+
+   Never fill `confirmed` merely by copying the request. Use `null` for unknown
+   values; completion fails if a requested setting is unconfirmed or differs.
+   The receipt records the host's report, not independent model or billing
+   verification.
+5. Continue servicing jobs until Crewplane exits. Completing `review` allows
+   Crewplane to queue `summarize`.
+
+Check every command's exit status. After a failure, inspect job state before
+retrying. Repeating an identical successful completion is safe; redispatching
+native work with an unresolved outcome is not. Expired jobs cannot be reclaimed.
+Stop the original native work before handling any Crewplane retry. If recovery
+cannot finish within the request and lease deadlines, stop your native work and
+report failure. A failed `cancel` command does not confirm cancellation.
+
+</details>
+
+## Development
+
+From the repository root, `make dots-host-check` installs the optional package
+and runs its local protocol tests. It is also included in `make check`. See the
+[development guide](../../DEVELOPMENT.md) for the full validation workflow.

@@ -212,6 +212,8 @@ def invoke(
     queue: Queue, args: argparse.Namespace, deadline: float | None = None
 ) -> int:
     Queue._duration(args.timeout)
+    if deadline is None:
+        deadline = time.monotonic() + args.timeout
     job_id = str(uuid.uuid4())
     submitted = False
     completed = False
@@ -224,9 +226,7 @@ def invoke(
     signal.signal(signal.SIGTERM, cancelled)
     signal.signal(signal.SIGINT, cancelled)
     try:
-        prompt = sys.stdin.read()
-        if deadline is None:
-            deadline = time.monotonic() + args.timeout
+        prompt = _read_prompt(deadline)
         while (remaining := deadline - time.monotonic()) > 0:
             queue._assert_not_cancelled(job_id)
             try:
@@ -260,6 +260,24 @@ def invoke(
     finally:
         if not completed:
             queue.mark_cancelled(job_id)
+
+
+def _read_prompt(deadline: float) -> str:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Dots host timed out while reading stdin")
+
+    def timed_out(signum: int, frame: Any) -> None:
+        del signum, frame
+        raise TimeoutError("Dots host timed out while reading stdin")
+
+    previous_handler = signal.signal(signal.SIGALRM, timed_out)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, remaining)
+        return sys.stdin.read()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _execute_command(args: argparse.Namespace, deadline: float) -> int:

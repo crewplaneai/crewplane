@@ -1,5 +1,6 @@
 import argparse
 import io
+import os
 import signal
 import sqlite3
 import subprocess
@@ -133,6 +134,42 @@ def test_subprocess_transport_and_cancellation(tmp_path):
             for stream in (process.stdin, process.stdout, process.stderr):
                 stream.close()
             queue.close()
+
+
+@pytest.mark.parametrize("prompt", [b"", b"partial prompt"], ids=["empty", "partial"])
+def test_invocation_timeout_bounds_open_stdin(tmp_path: Path, prompt: bytes) -> None:
+    reader_fd, writer_fd = os.pipe()
+    with os.fdopen(reader_fd, "rb") as reader, os.fdopen(writer_fd, "wb") as writer:
+        writer.write(prompt)
+        writer.flush()
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "crewplane_dots_host",
+                "--queue",
+                str(tmp_path),
+                "invoke",
+                "--timeout",
+                "0.1",
+            ],
+            stdin=reader,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+
+    assert process.returncode == 1
+    assert stdout == ""
+    assert "timed out while reading stdin" in stderr
+    with closing(Queue(tmp_path)) as queue:
+        assert queue.inspect() == []
 
 
 def test_independent_connections_cannot_claim_twice(tmp_path):
