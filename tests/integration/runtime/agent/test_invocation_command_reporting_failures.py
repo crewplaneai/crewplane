@@ -18,12 +18,12 @@ from crewplane.runtime.agent.invocation.command import (
 )
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
-    ProcessDrainEvidence,
 )
 from crewplane.runtime.agent.process.stream_capture import ProcessOutputCapture
 from tests.helpers.platforms import requires_posix
 from tests.integration.runtime.agent.invocation_command_support import (
     command_workspace_context,
+    fail_process_drain,
 )
 
 
@@ -132,24 +132,6 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             del args, kwargs
             raise RuntimeError("provider output collection failed")
 
-        async def fail_drain(
-            process: asyncio.subprocess.Process,
-            process_group_id: int | None,
-            diagnostic_sink: object,
-        ) -> None:
-            del diagnostic_sink
-            process.kill()
-            await process.wait()
-            raise ProcessDrainError(
-                ProcessDrainEvidence(
-                    pid=process.pid,
-                    process_group_id=process_group_id,
-                    leader_stopped=True,
-                    process_group_stopped=False,
-                ),
-                "provider process group remained live",
-            )
-
         context = InvocationContext(
             node_id="node.a",
             task_id="generic_executor_0",
@@ -165,7 +147,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "crewplane.runtime.agent.process.runner.reap_failed_process",
-                new=fail_drain,
+                new=fail_process_drain,
             ),
             pytest.raises(ProcessDrainError) as caught,
         ):

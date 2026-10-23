@@ -4,7 +4,6 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import LogLevel, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import PreflightExecutionNode
 
@@ -15,6 +14,7 @@ from .common import (
     emit_runtime_log,
 )
 from .errors import NodeExecutionError
+from .preflight_files import preflight_content_path
 from .workspace_files import resolve_project_initial_workspace_file
 
 
@@ -68,13 +68,7 @@ def _input_output_file(node_dir: Path) -> Path:
 
 
 def _read_input_content(context_root: str, content_ref: str) -> str:
-    normalized_ref = Path(content_ref)
-    if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
-        raise ValueError(f"Invalid input content reference '{content_ref}'.")
-    source_path = contained_regular_file(
-        Path(context_root) / "preflight",
-        normalized_ref.as_posix(),
-    )
+    source_path = preflight_content_path(context_root, content_ref, "input")
     if source_path is None:
         raise ValueError(
             f"Input content reference is missing or unsafe: '{content_ref}'."

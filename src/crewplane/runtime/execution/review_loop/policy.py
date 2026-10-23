@@ -8,14 +8,16 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from crewplane.core.review_policy import (
+    audit_rounds_or_default,
+    remediation_depth_or_default,
+)
 from crewplane.core.workflow.keywords import (
     ProviderRole,
     provider_role_segments_are_contiguous,
 )
 
 from .types import (
-    DEFAULT_AUDIT_ROUNDS,
-    DEFAULT_REMEDIATION_DEPTH,
     AuditRoundResult,
     ReviewLoopRunContext,
 )
@@ -27,7 +29,7 @@ def resolve_remediation_depth(node: PreflightExecutionNode) -> int:
         raise ValueError(
             f"Sequential node '{node.id}' depth must be greater than 0 when provided."
         )
-    return depth or DEFAULT_REMEDIATION_DEPTH
+    return remediation_depth_or_default(depth)
 
 
 def resolve_audit_rounds(node: PreflightExecutionNode) -> int:
@@ -36,11 +38,7 @@ def resolve_audit_rounds(node: PreflightExecutionNode) -> int:
         raise ValueError(
             f"Sequential node '{node.id}' audit_rounds must be greater than 0 when provided."
         )
-    return audit_rounds or DEFAULT_AUDIT_ROUNDS
-
-
-def audit_round_context(audit_rounds: int, audit_round_num: int) -> int | None:
-    return audit_round_num if audit_rounds > 1 else None
+    return audit_rounds_or_default(audit_rounds)
 
 
 def audit_round_dir(node_dir: Path, audit_rounds: int, audit_round_num: int) -> Path:

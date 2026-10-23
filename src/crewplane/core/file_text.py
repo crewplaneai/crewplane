@@ -6,6 +6,19 @@ from pathlib import Path
 STREAM_READ_BYTES = 65_536
 
 
+def decode_utf8_without_nul(payload: bytes) -> str | None:
+    """Decode strict UTF-8, returning None when the decoded text contains NUL."""
+    text = payload.decode("utf-8")
+    return None if "\x00" in text else text
+
+
+def valid_utf8_without_nul(payload: bytes) -> bool:
+    try:
+        return decode_utf8_without_nul(payload) is not None
+    except UnicodeDecodeError:
+        return False
+
+
 def path_has_non_whitespace_text(path: Path) -> bool:
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
     with path.open("rb") as handle:

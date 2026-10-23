@@ -13,6 +13,7 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointFile,
     CheckpointReview,
 )
+from crewplane.core.review_contract import ReviewLoopStopReason
 from crewplane.runtime.execution.review_loop import checkpoint_progress
 from crewplane.runtime.execution.review_loop.checkpoint_progress import (
     ProgressRestorer,
@@ -134,6 +135,39 @@ def test_restore_preserves_feedback_presence_and_state_ownership(
     restored.stall.consecutive_round_count += 1
     progress.latest_reviewer_outputs.clear()
     assert restorer.checkpoint.model_dump() == before
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        None,
+        "consensus",
+        "consensus_exhausted",
+        "no_progress",
+        "no_valid_candidate",
+        "failed",
+        "cancelled",
+    ],
+)
+def test_restore_round_trips_all_stop_reasons_as_runtime_enums(
+    restorer: ProgressRestorer, reason: str | None
+) -> None:
+    stored = restorer.checkpoint.progress
+    assert stored.active_audit is not None
+    stored.stop_reason = stored.active_audit.stop_reason = reason
+
+    progress = restorer.restore()
+
+    expected = None if reason is None else ReviewLoopStopReason(reason)
+    assert progress.stop_reason is expected
+    assert progress.active_audit is not None
+    assert progress.active_audit.stop_reason is expected
+    encoded = encode_progress(restorer.root, progress)
+    assert encoded == stored
+    if reason is not None:
+        assert type(encoded.stop_reason) is str
+        assert encoded.active_audit is not None
+        assert type(encoded.active_audit.stop_reason) is str
 
 
 def test_restore_reads_and_reconstructs_feedback_in_order(

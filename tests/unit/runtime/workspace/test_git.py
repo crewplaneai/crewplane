@@ -12,10 +12,71 @@ from crewplane.runtime.workspace.git import (
     RUNTIME_GIT_COMMAND_TIMEOUT_SECONDS,
     GitCommand,
     git,
+    resolve_common_git_dir,
 )
 from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.workspace_service import create_git_repo, run_git_text
 
 pytestmark = requires_workspace_support
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_common_git_directory_resolves_git_output(
+    tmp_path: Path, absolute: bool
+) -> None:
+    common = tmp_path / "shared metadata"
+    raw_path = common.as_posix() if absolute else "shared metadata/../shared metadata"
+    with patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            [], 0, stdout=(raw_path + "\n").encode(), stderr=b""
+        ),
+    ) as run:
+        assert resolve_common_git_dir(tmp_path) == common
+    command = git(tmp_path)
+    run.assert_called_once_with(
+        [
+            "git",
+            *workspace_git_config_args(),
+            "-C",
+            tmp_path.as_posix(),
+            "rev-parse",
+            "--git-common-dir",
+        ],
+        check=True,
+        capture_output=True,
+        env=command.env,
+        input=None,
+        timeout=RUNTIME_GIT_COMMAND_TIMEOUT_SECONDS,
+    )
+
+
+def test_common_git_directory_matches_linked_worktree(tmp_path: Path) -> None:
+    repo = create_git_repo(tmp_path)
+    linked = tmp_path / "linked worktree"
+    run_git_text(repo, "worktree", "add", "--detach", linked.as_posix(), "HEAD")
+
+    assert resolve_common_git_dir(repo) == repo / ".git"
+    assert resolve_common_git_dir(linked) == repo / ".git"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        subprocess.CalledProcessError(128, "git"),
+        subprocess.TimeoutExpired("git", 600),
+        OSError("cannot execute git"),
+    ],
+)
+def test_common_git_directory_propagates_transport_failure(
+    tmp_path: Path, error: Exception
+) -> None:
+    with (
+        patch("subprocess.run", side_effect=error),
+        pytest.raises(type(error)) as caught,
+    ):
+        resolve_common_git_dir(tmp_path)
+    assert caught.value is error
 
 
 def test_git_command_run_uses_bounded_timeout(

@@ -10,7 +10,7 @@ from crewplane.core.workflow.validation import (
     collect_workflow_policy_diagnostics,
     validate_workflow_plan,
 )
-from crewplane.core.workflow.validation.workspace import (
+from crewplane.core.workspace.selection import (
     logical_workspace_selections,
 )
 from crewplane.version import SCHEMA_VERSION

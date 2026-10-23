@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from crewplane.core.workspace.selection import latest_lineage_source
+
 from .workspace.models import is_lineage_worktree
 
 if TYPE_CHECKING:
@@ -115,15 +117,11 @@ def _latest_same_worktree_source(
             continue
         if candidate_policy.logical_worktree_name == policy.logical_worktree_name:
             candidates.append(node_id)
-    if not candidates:
-        return None
-    return max(
-        candidates,
-        key=lambda node_id: (
-            len(_ancestor_node_ids(nodes_by_id[node_id], nodes_by_id)),
-            node_order[node_id],
-        ),
-    )
+    candidate_ancestor_counts = {
+        node_id: len(_ancestor_node_ids(nodes_by_id[node_id], nodes_by_id))
+        for node_id in candidates
+    }
+    return latest_lineage_source(candidate_ancestor_counts, node_order)
 
 
 def _ancestor_node_ids(

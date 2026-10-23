@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from crewplane.architecture.contracts import (
     ArtifactContract,
@@ -9,7 +8,6 @@ from crewplane.architecture.contracts import (
     VerifiedNodeArtifact,
 )
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.preflight.models import (
     Fragment,
     PreflightExecutionNode,
@@ -24,6 +22,7 @@ from crewplane.core.workflow.keywords import (
     ProviderRole,
 )
 
+from .preflight_files import preflight_content_path
 from .workspace_files import (
     ResolvedWorkspaceFile,
     resolve_workspace_file,
@@ -181,13 +180,7 @@ def _resolve_fragment(
 
 
 def _read_static_file(plan: PreflightExecutionPlan, content_ref: str) -> str:
-    normalized_ref = Path(content_ref)
-    if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
-        raise ValueError(f"Invalid static content reference '{content_ref}'.")
-    path = contained_regular_file(
-        Path(plan.context_root) / "preflight",
-        normalized_ref.as_posix(),
-    )
+    path = preflight_content_path(plan.context_root, content_ref, "static")
     if path is None:
         raise ValueError(
             f"Static content reference is missing or unsafe: '{content_ref}'."

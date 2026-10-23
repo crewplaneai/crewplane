@@ -41,6 +41,76 @@ from tests.integration.observability.runtime.observability_runtime_helpers impor
 pytestmark = requires_workspace_support
 
 
+@pytest.mark.parametrize("stage_path", ["renamed-stage", "custom/nested-stage"])
+@pytest.mark.parametrize("with_event", [False, True])
+def test_persistent_summary_reads_compiled_workspace_stage(
+    tmp_path: Path, stage_path: str, with_event: bool
+) -> None:
+    workflow = single_node_workflow()
+    output = OutputManager(workflow.name, base_dir=tmp_path)
+    logger = PersistentRunLogger(output)
+    logger.start(RunContext(topology_from_workflow(workflow), output.run_id, 0))
+    request = node_artifact_request("node.a")
+    request.contract.stage_path = stage_path
+    stage_dir = output.create_node_dir(request)
+    payload = _workspace_state_summary_payload("node.a")
+    payload.update(
+        workspace={"retention": "deleted"},
+        result={"result_commit": "d" * 40},
+    )
+    (stage_dir / "workspace-state.json").write_text(json.dumps(payload))
+    if with_event:
+        logger.record_event(
+            make_execution_event(
+                event_type=EventType.WORKSPACE_CONTEXT_RECORDED,
+                workflow_name=workflow.name,
+                run_id=output.run_id,
+                node_id="node.a",
+                task_id="alpha_executor_0",
+                round_num=1,
+                status="running",
+                workspace_kind="worktree",
+            )
+        )
+
+    logger.stop(RunResult(status="succeeded"))
+
+    summary = logger.last_summary
+    assert summary is not None and summary.workspace is not None
+    assert len(summary.workspace.invocations) == 1
+    invocation = summary.workspace.invocations[0]
+    assert invocation.state_path == f"{stage_path}/workspace-state.json"
+    assert invocation.status == "succeeded"
+    assert invocation.result_commit == "d" * 40
+    assert invocation.retention == "deleted"
+
+
+@pytest.mark.parametrize(
+    "unsafe", ["ancestor-link", "stage-link", "mismatch", "renamed-mismatch"]
+)
+def test_compiled_workspace_summary_rejects_unrelated_evidence(
+    tmp_path: Path, unsafe: str
+) -> None:
+    stages_dir = tmp_path / "stages"
+    request = node_artifact_request("node.a")
+    request.contract.stage_path = (
+        "other.node" if unsafe == "renamed-mismatch" else "custom/nested-stage"
+    )
+    stage_dir = stages_dir / request.contract.stage_path
+    stage_dir.mkdir(parents=True)
+    payload = _workspace_state_summary_payload(
+        "other.node" if unsafe in {"mismatch", "renamed-mismatch"} else "node.a"
+    )
+    (stage_dir / "workspace-state.json").write_text(json.dumps(payload))
+    if unsafe not in {"mismatch", "renamed-mismatch"}:
+        linked = stage_dir.parent if unsafe == "ancestor-link" else stage_dir
+        target = tmp_path / "moved"
+        linked.rename(target)
+        linked.symlink_to(target, target_is_directory=True)
+
+    assert workspace_state_summaries(stages_dir, (request,)) == ()
+
+
 @pytest.mark.parametrize(
     "run_manifest", ["valid", "missing", "malformed", "no-workspace", "symlink"]
 )

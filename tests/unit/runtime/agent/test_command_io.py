@@ -27,6 +27,69 @@ from crewplane.runtime.agent.process.stream_capture import (
 from tests.helpers.process_sessions import windows_session_stub
 
 
+@pytest.mark.race
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("existing_cancellation", [False, True])
+@pytest.mark.parametrize("failed", [False, True])
+def test_owned_task_wait_preserves_cancellation_and_worker_outcome(
+    completed: bool, existing_cancellation: bool, failed: bool
+) -> None:
+    async def check() -> None:
+        started, finish = asyncio.Event(), asyncio.Event()
+        failure = OSError("worker failed")
+        original = asyncio.CancelledError("original") if existing_cancellation else None
+
+        async def work() -> str:
+            started.set()
+            await finish.wait()
+            if failed:
+                raise failure
+            return "finished"
+
+        worker = asyncio.create_task(work())
+        waiter = None
+        try:
+            async with asyncio.timeout(5):
+                await started.wait()
+                if completed:
+                    finish.set()
+                    await asyncio.wait((worker,))
+                waiter = asyncio.create_task(
+                    session.wait_for_owned_task(worker, original)
+                )
+                if not completed:
+                    await asyncio.sleep(0)
+                    waiter.cancel("first")
+                    await asyncio.sleep(0)
+                    waiter.cancel("second")
+                    await asyncio.sleep(0)
+                    assert not waiter.done()
+                    assert not worker.done()
+                    finish.set()
+                cancellation = await waiter
+                if existing_cancellation or completed:
+                    assert cancellation is original
+                else:
+                    assert cancellation is not None
+                    assert cancellation.args == ("first",)
+                assert worker.done() and not worker.cancelled()
+                if failed:
+                    with pytest.raises(OSError) as caught:
+                        worker.result()
+                    assert caught.value is failure
+                else:
+                    assert worker.result() == "finished"
+        finally:
+            finish.set()
+            await asyncio.gather(
+                worker,
+                *([waiter] if waiter is not None else []),
+                return_exceptions=True,
+            )
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize("operation", ["write", "flush"])
 @pytest.mark.parametrize("close_fails", [False, True])
 def test_log_initialization_closes_on_failure_without_replacing_exception(

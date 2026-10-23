@@ -11,6 +11,7 @@ from pathlib import Path
 from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.atomic import atomic_write_bytes
+from crewplane.core.value_checks import is_strict_int
 
 from .paths import (
     GENERATED_FILE_SNAPSHOT_METADATA_NAME,
@@ -123,9 +124,7 @@ def generated_file_snapshot_rejection_summary(
     raw_total_count = payload.get("rejected_file_count")
     total_count = (
         raw_total_count
-        if isinstance(raw_total_count, int)
-        and not isinstance(raw_total_count, bool)
-        and raw_total_count >= len(recorded_files)
+        if is_strict_int(raw_total_count) and raw_total_count >= len(recorded_files)
         else len(recorded_files)
     )
     return GeneratedFileSnapshotRejectionSummary(

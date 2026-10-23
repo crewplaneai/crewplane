@@ -5,11 +5,13 @@ from tempfile import mkdtemp
 import pytest
 from pydantic import ValidationError
 
-from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KIND_VALUES
+from crewplane.architecture.contracts import (
+    SUPPORTED_PROVIDER_KIND_VALUES,
+    MockInvokerOptions,
+)
 from crewplane.core.config import (
     DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
-    DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS,
     AgentConfig,
     Config,
     Settings,
@@ -388,7 +390,7 @@ class ConfigTests(unittest.TestCase):
                     "      options:",
                     (
                         "        observation_delay_seconds: "
-                        f"{DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS}"
+                        f"{MockInvokerOptions.observation_delay_seconds}"
                     ),
                 ]
             ),
@@ -400,7 +402,7 @@ class ConfigTests(unittest.TestCase):
         assert config.settings is not None
         self.assertEqual(
             config.settings.integrations.invoker.options["observation_delay_seconds"],
-            DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS,
+            MockInvokerOptions.observation_delay_seconds,
         )
 
     def test_load_config_rejects_non_object_yaml(self):

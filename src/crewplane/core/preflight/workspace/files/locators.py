@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.file_text import valid_utf8_without_nul
 from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
@@ -13,7 +14,6 @@ from crewplane.core.workspace.git_reads import (
     git_cat_blob,
     git_error,
     git_ls_tree,
-    valid_utf8_without_nul,
 )
 from crewplane.core.workspace.selection import selected_worktree_name
 

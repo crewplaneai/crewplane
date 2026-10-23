@@ -107,14 +107,7 @@ class ProviderTokenUsage:
 
     def as_dict(self) -> dict[str, int | None]:
         """Return a new mutable mapping of token bucket values."""
-        return {
-            "input": self.input,
-            "cached_input": self.cached_input,
-            "cache_write": self.cache_write,
-            "output": self.output,
-            "reasoning": self.reasoning,
-            "total": self.total,
-        }
+        return {bucket: getattr(self, bucket) for bucket in TOKEN_BUCKETS}
 
     def has_any_value(self) -> bool:
         return any(value is not None for value in self.as_dict().values())

@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from crewplane.architecture.safe_files import is_safe_relative_path
 from crewplane.core.file_hashing import ContentSignature
+from crewplane.core.review_contract import ReviewLoopStopReason
 from crewplane.core.value_checks import is_sha256
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -134,17 +142,14 @@ class CheckpointCounters(CheckpointRecord):
     artifact_drift_warning_count: int = Field(default=0, ge=0)
     last_round_num: int = Field(default=0, ge=0)
     selected_round_num: int = Field(default=0, ge=0)
-    stop_reason: (
-        Literal[
-            "consensus",
-            "consensus_exhausted",
-            "no_progress",
-            "no_valid_candidate",
-            "failed",
-            "cancelled",
-        ]
-        | None
-    ) = None
+    stop_reason: str | None = Field(default=None, strict=True)
+
+    @field_validator("stop_reason")
+    @classmethod
+    def validate_stop_reason(cls, value: str | None) -> str | None:
+        if value is not None and value not in set(ReviewLoopStopReason):
+            raise ValueError("Invalid review-loop stop reason.")
+        return value
 
 
 class CheckpointAuditProgress(CheckpointCounters):

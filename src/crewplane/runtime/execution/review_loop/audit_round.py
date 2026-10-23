@@ -9,7 +9,8 @@ from typing import Literal, NoReturn
 
 from crewplane.architecture.contracts import LogLevel
 from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
-from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
+from crewplane.core.review_contract import ReviewLoopStopReason
+from crewplane.core.review_policy import audit_rounds_or_default, maximum_review_round
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
@@ -94,7 +95,7 @@ async def execute_single_audit_round(
                 consensus_reached=False, clean_fresh_approval=False
             )
         if request.publish_status is not None:
-            await _audit_publication.complete_audit_publication(
+            await complete_audit_io(
                 partial(_publish_audit_failure, request.publish_status, exc)
             )
         raise
@@ -105,8 +106,8 @@ def _completed_review_requires_failure(
 ) -> bool:
     return (
         (request.audit_round_num or 1)
-        == (request.stage.execution_policy.audit_rounds or 1)
-        and progress.last_round_num == request.remediation_depth + 1
+        == audit_rounds_or_default(request.stage.execution_policy.audit_rounds)
+        and progress.last_round_num == maximum_review_round(request.remediation_depth)
         and progress.selected_round_num == progress.last_round_num
         and not consensus_failure_allows_continuation(request.stage)[0]
         and not check_consensus(
@@ -127,10 +128,11 @@ async def execute_audit_round_iterations(
     progress: AuditRoundProgress,
 ) -> AuditRoundResult:
     """Run audit iterations until consensus, a stop decision, or depth exhaustion."""
-    for round_num in range(request.start_round, request.remediation_depth + 2):
+    max_round = maximum_review_round(request.remediation_depth)
+    for round_num in range(request.start_round, max_round + 1):
         progress.last_round_num = round_num
         if request.publish_status is not None:
-            await _audit_publication.complete_audit_publication(request.publish_status)
+            await complete_audit_io(request.publish_status)
         outcome = await _execute_audit_iteration(request, progress, round_num)
         if outcome is AuditIterationOutcome.STOP:
             break
@@ -139,10 +141,7 @@ async def execute_audit_round_iterations(
                 consensus_reached=True,
                 clean_fresh_approval=round_num == 1,
             )
-        if (
-            round_num < request.remediation_depth + 1
-            and request.commit_transition is not None
-        ):
+        if round_num < max_round and request.commit_transition is not None:
             await request.commit_transition("executors", round_num + 1)
     return progress.to_result(
         consensus_reached=False,
@@ -210,8 +209,8 @@ async def _acquire_review_candidate(
         try:
             await complete_audit_io(partial(recover_or_raise, exc))
         except asyncio.CancelledError:
-            if (request.audit_round_num or 1) != (
-                request.stage.execution_policy.audit_rounds or 1
+            if (request.audit_round_num or 1) != audit_rounds_or_default(
+                request.stage.execution_policy.audit_rounds
             ) or consensus_failure_allows_continuation(request.stage)[0]:
                 raise
         return AuditIterationOutcome.STOP
@@ -235,10 +234,10 @@ async def _acquire_review_candidate(
         exhausted = (
             isinstance(completed_candidate, AuditIterationOutcome)
             and (request.audit_round_num or 1)
-            == (request.stage.execution_policy.audit_rounds or 1)
+            == audit_rounds_or_default(request.stage.execution_policy.audit_rounds)
             and (
                 completed_candidate is AuditIterationOutcome.STOP
-                or round_num == request.remediation_depth + 1
+                or round_num == maximum_review_round(request.remediation_depth)
             )
             and (
                 progress.latest_valid_executor_outputs is None
@@ -333,7 +332,7 @@ async def run_review_phase(
     reviewer_run = await run_reviewer_round(reviewer_request)
     reviewer_outputs = reviewer_run.outputs
     progress.record_completed_review(reviewer_run, round_num)
-    await _audit_publication.complete_audit_publication(
+    await complete_audit_io(
         partial(
             persist_round_review_inbox, request, progress, reviewer_outputs, round_num
         )

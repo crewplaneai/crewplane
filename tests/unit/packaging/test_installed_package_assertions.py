@@ -1,5 +1,8 @@
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -7,6 +10,88 @@ from unittest.mock import Mock
 import pytest
 
 from tests.helpers import installed_package_assertions as acceptance
+from tests.helpers import installed_wheel_smoke
+
+
+@pytest.mark.parametrize(
+    "run", [acceptance.run, installed_wheel_smoke.run], ids=["acceptance", "wheel"]
+)
+def test_package_runner_preserves_environment_directory_and_merged_output(
+    tmp_path, run
+) -> None:
+    environment = {**os.environ, "CREWPLANE_SMOKE_INPUT": "value"}
+    command = [
+        sys.executable,
+        "-c",
+        "import os, sys; assert os.getcwd() == sys.argv[1]; "
+        "os.write(1, os.environ['CREWPLANE_SMOKE_INPUT'].encode() + b'\\xff'); "
+        "os.write(2, b'err\\xfe')",
+        str(tmp_path),
+    ]
+
+    assert run(command, tmp_path, environment) == "value\ufffderr\ufffd"
+
+
+@pytest.mark.parametrize(
+    "run", [acceptance.run, installed_wheel_smoke.run], ids=["acceptance", "wheel"]
+)
+def test_package_runner_preserves_nonzero_exit_diagnostics(tmp_path, run) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        "import os, sys; os.write(2, b'failed\\xff'); sys.exit(7)",
+    ]
+
+    with pytest.raises(RuntimeError) as caught:
+        run(command, tmp_path, dict(os.environ))
+
+    assert str(caught.value) == f"Command failed (7): {command}\nfailed\ufffd"
+
+
+@pytest.mark.parametrize(
+    "run", [acceptance.run, installed_wheel_smoke.run], ids=["acceptance", "wheel"]
+)
+def test_package_runner_propagates_timeout(tmp_path, monkeypatch, run) -> None:
+    command, environment = ["provider"], {"INPUT": "value"}
+    failure = subprocess.TimeoutExpired(command, 180)
+    launch = Mock(side_effect=failure)
+    monkeypatch.setattr(acceptance.subprocess, "run", launch)
+
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        run(command, tmp_path, environment)
+
+    assert caught.value is failure
+    launch.assert_called_once_with(
+        command,
+        cwd=tmp_path,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=180,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("mode", ["package", "script"])
+def test_wheel_smoke_imports_in_both_launch_modes(tmp_path, mode) -> None:
+    script = Path(installed_wheel_smoke.__file__)
+    arguments = (
+        ["-m", "tests.helpers.installed_wheel_smoke"]
+        if mode == "package"
+        else [str(script)]
+    )
+    result = subprocess.run(
+        [sys.executable, *arguments, "--help"],
+        cwd=script.parents[2] if mode == "package" else tmp_path,
+        env=acceptance.package_environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=True,
+    )
+
+    assert "--installer {pip,uv}" in result.stdout
 
 
 @pytest.mark.parametrize(

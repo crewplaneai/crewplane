@@ -12,6 +12,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workspace.cache import worktree_cache_family
 from crewplane.runtime.workspace.materialization import (
     MaterializationCapacityRequest,
     MaterializationLimiter,
@@ -397,9 +398,7 @@ def _add_fresh_worktree(
         request.source,
         request.source_ref,
         request.protected_ref_scopes,
-        workspace_family=(
-            "workspaces" if request.lineage_producer else "review-workspaces"
-        ),
+        workspace_family=worktree_cache_family(request.lineage_producer),
         parent_slug=request.parent_slug,
         state_path=request.state_path,
         cancel_requested=request.cancel_requested,

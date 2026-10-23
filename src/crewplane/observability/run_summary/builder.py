@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import RunSummaryArtifactReaderPort
 from crewplane.observability.events import ExecutionEvent
 from crewplane.observability.timing import format_elapsed_seconds
@@ -31,6 +32,7 @@ def build_run_summary(
     dropped_event_count: int = 0,
     summary_facts: RunSummaryFacts | None = None,
     token_aggregates: ProviderTokenAggregates | None = None,
+    node_requests: tuple[NodeArtifactRequest, ...] = (),
 ) -> RunSummary:
     """Build a durable run summary from artifacts, events, and the latest snapshot."""
 
@@ -58,6 +60,7 @@ def build_run_summary(
         workspace=build_workspace_run_summary(
             artifact_store,
             facts.workspace_invocations,
+            node_requests,
         ),
         issues=summary_issues(
             artifact_store=artifact_store,

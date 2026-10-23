@@ -9,7 +9,7 @@ from crewplane.architecture.contracts import (
     MockInvokerOptions,
     MockOutputMode,
 )
-from crewplane.core.config import DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS
+from crewplane.core.value_checks import is_strict_int
 
 from .selectors import validate_fail_selectors
 
@@ -34,7 +34,7 @@ def _validate_bool(value: object, option_name: str) -> bool:
 def _validate_optional_int(value: object, option_name: str) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, int):
+    if not is_strict_int(value):
         raise ValueError(
             f"mock invoker option '{option_name}' must be an integer or null"
         )
@@ -92,23 +92,27 @@ def parse_options(
         )
 
     delay_seconds = _validate_non_negative_number(
-        resolved.pop("delay_seconds", 0),
+        resolved.pop("delay_seconds", MockInvokerOptions.delay_seconds),
         "delay_seconds",
     )
     observation_delay_seconds = _validate_non_negative_number(
         resolved.pop(
             "observation_delay_seconds",
-            DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS,
+            MockInvokerOptions.observation_delay_seconds,
         ),
         "observation_delay_seconds",
     )
-    output_mode = _validate_output_mode(resolved.pop("output_mode", "lorem"))
-    output_dir = _validate_output_dir(resolved.pop("output_dir", None))
+    output_mode = _validate_output_mode(
+        resolved.pop("output_mode", MockInvokerOptions.output_mode)
+    )
+    output_dir = _validate_output_dir(
+        resolved.pop("output_dir", MockInvokerOptions.output_dir)
+    )
     strict_file_mode = _validate_bool(
-        resolved.pop("strict_file_mode", False),
+        resolved.pop("strict_file_mode", MockInvokerOptions.strict_file_mode),
         "strict_file_mode",
     )
-    seed = _validate_optional_int(resolved.pop("seed", None), "seed")
+    seed = _validate_optional_int(resolved.pop("seed", MockInvokerOptions.seed), "seed")
     fail_when = validate_fail_selectors(resolved.pop("fail_when", []), canonical)
 
     if output_mode == "file" and output_dir is None:

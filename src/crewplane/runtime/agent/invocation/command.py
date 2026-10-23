@@ -33,7 +33,6 @@ from ..workspace_environment import record_workspace_child_environment_applied
 from .command_lifecycle import (
     CommandLifecycle,
     command_io_result,
-    wait_for_command_io,
 )
 from .telemetry import emit_invocation_diagnostic
 
@@ -176,7 +175,7 @@ async def _open_command_log(
             header_bytes=request.log_header,
         )
     )
-    cancellation = await wait_for_command_io(task)
+    cancellation = await session.wait_for_owned_task(task)
     lifecycle.log_handle = command_io_result(task, cancellation)
     if cancellation is not None:
         raise cancellation
@@ -196,7 +195,7 @@ async def _persist_process_drain(
             error,
         )
     )
-    cancellation = await wait_for_command_io(task, cancellation)
+    cancellation = await session.wait_for_owned_task(task, cancellation)
     command_io_result(task, cancellation)
     return cancellation
 
@@ -223,7 +222,7 @@ async def _cleanup_failed_command(
     cancellation: asyncio.CancelledError | None,
 ) -> tuple[ProcessDrainError | None, asyncio.CancelledError | None]:
     task = asyncio.create_task(_drain_failed_command(lifecycle))
-    cancellation = await wait_for_command_io(task, cancellation)
+    cancellation = await session.wait_for_owned_task(task, cancellation)
     drain_error = command_io_result(task, cancellation)
     cancellation = await lifecycle.cleanup_output(cancellation)
     if drain_error is None:

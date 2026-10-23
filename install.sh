@@ -184,19 +184,17 @@ install_crewplane() {
         package_spec="${PACKAGE_NAME}==${CREWPLANE_VERSION}"
     fi
 
-    if [ -n "$python" ] && [ -n "$find_links" ] && [ "$no_index" != "0" ]; then
-        "$uv_bin" tool install --force --python "$python" --find-links "$find_links" --no-index "$package_spec"
-    elif [ -n "$python" ] && [ -n "$find_links" ]; then
-        "$uv_bin" tool install --force --python "$python" --find-links "$find_links" "$package_spec"
-    elif [ -n "$python" ]; then
-        "$uv_bin" tool install --force --python "$python" "$package_spec"
-    elif [ -n "$find_links" ] && [ "$no_index" != "0" ]; then
-        "$uv_bin" tool install --force --find-links "$find_links" --no-index "$package_spec"
-    elif [ -n "$find_links" ]; then
-        "$uv_bin" tool install --force --find-links "$find_links" "$package_spec"
-    else
-        "$uv_bin" tool install --force "$package_spec"
+    set -- tool install --force
+    if [ -n "$python" ]; then
+        set -- "$@" --python "$python"
     fi
+    if [ -n "$find_links" ]; then
+        set -- "$@" --find-links "$find_links"
+        if [ "$no_index" != "0" ]; then
+            set -- "$@" --no-index
+        fi
+    fi
+    "$uv_bin" "$@" "$package_spec"
 }
 
 path_remediation() {

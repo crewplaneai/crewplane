@@ -1,6 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
+
+
+class ReviewLoopStopReason(StrEnum):
+    CONSENSUS = "consensus"
+    CONSENSUS_EXHAUSTED = "consensus_exhausted"
+    NO_PROGRESS = "no_progress"
+    NO_VALID_CANDIDATE = "no_valid_candidate"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
 
 VERDICT_CHANGES_REQUESTED = "CHANGES_REQUESTED"
 VERDICT_NITS_ONLY = "NITS_ONLY"

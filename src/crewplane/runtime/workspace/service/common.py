@@ -11,10 +11,10 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
+from crewplane.core.workspace.cache import workspace_invocation_path
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.filesystem import (
     remove_workspace_path,
-    workspace_invocation_path,
     workspace_run_hierarchy,
 )
 from crewplane.runtime.workspace.setup import WorkspaceSetupError

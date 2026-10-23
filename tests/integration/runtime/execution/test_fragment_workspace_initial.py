@@ -28,11 +28,15 @@ from tests.integration.runtime.execution.fragment_assembler_support import (
 pytestmark = requires_workspace_support
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [b"", b"workspace file", "café 🐍".encode(), b"\xef\xbb\xbftext", b"text\r\n"],
+)
 def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     tmp_path: Path,
+    payload: bytes,
 ) -> None:
     context_root = tmp_path / "execution-stages" / "demo-run"
-    payload = b"workspace file"
     digest = hashlib.sha256(payload).hexdigest()
     content_ref = "workspace-files/workspace-file-test.txt"
     workspace_file = context_root / "preflight" / content_ref
@@ -95,15 +99,19 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
         plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
     ).text
 
-    assert prompt == "workspace file"
+    assert prompt == payload.decode("utf-8")
+    resolved = resolve_project_initial_workspace_file(plan, "workspace-file-test")
+    assert resolved.byte_size == len(payload)
+    assert resolved.sha256 == digest
 
 
+@pytest.mark.parametrize("payload", [b"\xff", b"\xe2\x82", b"text\x00", b"\x00\xff"])
 def test_project_initial_workspace_file_preserves_validation_precedence(
     tmp_path: Path,
+    payload: bytes,
 ) -> None:
     context_root = tmp_path / "execution-stages" / "demo-run"
     content_ref = "workspace-files/invalid.txt"
-    payload = b"\xff"
     workspace_file = context_root / "preflight" / content_ref
     workspace_file.parent.mkdir(parents=True)
     workspace_file.write_bytes(payload)
@@ -160,9 +168,15 @@ def test_project_initial_workspace_file_preserves_validation_precedence(
             )
         )
     with pytest.raises(RuntimeError, match="content size mismatch"):
-        resolve(locator.model_copy(update={"byte_size": 2}))
-    with pytest.raises(RuntimeError, match="not valid UTF-8"):
+        resolve(locator.model_copy(update={"byte_size": len(payload) + 1}))
+    message = "contains NUL bytes" if payload == b"text\x00" else "not valid UTF-8"
+    with pytest.raises(RuntimeError, match=message) as caught:
         resolve(locator)
+    if payload == b"text\x00":
+        assert caught.value.__cause__ is None
+    else:
+        assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+        assert caught.value.__cause__.object == payload
 
 
 def test_reviewer_prompt_reads_project_initial_workspace_file_locator(

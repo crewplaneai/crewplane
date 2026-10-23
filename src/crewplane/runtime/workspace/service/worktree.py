@@ -17,6 +17,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.cache import worktree_cache_family
 from crewplane.runtime.workspace.filesystem import (
     runtime_workspace_cache_root,
 )
@@ -153,7 +154,7 @@ def worktree_preparation_plan(
     workspace_path = planned_workspace_path(
         request.plan,
         source,
-        "workspaces" if lineage_producer else "review-workspaces",
+        worktree_cache_family(lineage_producer),
         slug,
         None if lineage_producer else node.id,
     )

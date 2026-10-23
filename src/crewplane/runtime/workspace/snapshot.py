@@ -10,11 +10,14 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workspace.cache import (
+    SNAPSHOT_CACHE_FAMILY,
+    workspace_invocation_path,
+)
 
 from .filesystem import (
     ensure_owner_private_dir,
     remove_workspace_path,
-    workspace_invocation_path,
     workspace_run_root,
 )
 from .git import GitCommand, sanitized_git_env
@@ -34,7 +37,7 @@ def create_snapshot_workspace(
     slug: str,
     source: WorkspaceSourceSnapshot,
 ) -> Path:
-    run_root = workspace_run_root(plan, source, "snapshots")
+    run_root = workspace_run_root(plan, source, SNAPSHOT_CACHE_FAMILY)
     workspace_path = workspace_invocation_path(run_root, slug)
     if workspace_path.exists() or workspace_path.is_symlink():
         raise RuntimeError(

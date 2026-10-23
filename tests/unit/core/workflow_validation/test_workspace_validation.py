@@ -14,7 +14,8 @@ from crewplane.core.workflow.validation import (
     collect_workflow_policy_diagnostics,
     collect_workflow_validation_diagnostics,
 )
-from crewplane.core.workflow.validation.workspace import (
+from crewplane.core.workflow.validation import workspace as workspace_validation
+from crewplane.core.workspace.selection import (
     logical_workspace_selections,
 )
 from crewplane.version import SCHEMA_VERSION
@@ -313,6 +314,32 @@ def test_same_worktree_after_project_root_node_uses_transitive_lineage() -> None
     assert selections["fix"].source_node_id == "implement"
 
 
+@pytest.mark.parametrize("upstream_worktree", ["other", "scratch", "none"])
+def test_lineage_source_excludes_other_worktrees_and_non_producers(
+    upstream_worktree,
+) -> None:
+    workflow = WorkflowPlan(
+        name="ineligible lineage",
+        worktrees={
+            "primary": {"kind": "worktree"},
+            "other": {"kind": "worktree"},
+            "scratch": {"kind": "snapshot"},
+        },
+        nodes=[
+            _executor_node("upstream", worktree=upstream_worktree),
+            _executor_node("bridge", needs=["upstream"], worktree="none"),
+            _executor_node("fix", needs=["bridge"], worktree="primary"),
+        ],
+    )
+
+    selection = logical_workspace_selections(workflow, _config(workspace_enabled=True))[
+        "fix"
+    ]
+
+    assert selection.source_kind == "project"
+    assert selection.source_node_id is None
+
+
 def test_workspace_policy_diagnostics_do_not_raise_for_invalid_graph() -> None:
     workflow = WorkflowPlan(
         name="invalid graph",
@@ -331,6 +358,51 @@ def test_workspace_policy_diagnostics_do_not_raise_for_invalid_graph() -> None:
 
     assert diagnostics == ()
     assert "Node 'implement' depends on unknown node 'missing'." in reference_messages
+
+
+@pytest.mark.parametrize("needs", [["missing"], ["implement"]])
+def test_only_graph_safe_resolution_suppresses_invalid_graphs(needs: list[str]) -> None:
+    workflow = WorkflowPlan(
+        name="invalid graph",
+        worktrees={"primary": {"kind": "worktree"}},
+        nodes=[_executor_node("implement", needs=needs)],
+    )
+    config = _config(workspace_enabled=True)
+
+    with pytest.raises(ValueError):
+        logical_workspace_selections(workflow, config)
+
+    assert (
+        workspace_validation.graph_safe_logical_workspace_selections(workflow, config)
+        is None
+    )
+    assert (
+        workspace_validation.workflow_has_selected_managed_workspaces(workflow, config)
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "failure", [ValueError("unrelated failure"), RuntimeError("unexpected failure")]
+)
+def test_graph_safe_resolution_propagates_unrelated_failures(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    def fail_resolution(workflow: WorkflowPlan, config: Config) -> None:
+        del workflow, config
+        raise failure
+
+    monkeypatch.setattr(
+        workspace_validation, "logical_workspace_selections", fail_resolution
+    )
+    workflow = WorkflowPlan(name="valid graph", nodes=[_executor_node("implement")])
+
+    with pytest.raises(type(failure)) as caught:
+        workspace_validation.graph_safe_logical_workspace_selections(
+            workflow, _config(True)
+        )
+
+    assert caught.value is failure
 
 
 def test_multiple_worktrees_require_selectors_or_project_root_opt_out() -> None:

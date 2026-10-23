@@ -12,6 +12,8 @@ from crewplane.adapters.invokers.cli_invoker import (
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
+    CommandRunner,
+    InvocationContext,
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
@@ -30,6 +32,36 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 )
 
 pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
+
+def _invocation_recorder(invocation_contexts: list[InvocationContext]) -> CommandRunner:
+    async def record_invocation(
+        cmd: list[str],
+        stdin_data: bytes | None,
+        log_file: Path | None,
+        append_log: bool,
+        log_header: bytes | None,
+        cwd: Path,
+        invocation_context: InvocationContext | None,
+        idle_timeout_seconds: float | None,
+        child_environment: ChildProcessEnvironment | None = None,
+    ) -> CommandResult:
+        del (
+            cmd,
+            stdin_data,
+            log_file,
+            append_log,
+            log_header,
+            cwd,
+            idle_timeout_seconds,
+            child_environment,
+        )
+        if invocation_context is None:
+            raise AssertionError("expected invocation_context for workflow execution")
+        invocation_contexts.append(invocation_context)
+        return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+
+    return record_invocation
 
 
 class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
@@ -64,29 +96,11 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)
-        invocation_contexts = []
-
-        async def fake_run_command_once(
-            cmd: list[str],  # noqa: ARG001 - Required by test double or callback signature.
-            stdin_data: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
-            append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
-            log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
-            invocation_context,  # type: ignore[no-untyped-def]
-            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
-            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
-        ) -> CommandResult:
-            if invocation_context is None:
-                raise AssertionError(
-                    "expected invocation_context for workflow execution"
-                )
-            invocation_contexts.append(invocation_context)
-            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+        invocation_contexts: list[InvocationContext] = []
 
         with patch(
             "crewplane.runtime.agent.invocation.command.run_command_once",
-            side_effect=fake_run_command_once,
+            new=_invocation_recorder(invocation_contexts),
         ):
             await execute_workflow(
                 config,
@@ -130,29 +144,11 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)
-        invocation_contexts = []
-
-        async def fake_run_command_once(
-            cmd: list[str],  # noqa: ARG001 - Required by test double or callback signature.
-            stdin_data: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
-            append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
-            log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
-            invocation_context,  # type: ignore[no-untyped-def]
-            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
-            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
-        ) -> CommandResult:
-            if invocation_context is None:
-                raise AssertionError(
-                    "expected invocation_context for workflow execution"
-                )
-            invocation_contexts.append(invocation_context)
-            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+        invocation_contexts: list[InvocationContext] = []
 
         with patch(
             "crewplane.runtime.agent.invocation.command.run_command_once",
-            side_effect=fake_run_command_once,
+            new=_invocation_recorder(invocation_contexts),
         ):
             await execute_workflow(
                 config,
@@ -217,29 +213,11 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         output = OutputManager(workflow.name, base_dir=tmp_path)
-        invocation_contexts = []
-
-        async def fake_run_command_once(
-            cmd: list[str],  # noqa: ARG001 - Required by test double or callback signature.
-            stdin_data: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
-            append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
-            log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
-            cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
-            invocation_context,  # type: ignore[no-untyped-def]
-            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
-            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
-        ) -> CommandResult:
-            if invocation_context is None:
-                raise AssertionError(
-                    "expected invocation_context for workflow execution"
-                )
-            invocation_contexts.append(invocation_context)
-            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+        invocation_contexts: list[InvocationContext] = []
 
         with patch(
             "crewplane.runtime.agent.invocation.command.run_command_once",
-            side_effect=fake_run_command_once,
+            new=_invocation_recorder(invocation_contexts),
         ):
             await execute_workflow(
                 config,

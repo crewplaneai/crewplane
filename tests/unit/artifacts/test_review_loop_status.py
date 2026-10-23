@@ -10,6 +10,7 @@ import pytest
 from crewplane.artifacts.results.review_loop_status import (
     ReviewLoopStatusError,
     resolve_review_loop_status,
+    validate_status_metadata,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.platforms import symlink_or_skip
@@ -24,11 +25,29 @@ from tests.unit.artifacts.review_loop_status_support import (
 )
 
 
-def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "stop_metadata",
+    [{}, {"stop_reason": None}]
+    + [
+        {"stop_reason": reason}
+        for reason in (
+            "consensus",
+            "consensus_exhausted",
+            "no_progress",
+            "no_valid_candidate",
+            "failed",
+            "cancelled",
+        )
+    ],
+)
+def test_resolves_valid_status_with_outputs(
+    tmp_path: Path, stop_metadata: dict[str, object]
+) -> None:
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
     create_referenced_outputs(stage_dir)
-    write_status(stage_dir, valid_status_payload())
+    payload = {**valid_status_payload(), **stop_metadata}
+    write_status(stage_dir, payload)
 
     resolved = resolve_review_loop_status("stage", stage_dir)
 
@@ -37,6 +56,18 @@ def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
     assert resolved.reviewer_outputs[0].role is ProviderRole.REVIEWER
     assert tuple(resolved.selected_output_files) == ("executor", "reviewer")
     assert resolved.selected_output_files["executor"].name == "executor_round2.md"
+    assert (
+        json.loads((stage_dir / "review-state/review-loop-status.json").read_bytes())
+        == payload
+    )
+
+
+@pytest.mark.parametrize("reason", ["unknown", b"consensus", True, 0, 1.5, [], {}, ()])
+def test_status_rejects_invalid_stop_reason_python_values(reason: object) -> None:
+    payload = {**valid_status_payload(), "stop_reason": reason}
+
+    with pytest.raises(ReviewLoopStatusError, match="stop_reason is not a recognized"):
+        validate_status_metadata(payload, "stage")
 
 
 @pytest.mark.parametrize(

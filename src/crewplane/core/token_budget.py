@@ -19,26 +19,26 @@ def validate_token_budget_thresholds(
         )
 
 
-class _BaseTokenBudget(BaseModel):
+class TokenBudgetThresholds(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     warn_threshold_chars: int | None = Field(default=None, ge=1)
     fail_threshold_chars: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def _validate_threshold_order(self) -> _BaseTokenBudget:
+    def _validate_threshold_order(self) -> TokenBudgetThresholds:
         validate_token_budget_thresholds(
             self.warn_threshold_chars, self.fail_threshold_chars
         )
         return self
 
 
-class TokenBudgetSettings(_BaseTokenBudget):
+class TokenBudgetSettings(TokenBudgetThresholds):
     warn_threshold_chars: int | None = Field(default=50000, ge=1)
     fail_threshold_chars: int | None = Field(default=None, ge=1)
 
 
-class TokenBudgetOverride(_BaseTokenBudget):
+class TokenBudgetOverride(TokenBudgetThresholds):
     pass
 
 

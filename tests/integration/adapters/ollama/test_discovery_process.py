@@ -256,6 +256,62 @@ def test_failed_worker_cleans_captures(
     assert not list(captures.iterdir())
 
 
+@pytest.mark.parametrize(
+    "stdout_path,stderr_path",
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_discovery_cleanup_accepts_optional_and_missing_paths(
+    discovery_process, tmp_path, monkeypatch, stdout_path, stderr_path
+):
+    module, captures = discovery_process
+
+    async def command(**kwargs):
+        Path(kwargs["cmd"][-1]).write_text('{"values": [], "diagnostics": []}')
+        return CommandResult(
+            0,
+            "",
+            "",
+            captures / "missing-stdout" if stdout_path else None,
+            captures / "missing-stderr" if stderr_path else None,
+        )
+
+    monkeypatch.setattr(module, "run_command_once", command)
+    asyncio.run(module.discover(CliDiscoveryRequest(tmp_path, {}, {}.get)))
+    assert not list(captures.iterdir())
+
+
+def test_discovery_cleanup_preserves_both_deletion_failures(
+    discovery_process, tmp_path, monkeypatch
+):
+    module, captures = discovery_process
+    stdout, stderr = captures / "stdout", captures / "stderr"
+    errors = {
+        stdout: PermissionError("stdout cleanup"),
+        stderr: OSError("stderr cleanup"),
+    }
+    deleted = []
+    original_unlink = Path.unlink
+
+    async def command(**kwargs):
+        del kwargs
+        return CommandResult(0, "", "", stdout, stderr)
+
+    def unlink(path, missing_ok=False):
+        if path not in errors:
+            return original_unlink(path, missing_ok=missing_ok)
+        assert missing_ok
+        deleted.append(path)
+        raise errors[path]
+
+    monkeypatch.setattr(module, "run_command_once", command)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(OSError) as caught:
+        asyncio.run(module.discover(CliDiscoveryRequest(tmp_path, {}, {}.get)))
+    assert deleted == [stdout, stderr]
+    assert caught.value is errors[stderr]
+    assert caught.value.__context__ is errors[stdout]
+
+
 def test_worker_protocol_uses_utf8_independent_of_pipe_encoding(
     ollama_package, tmp_path, monkeypatch
 ):

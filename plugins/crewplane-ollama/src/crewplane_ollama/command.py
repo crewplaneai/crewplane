@@ -6,10 +6,20 @@ from dataclasses import replace
 from pathlib import Path
 
 from crewplane.adapters.invokers.cli_invoker import CliCommand, CliInvocationRequest
+from crewplane.architecture.contracts import CommandResult
 
 _VALUE_OPTIONS = frozenset({"--keepalive", "--format"})
 _BOOL_OPTIONS = frozenset({"--verbose", "--insecure"})
 _MANAGED_OPTIONS = frozenset({"--nowordwrap", "--hidethinking"})
+
+
+def cleanup_temporary_captures(result: CommandResult) -> None:
+    try:
+        if result.stdout_path is not None:
+            result.stdout_path.unlink(missing_ok=True)
+    finally:
+        if result.stderr_path is not None:
+            result.stderr_path.unlink(missing_ok=True)
 
 
 def validate_request(request: CliInvocationRequest) -> None:

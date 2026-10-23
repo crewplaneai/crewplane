@@ -10,7 +10,11 @@ from crewplane.architecture.safe_files import path_is_absent
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
-from crewplane.core.workspace.naming import safe_file_component
+from crewplane.core.workspace.cache import (
+    REVIEW_WORKTREE_CACHE_LAYOUT,
+    SNAPSHOT_CACHE_LAYOUT,
+    WORKTREE_CACHE_LAYOUT,
+)
 from crewplane.runtime.workspace.worktree.cleanup import (
     registered_worktree_paths,
     verify_registered_worktree_cleanup_path,
@@ -240,7 +244,7 @@ def _snapshot_cache_family_matches(
     parts: tuple[str, ...],
     owner: tuple[str, str],
 ) -> bool:
-    return len(parts) == 4 and parts[:3] == ("snapshots", *owner)
+    return SNAPSHOT_CACHE_LAYOUT.matches(parts, owner)
 
 
 def _worktree_cache_family_matches(
@@ -250,12 +254,10 @@ def _worktree_cache_family_matches(
 ) -> bool:
     role = claim.payload.get("role")
     if role == "executor":
-        return len(parts) == 4 and parts[:3] == ("workspaces", *owner)
+        return WORKTREE_CACHE_LAYOUT.matches(parts, owner)
     if role == "reviewer":
-        return (
-            len(parts) == 5
-            and parts[:3] == ("review-workspaces", *owner)
-            and parts[3] == safe_file_component(str(claim.payload["node_id"]))
+        return REVIEW_WORKTREE_CACHE_LAYOUT.matches(
+            parts, owner, str(claim.payload["node_id"])
         )
     return False
 

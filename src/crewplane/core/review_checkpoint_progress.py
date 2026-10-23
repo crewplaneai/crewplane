@@ -11,6 +11,10 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointReview,
     CheckpointReviewerFailure,
 )
+from crewplane.core.review_policy import (
+    maximum_review_round,
+    remediation_depth_or_default,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 
 if TYPE_CHECKING:
@@ -93,9 +97,10 @@ def _validate_progress_cursor(
     if checkpoint.next_phase == "executors":
         _validate_executor_cursor(checkpoint)
     for counters in [progress, *([] if active is None else [active])]:
-        if (
-            max(counters.selected_round_num, counters.last_round_num)
-            > (node.execution_policy.depth or 1) + 1
+        if max(
+            counters.selected_round_num, counters.last_round_num
+        ) > maximum_review_round(
+            remediation_depth_or_default(node.execution_policy.depth)
         ):
             raise ValueError("Checkpoint progress exceeds configured round bounds.")
     if (

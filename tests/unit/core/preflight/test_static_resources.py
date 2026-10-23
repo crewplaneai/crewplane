@@ -458,6 +458,13 @@ def test_file_token_allows_user_authored_crewplane_inputs(tmp_path: Path) -> Non
         ),
         (
             "context.md",
+            b"\xe2\x82",
+            "FILE-ENCODING",
+            "File token content must be UTF-8 text.",
+            True,
+        ),
+        (
+            "context.md",
             b"text\x00text",
             "FILE-ENCODING",
             "File contains NUL bytes.",
@@ -499,7 +506,9 @@ def test_static_file_diagnostic_contract(
 
 
 @pytest.mark.parametrize("source", ["ordinary", "terminal"])
-@pytest.mark.parametrize("payload", [b"", b"\xef\xbb\xbfcaf\xc3\xa9\r\n"])
+@pytest.mark.parametrize(
+    "payload", [b"", "café 🐍".encode(), b"\xef\xbb\xbftext", b"text\r\n"]
+)
 def test_static_file_materialization_preserves_bytes_and_metadata(
     tmp_path: Path, source: str, payload: bytes
 ) -> None:

@@ -70,6 +70,7 @@ class PersistentRunLogger:
         self._lifecycle = PersistentLoggerLifecycle.NEW
         self._workflow_name = artifact_store.task_name
         self._run_id = artifact_store.run_id
+        self._node_ids: tuple[str, ...] = ()
         self._last_summary: RunSummary | None = None
         self._summary_accumulator = RunSummaryAccumulator()
 
@@ -78,6 +79,7 @@ class PersistentRunLogger:
             raise RuntimeError("Persistent run logger cannot be restarted.")
         self._workflow_name = context.workflow_topology.workflow_name
         self._run_id = context.run_id
+        self._node_ids = tuple(node.id for node in context.workflow_topology.nodes)
         event_log_path = ensure_single_link_regular_file(self._event_log_path)
         atomic_write_text(event_log_path, "", ensure_parent=False)
         with self._lock:
@@ -151,6 +153,12 @@ class PersistentRunLogger:
             fallback_run_id=self._run_id,
             summary_facts=summary_facts,
             token_aggregates=token_aggregates,
+            node_requests=tuple(
+                request
+                for node_id in self._node_ids
+                if (request := self._artifact_store.get_node_artifact_request(node_id))
+                is not None
+            ),
         )
 
     def _publish_summary(

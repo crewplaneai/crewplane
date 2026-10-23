@@ -9,7 +9,6 @@ from threading import Lock
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -19,6 +18,7 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointPhase,
     CheckpointReviewerFailure,
 )
+from crewplane.core.review_contract import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     EventSink,
@@ -35,8 +35,6 @@ from ..publication_registry import RuntimePublicationRegistry
 from .candidate_identity import CandidateIdentity
 from .stall import ReviewStallState
 
-DEFAULT_REMEDIATION_DEPTH = 1
-DEFAULT_AUDIT_ROUNDS = 1
 INVALID_CANDIDATE_EMPTY = "invalid_candidate.empty"
 INVALID_CANDIDATE_REDIRECTED = "invalid_candidate.redirected"
 

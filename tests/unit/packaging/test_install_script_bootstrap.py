@@ -123,12 +123,20 @@ def test_install_script_rejects_uv_archive_checksum_mismatch(tmp_path: Path) -> 
         ("9.8.7", f"{PACKAGE_NAME}==9.8.7"),
     ],
 )
-def test_install_script_only_pins_an_explicit_version_override(
+@pytest.mark.parametrize("python_path", [None, "/python path/bin/python"])
+@pytest.mark.parametrize("find_links", [None, "/local wheels"])
+@pytest.mark.parametrize("no_index", [None, "", "0", "1", "other"])
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_install_script_preserves_install_arguments_and_exit_status(
     tmp_path: Path,
     version_override: str | None,
     expected_package_spec: str,
+    python_path: str | None,
+    find_links: str | None,
+    no_index: str | None,
+    exit_code: int,
 ) -> None:
-    fake_uv = tmp_path / "uv"
+    fake_uv = tmp_path / "fake uv"
     fake_uv_log = tmp_path / "uv.log"
     tool_bin = tmp_path / "bin"
     tool_bin.mkdir()
@@ -144,6 +152,9 @@ def test_install_script_only_pins_an_explicit_version_override(
                 '  for arg in "$@"; do printf "\\t%s" "$arg"; done',
                 "  printf '\\n'",
                 '} >> "$CREWPLANE_FAKE_UV_LOG"',
+                'if [ "$1" = "tool" ] && [ "$2" = "install" ]; then',
+                '  exit "$CREWPLANE_FAKE_UV_EXIT_CODE"',
+                "fi",
                 'if [ "$1" = "tool" ] && [ "$2" = "dir" ]; then',
                 '  printf "%s\\n" "$CREWPLANE_FAKE_TOOL_BIN"',
                 "fi",
@@ -164,15 +175,34 @@ def test_install_script_only_pins_an_explicit_version_override(
     env["CREWPLANE_UV_BIN"] = str(fake_uv)
     env["CREWPLANE_FAKE_UV_LOG"] = str(fake_uv_log)
     env["CREWPLANE_FAKE_TOOL_BIN"] = str(tool_bin)
+    env["CREWPLANE_FAKE_UV_EXIT_CODE"] = str(exit_code)
     env["CREWPLANE_INSTALL_HOME"] = str(tmp_path / "home")
     env["PATH"] = f"{tool_bin}{os.pathsep}{env.get('PATH', '')}"
     if version_override is not None:
         env["CREWPLANE_VERSION"] = version_override
+    if python_path is not None:
+        env["CREWPLANE_INSTALL_PYTHON"] = python_path
+    if find_links is not None:
+        env["CREWPLANE_INSTALL_FIND_LINKS"] = find_links
+    if no_index is not None:
+        env["CREWPLANE_INSTALL_NO_INDEX"] = no_index
 
-    run_process(["sh", str(repo_path("install.sh"))], cwd=ROOT, env=env, check=True)
+    result = run_process(
+        ["sh", str(repo_path("install.sh"))], cwd=ROOT, env=env, check=False
+    )
 
+    assert result.returncode == exit_code, result.stderr
     calls = [
         line.split("\t")
         for line in fake_uv_log.read_text(encoding="utf-8").splitlines()
     ]
-    assert calls[0] == ["CALL", "tool", "install", "--force", expected_package_spec]
+    expected = ["CALL", "tool", "install", "--force"]
+    if python_path is not None:
+        expected.extend(["--python", python_path])
+    if find_links is not None:
+        expected.extend(["--find-links", find_links])
+        if no_index != "0":
+            expected.append("--no-index")
+    assert calls[0] == [*expected, expected_package_spec]
+    if exit_code:
+        assert len(calls) == 1

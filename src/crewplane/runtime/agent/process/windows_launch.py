@@ -16,6 +16,7 @@ from .drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
 )
+from .session import wait_for_owned_task
 from .signals import wait_for_process_exit
 from .stream_capture import ProcessOutputCapture
 from .streams import cancel_pending_stream_tasks, write_stdin_and_collect_output
@@ -56,7 +57,7 @@ class WindowsLaunch:
         del stdin_data
         self.job = WindowsJob()
         task = _spawn_helper(command, cwd, environment)
-        cancellation = await _wait_for_owned_task(task)
+        cancellation = await wait_for_owned_task(task)
         self.process = task.result()
         if cancellation is not None:
             raise cancellation
@@ -254,18 +255,6 @@ def _spawn_helper(
     )
 
 
-async def _wait_for_owned_task[Result](
-    task: asyncio.Task[Result], cancellation: asyncio.CancelledError | None = None
-) -> asyncio.CancelledError | None:
-    """Defer cancellation until the owned task finishes, leaving errors to result()."""
-    while not task.done():
-        try:
-            await asyncio.wait((task,))
-        except asyncio.CancelledError as exc:
-            cancellation = cancellation or exc
-    return cancellation
-
-
 async def _wait_for_collection(
     monitor: asyncio.Task[None], output: asyncio.Task[ProcessOutputCapture]
 ) -> ProcessOutputCapture:
@@ -286,7 +275,7 @@ async def _finish_collection(
 ) -> None:
     cancellation = failure if isinstance(failure, asyncio.CancelledError) else None
     settlement = asyncio.create_task(_settle_collection_tasks(monitor, output))
-    cancellation = await _wait_for_owned_task(settlement, cancellation)
+    cancellation = await wait_for_owned_task(settlement, cancellation)
     try:
         settlement.result()
     except BaseException as exc:
@@ -314,6 +303,6 @@ async def _reclaim_capture(
     if not output.done() or output.cancelled() or output.exception() is not None:
         return cancellation
     cleanup = asyncio.create_task(asyncio.to_thread(output.result().cleanup))
-    cancellation = await _wait_for_owned_task(cleanup, cancellation)
+    cancellation = await wait_for_owned_task(cleanup, cancellation)
     cleanup.result()
     return cancellation

@@ -7,8 +7,12 @@ from crewplane.architecture.safe_files import (
     contained_regular_file,
     ensure_contained_directory,
 )
-from crewplane.artifacts import safe_artifact_name
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
+from crewplane.artifacts.naming import (
+    review_metadata_path,
+    review_raw_output_path,
+    reviewer_state_relative_path,
+)
 from crewplane.artifacts.results.review_loop_status import (
     REVIEW_LOOP_STATUS_RELATIVE_PATH,
     ReviewLoopStatusOutputEntry,
@@ -28,21 +32,15 @@ from .types import (
 )
 
 
-def _review_metadata_path(output_file: Path) -> Path:
-    return output_file.with_suffix(".review.json")
-
-
-def _review_raw_output_path(output_file: Path) -> Path:
-    return output_file.with_suffix(".raw.txt")
-
-
 def _write_review_state_file(
     artifact_dir: Path,
-    file_name: str,
+    relative_path: Path,
     content: str,
 ) -> Path:
-    review_state_dir = ensure_contained_directory(artifact_dir, "review-state")
-    file_path = review_state_dir / file_name
+    review_state_dir = ensure_contained_directory(
+        artifact_dir, relative_path.parent.as_posix()
+    )
+    file_path = review_state_dir / relative_path.name
     return atomic_write_text(file_path, content)
 
 
@@ -50,8 +48,8 @@ def persist_review_evaluation_artifacts(
     output_file: Path,
     evaluation: EvaluatedReviewResult,
 ) -> None:
-    raw_output_path = _review_raw_output_path(output_file)
-    metadata_path = _review_metadata_path(output_file)
+    raw_output_path = review_raw_output_path(output_file)
+    metadata_path = review_metadata_path(output_file)
     atomic_write_text(raw_output_path, evaluation.raw_text)
     atomic_write_json(
         metadata_path,
@@ -129,8 +127,8 @@ def persist_review_state(
     round_num: int,
     reviewer_output: ReviewerRoundArtifact,
 ) -> Path:
-    raw_output_path = _review_raw_output_path(reviewer_output.output_file)
-    metadata_path = _review_metadata_path(reviewer_output.output_file)
+    raw_output_path = review_raw_output_path(reviewer_output.output_file)
+    metadata_path = review_metadata_path(reviewer_output.output_file)
     payload: dict[str, object] = {
         "reviewer": reviewer_output.provider.provider,
         "task_id": reviewer_output.task_id,
@@ -177,7 +175,7 @@ def _write_reviewer_state(
 ) -> Path:
     return _write_review_state_file(
         artifact_dir=artifact_dir,
-        file_name=f"{safe_artifact_name(task_id)}-round-{round_num}.state.json",
+        relative_path=reviewer_state_relative_path(task_id, round_num),
         content=json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
     )
 
@@ -242,7 +240,7 @@ def persist_review_inbox(
 ) -> Path:
     return _write_review_state_file(
         artifact_dir=artifact_dir,
-        file_name=f"review-inbox-round-{round_num}.md",
+        relative_path=Path("review-state") / f"review-inbox-round-{round_num}.md",
         content=inbox_markdown + "\n",
     )
 

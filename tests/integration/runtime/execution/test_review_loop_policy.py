@@ -7,9 +7,9 @@ from crewplane.core.preflight.models import (
     ExecutionPolicy,
     PreflightExecutionNode,
 )
+from crewplane.core.review_policy import audit_round_context
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.policy import (
-    audit_round_context,
     audit_round_dir,
     consensus_failure_allows_continuation,
     resolve_audit_rounds,

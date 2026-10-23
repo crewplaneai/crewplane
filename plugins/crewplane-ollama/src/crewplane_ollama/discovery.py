@@ -15,6 +15,7 @@ from crewplane.adapters.invokers.cli_invoker import (
     unconfirmed_process_cleanup,
 )
 
+from .command import cleanup_temporary_captures
 from .discovery_platform import discover_client, endpoint_candidates, running_in_wsl
 from .discovery_worker import DiscoveryReport, DiscoveryTask
 
@@ -127,9 +128,4 @@ async def invoke_discovery_worker(
                 f"Ollama discovery worker failed ({result.returncode}): {result.stderr_text[:1000]}"
             )
     finally:
-        try:
-            if result.stdout_path is not None:
-                result.stdout_path.unlink(missing_ok=True)
-        finally:
-            if result.stderr_path is not None:
-                result.stderr_path.unlink(missing_ok=True)
+        cleanup_temporary_captures(result)

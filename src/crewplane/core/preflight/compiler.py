@@ -4,7 +4,7 @@ from crewplane.architecture.contracts import JsonValue, parse_json_pointer
 from crewplane.core.config import Config
 from crewplane.core.workflow.graph import topological_waves
 from crewplane.core.workflow.models import WorkflowPlan
-from crewplane.core.workflow.validation.workspace import logical_workspace_selections
+from crewplane.core.workspace.selection import logical_workspace_selections
 
 from .compile_state import (
     CompileState,

@@ -104,14 +104,6 @@ def git_env() -> dict[str, str]:
     return sanitized_workspace_git_environment(read_only=True)
 
 
-def valid_utf8_without_nul(payload: bytes) -> bool:
-    try:
-        text = payload.decode("utf-8")
-    except UnicodeDecodeError:
-        return False
-    return "\x00" not in text
-
-
 def git_error(exc: BaseException) -> str:
     if isinstance(exc, subprocess.CalledProcessError):
         stderr = exc.stderr.decode("utf-8", errors="replace").strip()
