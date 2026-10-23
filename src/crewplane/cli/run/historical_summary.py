@@ -78,6 +78,9 @@ def refresh_historical_run_summary(
         result=RunResult(status=_run_result_status(source)),
         fallback_workflow_name=source.manifest.workflow_name,
         fallback_run_id=source.manifest.run_id,
+        node_requests=tuple(
+            NodeArtifactRequest(node.id, node.artifact_contract) for node in plan.nodes
+        ),
     )
     return atomic_write_text(
         artifact_store.get_run_summary_path(),

@@ -33,7 +33,7 @@ from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 
-from ..git import git
+from ..git import git, resolve_common_git_dir
 from ..state import read_workspace_state
 from .ref_publication import reconcile_result_ref_publication
 from .temporary_refs import reconcile_temporary_import_refs
@@ -499,11 +499,3 @@ def _current_repository_id(
         project_root,
         object_format,
     )
-
-
-def resolve_common_git_dir(repo_root: Path) -> Path:
-    raw_path = git(repo_root).text("rev-parse", "--git-common-dir")
-    common_git_dir = Path(raw_path)
-    if not common_git_dir.is_absolute():
-        common_git_dir = repo_root / common_git_dir
-    return common_git_dir.resolve(strict=False)

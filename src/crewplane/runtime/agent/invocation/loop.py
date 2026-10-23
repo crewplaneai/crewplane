@@ -24,13 +24,14 @@ from ..failures import (
     build_output_extraction_failure_error,
     build_quota_failure_error,
 )
+from ..process.session import wait_for_owned_task
 from ..usage import InvocationUsageAccumulator
 from .attempt_decisions import select_attempt_transition
 from .command import (
     prepare_runtime_for_attempt,
     run_invocation_attempt,
 )
-from .command_lifecycle import command_io_result, wait_for_command_io
+from .command_lifecycle import command_io_result
 from .output import (
     build_invocation_attempt_result,
     cleanup_extracted_invocation_output,
@@ -176,7 +177,7 @@ async def _run_attempt_command(
     state: _InvocationLoopState,
 ) -> CommandResult:
     preparation = create_task(to_thread(prepare_runtime_for_attempt, context.plan))
-    cancellation = await wait_for_command_io(preparation)
+    cancellation = await wait_for_owned_task(preparation)
     command_io_result(preparation, cancellation)
     if cancellation is not None:
         raise cancellation

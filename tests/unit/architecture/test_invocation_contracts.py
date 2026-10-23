@@ -372,6 +372,37 @@ def test_token_bucket_order_matches_serialized_and_priced_fields() -> None:
         assert TokenPricing(**{bucket: 0}).configured_buckets() == (bucket,)
 
 
+@pytest.mark.parametrize("bucket", TOKEN_BUCKETS)
+@pytest.mark.parametrize("value", [None, 0, 7])
+def test_token_mappings_preserve_values_types_and_mutation_independence(
+    bucket, value
+) -> None:
+    usage = ProviderTokenUsage(**{bucket: value})
+    pricing = TokenPricing(**{bucket: value})
+    expected = {
+        "input": None,
+        "cached_input": None,
+        "cache_write": None,
+        "output": None,
+        "reasoning": None,
+        "total": None,
+    }
+    expected[bucket] = value
+
+    for model, value_type in ((usage, int), (pricing, float)):
+        mapping = model.as_dict()
+        assert mapping == expected
+        if value is not None:
+            assert type(mapping[bucket]) is value_type
+        mapping[bucket] = 99
+        mapping["extra"] = 0
+        del mapping[next(key for key in TOKEN_BUCKETS if key != bucket)]
+
+        assert getattr(model, bucket) == value
+        assert model.as_dict() == expected
+        assert tuple(model.as_dict()) == TOKEN_BUCKETS
+
+
 @pytest.mark.parametrize("field", ["attempt", "pid", "process_group_id"])
 @pytest.mark.parametrize("value", [True, False, "1", 1.5, 0, -1])
 def test_process_event_requires_positive_integer_identity(field, value) -> None:

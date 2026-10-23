@@ -12,11 +12,11 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.consensus import evaluate_review_output
 from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
 from crewplane.runtime.execution.review_loop import (
-    audit_publication,
     audit_review_outcome,
     audit_round,
     validation,
 )
+from crewplane.runtime.execution.review_loop.audit_io import complete_audit_io
 from crewplane.runtime.execution.review_loop.state import render_review_inbox
 from crewplane.runtime.execution.review_loop.types import (
     AuditRoundProgress,
@@ -776,7 +776,7 @@ def test_runner_shutdown_drains_publication_before_owner_cleanup(
 
         async def owner() -> None:
             try:
-                await audit_publication.complete_audit_publication(publish)
+                await complete_audit_io(publish)
             except (OSError, asyncio.CancelledError) as exc:
                 errors.append(exc)
             finally:

@@ -3,9 +3,35 @@ from pathlib import Path
 import pytest
 
 from crewplane.core.file_text import (
+    decode_utf8_without_nul,
     path_decoded_character_count,
     path_has_non_whitespace_text,
+    valid_utf8_without_nul,
 )
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        (b"", ""),
+        ("café 🐍".encode(), "café 🐍"),
+        (b"\xef\xbb\xbftext", "\ufefftext"),
+        (b"text\r\n", "text\r\n"),
+        (b"\x00", None),
+    ],
+)
+def test_prompt_text_policy_preserves_decoded_content(payload, expected) -> None:
+    assert decode_utf8_without_nul(payload) == expected
+    assert valid_utf8_without_nul(payload) is (expected is not None)
+
+
+@pytest.mark.parametrize("payload", [b"\xff", b"\xe2\x82", b"\x00\xff"])
+def test_prompt_text_policy_preserves_utf8_failure_detail(payload: bytes) -> None:
+    with pytest.raises(UnicodeDecodeError) as caught:
+        decode_utf8_without_nul(payload)
+    assert caught.value.object == payload
+    assert caught.value.start == (1 if payload.startswith(b"\x00") else 0)
+    assert not valid_utf8_without_nul(payload)
 
 
 @pytest.mark.parametrize(

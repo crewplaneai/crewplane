@@ -17,10 +17,10 @@ from crewplane.core.workflow.keywords import (
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workflow.syntax import (
     COMPOSITION_ONLY_TEMPLATE_TYPES,
-    KEY_VALUE_TEMPLATE_PATTERN,
-    NODE_ARTIFACT_REFERENCE_PATTERN,
     SUPPORTED_TEMPLATE_TYPES,
     TEMPLATE_TOKEN_PATTERN,
+    NodeArtifactToken,
+    match_template_token,
 )
 
 WORKFLOW_TEMPLATE_CODE = "WORKFLOW-TEMPLATE"
@@ -78,25 +78,24 @@ def _template_reference_error(
     nodes_by_id: dict[str, WorkflowNode],
     ancestors: set[str] | None,
 ) -> str | None:
-    artifact_match = NODE_ARTIFACT_REFERENCE_PATTERN.fullmatch(template_token)
-    if artifact_match is not None:
+    token = match_template_token(template_token)
+    if isinstance(token, NodeArtifactToken):
         return _artifact_reference_error(
             node_id,
             NodeArtifactReference(
-                node_id=artifact_match.group(1),
-                artifact_name=artifact_match.group(2),
+                node_id=token.node_id,
+                artifact_name=token.artifact_name,
             ),
             nodes_by_id,
             ancestors,
         )
 
-    key_value_match = KEY_VALUE_TEMPLATE_PATTERN.fullmatch(template_token)
-    if key_value_match is None:
+    if token is None:
         return _unsupported_template_error(node_id, template_token)
 
-    template_type = key_value_match.group(1)
+    template_type = token.template_type
     if template_type in SUPPORTED_TEMPLATE_TYPES:
-        if key_value_match.group(2).strip():
+        if token.value.strip():
             return None
         return (
             f"Node '{node_id}' references invalid template '{template_token}'. "

@@ -5,13 +5,13 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal
 
 from crewplane.core.file_hashing import sha256_file
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workspace.cache import WORKTREE_CACHE_FAMILY, WorktreeCacheFamily
 
 from ..cleanup_notes import note_cleanup_failure
 from ..git import git, git_error
@@ -73,7 +73,7 @@ def create_worktree_workspace(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
     protected_ref_scopes: tuple[str, ...] | None = None,
-    workspace_family: Literal["workspaces", "review-workspaces"] = "workspaces",
+    workspace_family: WorktreeCacheFamily = WORKTREE_CACHE_FAMILY,
     parent_slug: str | None = None,
     state_path: Path | None = None,
     cancel_requested: Callable[[], bool] | None = None,

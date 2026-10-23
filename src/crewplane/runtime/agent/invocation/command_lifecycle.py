@@ -14,7 +14,7 @@ from crewplane.architecture.contracts import (
 )
 
 from ..process.runner import close_log_handle
-from ..process.session import ProcessSession
+from ..process.session import ProcessSession, wait_for_owned_task
 from ..process.stream_capture import ProcessOutputCapture
 
 
@@ -66,7 +66,7 @@ class CommandLifecycle:
         close_task = asyncio.create_task(
             asyncio.to_thread(close_log_handle, self.log_handle)
         )
-        cancellation = await wait_for_command_io(close_task, cancellation)
+        cancellation = await wait_for_owned_task(close_task, cancellation)
         try:
             try:
                 close_task.result()
@@ -90,7 +90,7 @@ class CommandLifecycle:
         if self.output_capture is None:
             return cancellation
         task = asyncio.create_task(asyncio.to_thread(self.output_capture.cleanup))
-        cancellation = await wait_for_command_io(task, cancellation)
+        cancellation = await wait_for_owned_task(task, cancellation)
         command_io_result(task, cancellation)
         return cancellation
 
@@ -150,19 +150,6 @@ class CommandLifecycle:
             stdout_path=output_capture.stdout.path,
             stderr_path=output_capture.stderr.path,
         )
-
-
-async def wait_for_command_io[Result](
-    task: asyncio.Task[Result],
-    cancellation: asyncio.CancelledError | None = None,
-) -> asyncio.CancelledError | None:
-    """Wait for owned I/O without cancelling its worker or raising its error."""
-    while not task.done():
-        try:
-            await asyncio.wait((task,))
-        except asyncio.CancelledError as exc:
-            cancellation = cancellation or exc
-    return cancellation
 
 
 def command_io_result[Result](

@@ -78,3 +78,11 @@ def git_error(exc: BaseException) -> str:
         stderr = exc.stderr.decode("utf-8", errors="replace").strip()
         return stderr or str(exc)
     return str(exc)
+
+
+def resolve_common_git_dir(repo_root: Path) -> Path:
+    raw_path = git(repo_root).text("rev-parse", "--git-common-dir")
+    common_git_dir = Path(raw_path)
+    if not common_git_dir.is_absolute():
+        common_git_dir = repo_root / common_git_dir
+    return common_git_dir.resolve(strict=False)

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from crewplane.architecture.contracts import ExecutionStatus, InvocationContext
+from crewplane.core.value_checks import is_strict_int
 
 from .filesystem import (
     remove_workspace_path,
@@ -361,7 +362,7 @@ class PreparedWorkspace:
         generation = (
             workspace.get("reuse_generation") if isinstance(workspace, dict) else None
         )
-        if not isinstance(generation, int) or isinstance(generation, bool):
+        if not is_strict_int(generation):
             raise RuntimeError("Reusable workspace lacks a valid reuse generation.")
         return generation
 

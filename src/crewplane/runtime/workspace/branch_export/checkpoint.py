@@ -12,6 +12,9 @@ from crewplane.artifacts.workspace.chain_validation import (
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
+from crewplane.artifacts.workspace.state.validation import (
+    workspace_state_identity_matches,
+)
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -27,7 +30,7 @@ from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
 )
-from crewplane.runtime.workspace.git import git
+from crewplane.runtime.workspace.git import git, resolve_common_git_dir
 from crewplane.runtime.workspace.state_selection import (
     required_lineage_state_path,
 )
@@ -39,7 +42,6 @@ from crewplane.runtime.workspace.worktree.lineage import (
     verify_source_commit_available,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
-from crewplane.version import SCHEMA_VERSION
 
 
 class StageLookup(Protocol):
@@ -159,12 +161,7 @@ def _validate_state_header(
     workspace = _mapping(payload.get("workspace"))
     git_payload = _mapping(payload.get("git"))
     if not (
-        payload.get("version") == SCHEMA_VERSION
-        and payload.get("run_id") == run_id
-        and payload.get("run_key_name") == run_key_name
-        and payload.get("workflow_name") == plan.workflow_name
-        and payload.get("workflow_signature") == plan.workflow_signature
-        and payload.get("node_id") == node.id
+        workspace_state_identity_matches(plan, node, payload, run_id, run_key_name)
         and payload.get("status") == "succeeded"
         and payload.get("role") == ProviderRole.EXECUTOR
         and payload.get("workspace_kind") == "worktree"
@@ -184,10 +181,7 @@ def _validate_state_header(
 def _require_current_repository_identity(source: WorkspaceSourceSnapshot) -> None:
     repo_root = Path(source.git_top_level)
     command = git(repo_root)
-    common_git_dir = _resolved_git_path(
-        repo_root,
-        command.text("rev-parse", "--git-common-dir"),
-    )
+    common_git_dir = resolve_common_git_dir(repo_root)
     object_format = command.text("rev-parse", "--show-object-format=storage")
     current_repository_id = workspace_repository_id(
         common_git_dir,
@@ -199,13 +193,6 @@ def _require_current_repository_identity(source: WorkspaceSourceSnapshot) -> Non
         or current_repository_id != source.repository_id
     ):
         raise RuntimeError("Workspace branch export repository identity changed.")
-
-
-def _resolved_git_path(repo_root: Path, raw_path: str) -> Path:
-    path = Path(raw_path)
-    if not path.is_absolute():
-        path = repo_root / path
-    return path.resolve(strict=False)
 
 
 def _validated_bundle(

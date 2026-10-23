@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.adapters.invokers.cli_invoker import (
+    CliCommand,
     CliInvocationRequest,
     unconfirmed_process_cleanup,
 )
@@ -153,6 +154,57 @@ def test_probe_deletes_all_captures_and_propagates_deletion_failure(
     with pytest.raises(failure, match="capture deletion failed"):
         asyncio.run(ollama.capability.check_availability(request_for(ollama, tmp_path)))
     assert not stderr.exists()
+
+
+@pytest.mark.parametrize(
+    "stdout_path,stderr_path",
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_probe_cleanup_accepts_optional_and_missing_paths(
+    ollama, tmp_path, monkeypatch, stdout_path, stderr_path
+):
+    async def command(**kwargs):
+        del kwargs
+        return CommandResult(
+            0,
+            "model",
+            "",
+            tmp_path / "missing-stdout" if stdout_path else None,
+            tmp_path / "missing-stderr" if stderr_path else None,
+        )
+
+    monkeypatch.setattr(ollama.availability, "run_command_once", command)
+    asyncio.run(
+        ollama.availability._probe_command(
+            request_for(ollama, tmp_path), CliCommand(["ollama", "show"], None), False
+        )
+    )
+
+
+def test_probe_cleanup_preserves_both_deletion_failures(ollama, tmp_path, monkeypatch):
+    stdout, stderr = tmp_path / "stdout", tmp_path / "stderr"
+    errors = {
+        stdout: PermissionError("stdout cleanup"),
+        stderr: OSError("stderr cleanup"),
+    }
+    deleted = []
+
+    async def command(**kwargs):
+        del kwargs
+        return CommandResult(0, "model", "", stdout, stderr)
+
+    def unlink(path, missing_ok=False):
+        assert missing_ok
+        deleted.append(path)
+        raise errors[path]
+
+    monkeypatch.setattr(ollama.availability, "run_command_once", command)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(OSError) as caught:
+        asyncio.run(ollama.capability.check_availability(request_for(ollama, tmp_path)))
+    assert deleted == [stdout, stderr]
+    assert caught.value is errors[stderr]
+    assert caught.value.__context__ is errors[stdout]
 
 
 @pytest.mark.parametrize("cancel", [False, True])

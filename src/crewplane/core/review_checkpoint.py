@@ -33,6 +33,11 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointTask,
     CheckpointWorkspace,
 )
+from crewplane.core.review_policy import (
+    audit_rounds_or_default,
+    maximum_review_round,
+    remediation_depth_or_default,
+)
 from crewplane.core.workflow.keywords import (
     ProviderRole,
     provider_role_segments_are_contiguous,
@@ -249,8 +254,10 @@ def validate_checkpoint_node(
 def _validate_node_cursor(
     checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
 ) -> None:
-    audit_rounds = node.execution_policy.audit_rounds or 1
-    max_round = (node.execution_policy.depth or 1) + 1
+    audit_rounds = audit_rounds_or_default(node.execution_policy.audit_rounds)
+    max_round = maximum_review_round(
+        remediation_depth_or_default(node.execution_policy.depth)
+    )
     if checkpoint.audit > audit_rounds or checkpoint.local_round > max_round:
         raise ValueError("Checkpoint cursor exceeds configured review bounds.")
     if checkpoint.local_round == 0 and not (
@@ -265,7 +272,9 @@ def _validate_invocation_coordinates(
     checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
 ) -> None:
     identities = {item.task_id: item.role for item in checkpoint.tasks}
-    max_round = (node.execution_policy.depth or 1) + 1
+    max_round = maximum_review_round(
+        remediation_depth_or_default(node.execution_policy.depth)
+    )
     records: list[
         CheckpointFile
         | CheckpointCandidate
@@ -310,7 +319,7 @@ def _validate_artifact_paths(
         *checkpoint.progress.candidates(),
         *checkpoint.progress.reviews(),
     ]
-    audit_rounds = node.execution_policy.audit_rounds or 1
+    audit_rounds = audit_rounds_or_default(node.execution_policy.audit_rounds)
     for output in outputs:
         prefix = stage + "/"
         if audit_rounds > 1:

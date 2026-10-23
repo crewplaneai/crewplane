@@ -142,6 +142,37 @@ def test_configured_quota_hint_accepts_punctuation_variants(line: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "line,family_hints,configured_hints,expected",
+    [
+        ("", (), ("budget depleted",), None),
+        ("ordinary output", (), ("", "!!!", "🦊"), None),
+        ("...", (), ("...",), "..."),
+        ("CAFÉ épuisé", (), ("Café épuisé",), "Café épuisé"),
+        ("capacity", (), ("Capacity!!!",), None),
+        ("rate-limit", (), ("rate limit",), None),
+        ("BudgetIsDepleted", (), ("Budget is Depleted",), "Budget is Depleted"),
+        (
+            "BUDGET-is-depleted",
+            (),
+            ("budget is depleted", "BUDGET-is-depleted"),
+            "budget is depleted",
+        ),
+        (
+            "custom budget depleted",
+            ("custom budget",),
+            ("budget depleted",),
+            "budget depleted",
+        ),
+        ("Error: 429 too many requests", (), ("Error: 429",), "too many requests"),
+    ],
+)
+def test_quota_hint_matching_preserves_normalization_and_precedence(
+    line, family_hints, configured_hints, expected
+) -> None:
+    assert find_quota_evidence([line], family_hints, configured_hints) == expected
+
+
 def test_parser_specific_quota_hint_is_detected_without_custom_configuration() -> None:
     config = AgentConfig(cli_cmd=["local"])
     assert (

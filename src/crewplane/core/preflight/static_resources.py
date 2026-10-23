@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.file_text import decode_utf8_without_nul
 from crewplane.core.platform import is_native_windows
 from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 
@@ -318,7 +319,7 @@ def _static_file_encoding_diagnostic(
     raw_path: str, resolved_path: Path, payload: bytes
 ) -> StaticFileResult | None:
     try:
-        text = payload.decode("utf-8")
+        text = decode_utf8_without_nul(payload)
     except UnicodeDecodeError:
         return _file_diagnostic(
             raw_path,
@@ -326,7 +327,7 @@ def _static_file_encoding_diagnostic(
             resolved_path,
             code=PreflightDiagnosticCode.FILE_ENCODING,
         )
-    if "\x00" in text:
+    if text is None:
         return _file_diagnostic(
             raw_path,
             "File contains NUL bytes.",

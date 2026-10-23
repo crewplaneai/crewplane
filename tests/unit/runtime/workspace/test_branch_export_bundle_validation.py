@@ -174,6 +174,46 @@ def test_fulfill_branch_exports_rejects_foreign_checkpoint_identity(
     assert run_git_text(repo, "branch", "--list", "feature/foreign") == ""
 
 
+@pytest.mark.parametrize(
+    "identity_field",
+    [
+        "version",
+        "run_id",
+        "run_key_name",
+        "workflow_name",
+        "workflow_signature",
+        "node_id",
+    ],
+)
+@pytest.mark.parametrize("missing", [False, True])
+def test_fulfill_branch_exports_rejects_invalid_identity_without_changing_refs(
+    tmp_path: Path, identity_field: str, missing: bool
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name="feature/exported")
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
+        repo,
+        output.create_node_dir(node_artifact_request("implement")),
+        "feature result\n",
+    )
+    state_path = write_workspace_state(
+        output.stages_dir, plan, result_commit, result_tree, result_ref, bundle_path
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    if missing:
+        del payload[identity_field]
+    else:
+        payload[identity_field] = "foreign-identity"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    refs_before = run_git_text(repo, "show-ref")
+
+    with pytest.raises(RuntimeError, match="state does not match|hardening evidence"):
+        fulfill_branch_exports(plan, output)
+
+    assert run_git_text(repo, "show-ref") == refs_before
+
+
 def test_fulfill_branch_exports_rejects_foreign_live_repository_identity(
     tmp_path: Path,
 ) -> None:
@@ -206,11 +246,17 @@ def test_fulfill_branch_exports_rejects_foreign_live_repository_identity(
             )
         }
     )
+    refs_before = run_git_text(repo, "show-ref")
+    state_before = state_path.read_bytes()
+    bundle_before = bundle_path.read_bytes()
 
     with pytest.raises(RuntimeError, match="repository identity changed"):
         fulfill_branch_exports(plan, output)
 
     assert run_git_text(repo, "branch", "--list", "feature/foreign-live") == ""
+    assert run_git_text(repo, "show-ref") == refs_before
+    assert state_path.read_bytes() == state_before
+    assert bundle_path.read_bytes() == bundle_before
 
 
 def test_fulfill_branch_exports_imports_missing_result_from_bundle(

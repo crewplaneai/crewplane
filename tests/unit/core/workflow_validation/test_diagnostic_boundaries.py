@@ -20,7 +20,10 @@ from crewplane.core.workflow.validation import collect_workflow_validation_diagn
 from crewplane.core.workflow.validation.modes import collect_node_mode_diagnostics
 from crewplane.core.workflow.validation.nodes import validate_workflow_nodes
 from crewplane.core.workflow.validation.policies import validate_provider_references
-from crewplane.core.workflow.validation.templates import validate_prompt_templates
+from crewplane.core.workflow.validation.templates import (
+    collect_prompt_template_diagnostics,
+    validate_prompt_templates,
+)
 from tests.helpers.workspace_preflight import workspace_config
 
 
@@ -190,6 +193,49 @@ def test_prompt_template_validation_raises_specific_reference_errors(
 
     with pytest.raises(ValueError, match=message):
         validate_prompt_templates(workflow)
+
+
+@pytest.mark.parametrize(
+    ("token", "expected_message"),
+    [
+        (
+            "{{file: }}",
+            "Node 'review' references invalid template '{{file: }}'. "
+            "Template values must be non-empty.",
+        ),
+        (
+            "{{FILE:context.md}}",
+            "Node 'review' references unsupported template '{{FILE:context.md}}'. "
+            "Template types are case-sensitive and must be lower-case exactly.",
+        ),
+        (
+            "{{PARAM:key}}",
+            "Node 'review' references unsupported template '{{PARAM:key}}'. "
+            "Template types are case-sensitive and must be lower-case exactly.",
+        ),
+        (
+            "{{param:key}}",
+            "Node 'review' references composition-only template '{{param:key}}'. "
+            "{param:KEY} templates are only valid in Markdown workflow composition "
+            "and must be resolved before runtime validation.",
+        ),
+    ],
+)
+def test_template_diagnostics_preserve_exact_messages(
+    token: str, expected_message: str
+) -> None:
+    workflow = WorkflowPlan(
+        name="Token diagnostics",
+        nodes=[node_with(prompt_segments=[{"role": "shared", "content": token}])],
+    )
+
+    diagnostics = collect_prompt_template_diagnostics(workflow)
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0].message == expected_message
+    assert diagnostics[0].code == "WORKFLOW-TEMPLATE"
+    assert diagnostics[0].phase == "reference"
+    assert diagnostics[0].node_id == "review"
 
 
 @pytest.mark.parametrize("needs", [["missing"], ["review"]])

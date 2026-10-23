@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workspace.cache import (
+    WorktreeCacheFamily,
+    workspace_invocation_path,
+)
 
 from ..filesystem import (
     ensure_owner_private_dir,
-    workspace_invocation_path,
     workspace_run_root,
 )
 
@@ -19,7 +21,7 @@ def allocate_worktree_workspace(
     plan: PreflightExecutionPlan,
     slug: str,
     source: WorkspaceSourceSnapshot,
-    workspace_family: Literal["workspaces", "review-workspaces"],
+    workspace_family: WorktreeCacheFamily,
     parent_slug: str | None,
 ) -> tuple[Path, Path]:
     run_root = workspace_run_root(plan, source, workspace_family)

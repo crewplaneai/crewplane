@@ -10,6 +10,7 @@ from pathlib import Path
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.naming import candidate_identity_path
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
@@ -283,7 +284,7 @@ def seed_executor_outputs(
         )
         if artifact.candidate_identity is not None:
             atomic_write_json(
-                output_file.with_suffix(".candidate.json"),
+                candidate_identity_path(output_file),
                 asdict(artifact.candidate_identity),
             )
         seeded_outputs.append(

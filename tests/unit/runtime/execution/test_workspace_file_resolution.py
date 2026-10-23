@@ -53,11 +53,24 @@ def test_read_dynamic_locator_blob_rejects_unsupported_file_mode(
         read_dynamic_locator_blob(plan, locator, source, owner)
 
 
-@pytest.mark.parametrize("payload", [b"\xff", b"text\x00"])
-def test_read_dynamic_locator_blob_rejects_non_text_content(
+@pytest.mark.parametrize(
+    "payload,valid",
+    [
+        (b"", True),
+        ("café 🐍".encode(), True),
+        (b"\xef\xbb\xbftext", True),
+        (b"text\r\n", True),
+        (b"\xff", False),
+        (b"\xe2\x82", False),
+        (b"\x00", False),
+        (b"\x00\xff", False),
+    ],
+)
+def test_read_dynamic_locator_blob_validates_text_content(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     payload: bytes,
+    valid: bool,
 ) -> None:
     plan, locator, source, owner = _dynamic_blob_inputs(tmp_path)
 
@@ -91,8 +104,15 @@ def test_read_dynamic_locator_blob_rejects_non_text_content(
         invalid_blob_content,
     )
 
-    with pytest.raises(NodeExecutionError, match="UTF-8 text without NUL bytes"):
-        read_dynamic_locator_blob(plan, locator, source, owner)
+    if valid:
+        assert read_dynamic_locator_blob(plan, locator, source, owner) == (
+            payload,
+            "a" * 40,
+            "100644",
+        )
+    else:
+        with pytest.raises(NodeExecutionError, match="UTF-8 text without NUL bytes"):
+            read_dynamic_locator_blob(plan, locator, source, owner)
 
 
 def _dynamic_blob_inputs(

@@ -1,4 +1,4 @@
-# Crewplane Dots host (experimental)
+# Crewplane Dots host
 
 Run [Crewplane](../../README.md) workflows using native agents from an active
 OpenAI Dots session.

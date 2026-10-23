@@ -12,6 +12,22 @@ from crewplane.architecture.contracts import InvocationDiagnosticSink
 from .stream_capture import ProcessOutputCapture
 
 
+async def wait_for_owned_task[Result](
+    task: asyncio.Task[Result],
+    cancellation: asyncio.CancelledError | None = None,
+) -> asyncio.CancelledError | None:
+    """Await settlement without cancelling the worker or raising its error.
+
+    Return the first cancellation, leaving the task's outcome to its owner.
+    """
+    while not task.done():
+        try:
+            await asyncio.wait((task,))
+        except asyncio.CancelledError as exc:
+            cancellation = cancellation or exc
+    return cancellation
+
+
 class ProcessSession(Protocol):
     @property
     def process(self) -> asyncio.subprocess.Process | None: ...

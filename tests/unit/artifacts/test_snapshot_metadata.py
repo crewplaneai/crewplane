@@ -121,7 +121,19 @@ def test_reader_exception_boundaries(
 
 @pytest.mark.parametrize(
     ("raw_count", "expected_count"),
-    [(None, 2), (True, 2), (-1, 2), (1, 2), ("5", 2), (2, 2), (5, 5)],
+    [
+        (None, 2),
+        (True, 2),
+        (False, 2),
+        (-1, 2),
+        (0, 2),
+        (1, 2),
+        ("5", 2),
+        (5.0, 2),
+        (2, 2),
+        (5, 5),
+        (2**128, 2**128),
+    ],
 )
 def test_rejection_summary_preserves_details_and_normalizes_counts(
     tmp_path: Path, raw_count: object, expected_count: int
@@ -142,6 +154,24 @@ def test_rejection_summary_preserves_details_and_normalizes_counts(
     assert summary.recorded_files == tuple(details)
     assert summary.total_count == expected_count
     assert summary.truncated is (expected_count > len(details))
+
+
+def test_rejection_summary_keeps_integer_subclass_identity(tmp_path: Path) -> None:
+    class RejectionCount(int):
+        pass
+
+    count = RejectionCount(3)
+    (tmp_path / GENERATED_FILE_SNAPSHOT_METADATA_NAME).write_bytes(b"{}")
+    with patch.object(
+        snapshot_metadata.json,
+        "loads",
+        return_value={"rejected_file_count": count},
+    ):
+        summary = snapshot_metadata.generated_file_snapshot_rejection_summary(tmp_path)
+
+    assert summary.total_count is count
+    assert summary.recorded_files == ()
+    assert summary.truncated is True
 
 
 def test_source_writer_preserves_exact_serialization_and_creates_parent(

@@ -15,6 +15,7 @@ from crewplane.artifacts.generated_files.evidence import (
 from crewplane.artifacts.generated_files.paths import (
     RESERVED_WORKSPACE_PATH_ROOTS,
 )
+from crewplane.artifacts.naming import candidate_identity_path
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.runtime.execution.activity.telemetry import ActivityTrackerSnapshot
 from crewplane.runtime.workspace.git import git
@@ -76,7 +77,7 @@ async def bind_candidate_identities(
             _candidate_identity, request, artifact, before, after
         )
         atomic_write_json(
-            artifact.output_file.with_suffix(".candidate.json"), asdict(identity)
+            candidate_identity_path(artifact.output_file), asdict(identity)
         )
         bound_outputs.append(replace(artifact, candidate_identity=identity))
     return bound_outputs

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.artifacts.naming import (
     preflight_manifest_relative_path,
     run_manifest_relative_path,
@@ -128,13 +129,25 @@ def workspace_descriptor(stages_dir: Path) -> Mapping[str, object] | None:
 
 def workspace_state_summaries(
     stages_dir: Path,
+    node_requests: tuple[NodeArtifactRequest, ...] = (),
 ) -> tuple[WorkspaceInvocationSummary, ...]:
+    requests_by_node = {request.node_id: request for request in node_requests}
+    nodes_by_stage = {
+        stages_dir / request.contract.stage_path: request.node_id
+        for request in node_requests
+        if request.contract.stage_path is not None
+    }
     summaries: list[WorkspaceInvocationSummary] = []
-    for path in workspace_state_candidate_paths(stages_dir):
+    for path in workspace_state_candidate_paths(stages_dir, requests_by_node):
         payload = read_json_mapping(path)
         if payload is None or payload.get("version") != SCHEMA_VERSION:
             continue
-        if not workspace_state_path_matches_node(path, payload):
+        expected_node = nodes_by_stage.get(path.parent)
+        if expected_node is not None and payload.get("node_id") != expected_node:
+            continue
+        if not workspace_state_path_matches_node(
+            stages_dir, path, payload, requests_by_node
+        ):
             continue
         summary = workspace_state_summary(stages_dir, path, payload)
         if summary is not None:

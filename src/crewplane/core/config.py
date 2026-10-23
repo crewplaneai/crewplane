@@ -37,7 +37,6 @@ from .yaml_loader import load_yaml_unique
 
 ALLOWED_PROMPT_TRANSPORTS: Final = ("stdin", "argv")
 ALLOWED_PROMPT_TRANSPORT_SET: Final = set(ALLOWED_PROMPT_TRANSPORTS)
-DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS: Final = 5.0
 
 # Default policy: do not wall-clock kill active provider CLIs. The idle timeout
 # remains the default safety guard for quiet/stalled processes; set this value
@@ -97,14 +96,7 @@ class TokenPricing(BaseModel):
         )
 
     def as_dict(self) -> dict[str, float | None]:
-        return {
-            "input": self.input,
-            "cached_input": self.cached_input,
-            "cache_write": self.cache_write,
-            "output": self.output,
-            "reasoning": self.reasoning,
-            "total": self.total,
-        }
+        return {bucket: getattr(self, bucket) for bucket in TOKEN_BUCKETS}
 
 
 class AgentConfig(BaseModel):

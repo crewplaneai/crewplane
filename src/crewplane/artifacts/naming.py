@@ -100,6 +100,26 @@ def review_checkpoint_relative_path(node_id: str) -> Path:
     return Path("manifests") / "review-checkpoints" / build_node_state_filename(node_id)
 
 
+def review_metadata_path(output_file: Path) -> Path:
+    return output_file.with_suffix(".review.json")
+
+
+def review_raw_output_path(output_file: Path) -> Path:
+    return output_file.with_suffix(".raw.txt")
+
+
+def candidate_identity_path(output_file: Path) -> Path:
+    return output_file.with_suffix(".candidate.json")
+
+
+def build_reviewer_state_filename(task_id: str, round_num: int) -> str:
+    return f"{safe_artifact_name(task_id)}-round-{round_num}.state.json"
+
+
+def reviewer_state_relative_path(task_id: str, round_num: int) -> Path:
+    return Path("review-state") / build_reviewer_state_filename(task_id, round_num)
+
+
 def build_provider_process_state_filename(
     node_id: str,
     task_id: str,

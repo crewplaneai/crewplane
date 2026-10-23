@@ -13,7 +13,12 @@ from crewplane.adapters.invokers.cli_invoker import (
 )
 from crewplane.architecture.contracts import ChildProcessEnvironment, CommandResult
 
-from .command import build_command, resolve_request_executable, validate_request
+from .command import (
+    build_command,
+    cleanup_temporary_captures,
+    resolve_request_executable,
+    validate_request,
+)
 
 PROBE_TIMEOUT_SECONDS = 60.0
 DIAGNOSTIC_PROMPT = "Reply with OK only."
@@ -93,12 +98,7 @@ async def _probe_command(
                 f"no nonblank stdout answer: {_diagnostic_detail(result)}"
             )
     finally:
-        try:
-            if result.stdout_path is not None:
-                result.stdout_path.unlink(missing_ok=True)
-        finally:
-            if result.stderr_path is not None:
-                result.stderr_path.unlink(missing_ok=True)
+        cleanup_temporary_captures(result)
 
 
 def _diagnostic_detail(result: CommandResult) -> str:

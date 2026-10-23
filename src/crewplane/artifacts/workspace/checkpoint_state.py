@@ -24,6 +24,12 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointProgress,
     CheckpointWorkspace,
 )
+from crewplane.core.review_policy import (
+    audit_round_context,
+    audit_rounds_or_default,
+    maximum_review_round,
+    remediation_depth_or_default,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import invocation_slug
 
@@ -124,7 +130,7 @@ def invocation_destination(
     Include the audit in the slug only when the node has multiple audit rounds.
     This performs no I/O and does not modify the node or invocation.
     """
-    audit = invocation.audit if (node.execution_policy.audit_rounds or 1) > 1 else None
+    audit = audit_round_context(node.execution_policy.audit_rounds, invocation.audit)
     slug = invocation_slug(node.id, invocation.task_id, audit, invocation.local_round)
     return f"{node.artifact_contract.stage_path}/{workspace_state_filename(slug)}"
 
@@ -163,16 +169,19 @@ def _ancestor_destinations(
 def _executor_bundle_destinations(node: PreflightExecutionNode) -> dict[str, str]:
     """Resolve bounded bundle names without scanning uncommitted invocation files."""
     destinations = {}
-    audit_rounds = node.execution_policy.audit_rounds or 1
+    audit_rounds = audit_rounds_or_default(node.execution_policy.audit_rounds)
+    max_round = maximum_review_round(
+        remediation_depth_or_default(node.execution_policy.depth)
+    )
     for provider in node.provider_records:
         if provider.role != ProviderRole.EXECUTOR:
             continue
         for audit in range(1, audit_rounds + 1):
-            for local_round in range(1, (node.execution_policy.depth or 1) + 2):
+            for local_round in range(1, max_round + 1):
                 slug = invocation_slug(
                     node.id,
                     provider.task_id,
-                    audit if audit_rounds > 1 else None,
+                    audit_round_context(audit_rounds, audit),
                     local_round,
                 )
                 destination = Path(

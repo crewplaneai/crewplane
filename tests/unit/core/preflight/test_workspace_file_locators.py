@@ -32,6 +32,43 @@ pytestmark = requires_workspace_support
 
 
 @pytest.mark.parametrize(
+    "payload,valid",
+    [
+        (b"", True),
+        ("café 🐍".encode(), True),
+        (b"\xef\xbb\xbftext", True),
+        (b"text\r\n", True),
+        (b"\xff", False),
+        (b"\xe2\x82", False),
+        (b"\x00", False),
+        (b"\x00\xff", False),
+    ],
+)
+def test_project_initial_locator_validates_text_without_changing_bytes(
+    tmp_path: Path, payload: bytes, valid: bool
+) -> None:
+    (tmp_path / "context.md").write_bytes(payload)
+    source = init_git_repo(tmp_path)
+
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path, workspace_workflow("Read {{file:context.md}}"), source
+    )
+
+    if valid:
+        assert preview.diagnostics == []
+        locator = preview.workspace_file_locators[0]
+        assert locator.byte_size == len(payload)
+        assert locator.canonical_blob_sha256 == hashlib.sha256(payload).hexdigest()
+        assert preview.workspace_file_payloads == {locator.content_ref: payload}
+    else:
+        assert preview.workflow_signature is None
+        assert len(preview.diagnostics) == 1
+        assert preview.diagnostics[0].message == (
+            "Workspace file token content must be UTF-8 text without NUL bytes."
+        )
+
+
+@pytest.mark.parametrize(
     ("file_mode", "git_file_mode"), [(0o644, "100644"), (0o755, "100755")]
 )
 def test_workspace_enabled_file_tokens_compile_to_workspace_locators(

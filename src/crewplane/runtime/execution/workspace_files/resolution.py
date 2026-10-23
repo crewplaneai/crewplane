@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core.file_text import decode_utf8_without_nul, valid_utf8_without_nul
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceFileLocator,
@@ -15,7 +14,6 @@ from crewplane.core.workspace.git_reads import (
     GitTreeRecord,
     git_cat_blob,
     git_ls_tree,
-    valid_utf8_without_nul,
 )
 from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.worktree import (
@@ -25,6 +23,7 @@ from crewplane.runtime.workspace.worktree import (
 from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
 
 from ..errors import NodeExecutionError
+from ..preflight_files import preflight_content_path
 from .models import ResolvedWorkspaceFile
 from .source_resolution import (
     WorkspaceCandidateSourceContext,
@@ -262,13 +261,7 @@ def _read_preflight_workspace_file(
     plan: PreflightExecutionPlan,
     content_ref: str,
 ) -> bytes:
-    normalized_ref = Path(content_ref)
-    if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
-        raise ValueError(f"Invalid workspace content reference '{content_ref}'.")
-    path = contained_regular_file(
-        Path(plan.context_root) / "preflight",
-        normalized_ref.as_posix(),
-    )
+    path = preflight_content_path(plan.context_root, content_ref, "workspace")
     if path is None:
         raise RuntimeError(
             f"Workspace content reference is missing or unsafe: '{content_ref}'."
@@ -278,12 +271,12 @@ def _read_preflight_workspace_file(
 
 def _decode_workspace_file(locator_id: str, payload: bytes) -> str:
     try:
-        text = payload.decode("utf-8")
+        text = decode_utf8_without_nul(payload)
     except UnicodeDecodeError as exc:
         raise RuntimeError(
             f"Workspace file locator content is not valid UTF-8: {locator_id}."
         ) from exc
-    if "\x00" in text:
+    if text is None:
         raise RuntimeError(
             f"Workspace file locator content contains NUL bytes: {locator_id}."
         )

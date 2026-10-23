@@ -1,22 +1,9 @@
-"""Complete audit publications before releasing their caller's state ownership."""
+"""Publish audit review inboxes from settled review state."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
-from .audit_io import complete_audit_io
 from .state import persist_review_inbox, render_review_inbox
 from .types import AuditRoundProgress, AuditRoundRequest, ReviewerRoundArtifact
-
-
-async def complete_audit_publication(publish: Callable[[], object]) -> None:
-    """Offload publication and drain its worker before propagating cancellation.
-
-    The caller must retain ownership of publication inputs until this returns.
-    Publication errors take precedence over cancellation, as synchronous writes
-    did. Repeated cancellation cannot leave a worker writing during cleanup.
-    """
-    await complete_audit_io(publish)
 
 
 def persist_round_review_inbox(

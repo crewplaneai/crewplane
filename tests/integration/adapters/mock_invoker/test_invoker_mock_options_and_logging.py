@@ -5,12 +5,59 @@ from tempfile import mkdtemp
 import pytest
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.adapters.invokers.mock_invoker.options import parse_options
+from crewplane.architecture.contracts import InvocationContext, MockInvokerOptions
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
     MockInvokerAdapterTestCase,
 )
+
+
+@pytest.mark.parametrize("options", [None, {}])
+def test_omitted_options_use_dto_defaults_and_keep_canonical_shape(options):
+    defaults = MockInvokerOptions()
+
+    assert parse_options(options) == defaults
+    canonical = MockInvokerAdapter().canonicalize_options("mock", "mock", options)
+
+    assert canonical.options == {
+        "delay_seconds": defaults.delay_seconds,
+        "fail_when": [],
+        "observation_delay_seconds": defaults.observation_delay_seconds,
+        "output_dir": defaults.output_dir,
+        "output_mode": defaults.output_mode,
+        "seed": defaults.seed,
+        "strict_file_mode": defaults.strict_file_mode,
+    }
+    assert "fixture_metadata" not in canonical.options
+
+
+def test_explicit_zero_options_override_dto_defaults():
+    parsed = parse_options(
+        {"delay_seconds": 0, "observation_delay_seconds": 0, "seed": 0}
+    )
+
+    assert parsed.delay_seconds == 0
+    assert parsed.observation_delay_seconds == 0
+    assert parsed.seed == 0
+
+
+class SeedInteger(int):
+    pass
+
+
+@pytest.mark.parametrize("seed", [None, -1, 0, 1, 2**128, SeedInteger(7)])
+def test_optional_seed_preserves_integer_values_and_identity(seed):
+    assert parse_options({"seed": seed}).seed is seed
+
+
+@pytest.mark.parametrize("seed", [True, False, 1.5, "7"])
+def test_optional_seed_rejects_non_integers_with_existing_message(seed):
+    with pytest.raises(ValueError) as caught:
+        parse_options({"seed": seed})
+
+    assert str(caught.value) == "mock invoker option 'seed' must be an integer or null"
 
 
 class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):

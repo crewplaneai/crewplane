@@ -18,6 +18,7 @@ from crewplane.core.review_checkpoint import (
     validate_checkpoint_node,
 )
 from crewplane.core.review_checkpoint_state import (
+    CheckpointCounters,
     CheckpointEvaluation,
     CheckpointGeneratedMapping,
     CheckpointReview,
@@ -305,6 +306,38 @@ def test_strict_open_and_closed_shapes() -> None:
 
 
 @pytest.mark.parametrize(
+    "reason",
+    [
+        None,
+        "consensus",
+        "consensus_exhausted",
+        "no_progress",
+        "no_valid_candidate",
+        "failed",
+        "cancelled",
+    ],
+)
+def test_checkpoint_stop_reasons_remain_strings_through_round_trip(
+    reason: str | None,
+) -> None:
+    payload = checkpoint_payload()
+    payload["progress"]["stop_reason"] = reason
+    record = REVIEW_CHECKPOINT_ADAPTER.validate_python(payload)
+
+    assert record.progress.stop_reason == reason
+    if reason is not None:
+        assert type(record.progress.stop_reason) is str
+    assert REVIEW_CHECKPOINT_ADAPTER.validate_json(record.model_dump_json()) == record
+    assert CheckpointCounters().stop_reason is None
+
+
+@pytest.mark.parametrize("reason", ["unknown", b"consensus", True, 0, 1.5, [], {}, ()])
+def test_checkpoint_rejects_invalid_stop_reason_python_values(reason: object) -> None:
+    with pytest.raises(ValidationError, match="stop_reason"):
+        CheckpointCounters.model_validate({"stop_reason": reason})
+
+
+@pytest.mark.parametrize(
     "changes",
     [
         {"audit": 0},
@@ -328,6 +361,34 @@ def test_rejects_illegal_cursors_topology_and_references(
             {**checkpoint_payload(), **changes}
         )
         validate_checkpoint_node(checkpoint, make_plan(review_loop=True).nodes[0])
+
+
+@pytest.mark.parametrize("depth", [None, 1, 3])
+@pytest.mark.parametrize("exceeds_bound", [False, True])
+def test_checkpoint_permits_final_review_round_and_rejects_its_successor(
+    depth, exceeds_bound
+):
+    node = make_plan(review_loop=True).nodes[0]
+    node.execution_policy.depth = depth
+    local_round = (1 if depth is None else depth) + 1 + int(exceeds_bound)
+    payload = checkpoint_payload()
+    payload["local_round"] = local_round
+    candidate_path = f"a/{node.provider_records[0].task_id}_round{local_round}.md"
+    active = payload["progress"]["active_audit"]
+    for group in (active["executor_outputs"], active["latest_valid_executor_outputs"]):
+        group[0].update(
+            local_round=local_round,
+            producer_round=local_round,
+            output_path=candidate_path,
+        )
+    payload["files"][0].update(local_round=local_round, relative_path=candidate_path)
+    record = OpenReviewCheckpoint.model_validate(payload)
+
+    if exceeds_bound:
+        with pytest.raises(ValueError, match="cursor exceeds configured review bounds"):
+            validate_checkpoint_node(record, node)
+    else:
+        validate_checkpoint_node(record, node)
 
 
 def test_remediation_without_active_progress_is_rejected_by_the_model() -> None:

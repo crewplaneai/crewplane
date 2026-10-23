@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -7,7 +8,30 @@ from crewplane.architecture.contracts import (
     InvocationWorktreeContract,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.process.drain import (
+    ProcessDrainError,
+    ProcessDrainEvidence,
+)
 from crewplane.version import SCHEMA_VERSION
+
+
+async def fail_process_drain(
+    process: asyncio.subprocess.Process,
+    process_group_id: int | None,
+    diagnostic_sink: object,
+) -> None:
+    del diagnostic_sink
+    process.kill()
+    await process.wait()
+    raise ProcessDrainError(
+        ProcessDrainEvidence(
+            pid=process.pid,
+            process_group_id=process_group_id,
+            leader_stopped=True,
+            process_group_stopped=False,
+        ),
+        "provider process group remained live",
+    )
 
 
 def command_workspace_context(

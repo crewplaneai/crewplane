@@ -9,6 +9,7 @@ from typing import NamedTuple
 from crewplane.architecture.contracts.execution_status import (
     TERMINAL_WORKSPACE_STATUSES,
 )
+from crewplane.core.workspace.cache import WORKSPACE_CACHE_LAYOUTS
 
 from .state import WorkspaceStateRetention, update_workspace_retention
 from .worktree.cleanup import remove_unknown_workspace_path, worktree_disk_usage
@@ -380,10 +381,14 @@ def _update_deleted_state_paths(state_paths: Iterable[Path]) -> None:
 
 def cleanup_candidates(cache_root: Path) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    candidates.extend(flat_workspace_candidates(cache_root / "workspace-runs"))
-    for family in ("workspaces", "snapshots"):
-        candidates.extend(repository_workspace_candidates(cache_root / family))
-    candidates.extend(review_workspace_candidates(cache_root / "review-workspaces"))
+    for layout in WORKSPACE_CACHE_LAYOUTS:
+        family_root = cache_root / layout.family
+        if layout.node_scoped:
+            candidates.extend(review_workspace_candidates(family_root))
+        elif layout.repository_scoped:
+            candidates.extend(repository_workspace_candidates(family_root))
+        else:
+            candidates.extend(flat_workspace_candidates(family_root))
     return tuple(sorted(candidates, key=lambda item: item[1].as_posix()))
 
 
@@ -401,15 +406,14 @@ def cleanup_candidates_for_repository(
     repository_id: str,
 ) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    for family in ("workspaces", "snapshots"):
-        candidates.extend(
-            flat_workspace_candidates(cache_root / family / repository_id)
-        )
-    candidates.extend(
-        review_workspace_candidates_for_repo(
-            cache_root / "review-workspaces" / repository_id
-        )
-    )
+    for layout in WORKSPACE_CACHE_LAYOUTS:
+        if not layout.repository_scoped:
+            continue
+        repository_root = cache_root / layout.family / repository_id
+        if layout.node_scoped:
+            candidates.extend(review_workspace_candidates_for_repo(repository_root))
+        else:
+            candidates.extend(flat_workspace_candidates(repository_root))
     return tuple(sorted(candidates, key=lambda item: item[1].as_posix()))
 
 

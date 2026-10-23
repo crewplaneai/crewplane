@@ -4,10 +4,10 @@ from crewplane.architecture.contracts import JsonObject
 from crewplane.core.config import Config
 from crewplane.core.preflight.runtime_config import RuntimeConfigSnapshot
 from crewplane.core.workflow.models import WorkflowPlan
-from crewplane.core.workflow.validation.workspace import (
+from crewplane.core.workspace.selection import (
+    LogicalWorkspaceSelection,
     logical_workspace_selections,
 )
-from crewplane.core.workspace.selection import LogicalWorkspaceSelection
 
 from .models import (
     WorkspaceBranchExportRecord,

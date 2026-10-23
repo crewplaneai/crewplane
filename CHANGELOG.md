@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Include persisted workspace details in run summaries when compiled stages use renamed or nested paths.
+
 ## [0.3.8] - 2026-10-18
 
 ### Added

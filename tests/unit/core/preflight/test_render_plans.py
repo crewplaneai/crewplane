@@ -21,7 +21,10 @@ from crewplane.core.preflight import (
     render_plans,
 )
 from crewplane.core.preflight.models import WorkspaceFileTarget
-from crewplane.core.preflight.references import TemplateReference
+from crewplane.core.preflight.references import (
+    TemplateReference,
+    iter_template_references,
+)
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -72,6 +75,68 @@ def _compile_preview(root: Path, workflow: WorkflowPlan):
             fingerprint_key_policy="read_only",
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("token", "kind", "key", "node_id", "artifact_name"),
+    [
+        ("{{}}", "unknown", None, None, None),
+        ("{{file:}}", "unknown", None, None, None),
+        ("{{file: }}", "file", "", None, None),
+        ("{{file: context.md }}", "file", "context.md", None, None),
+        ("{{ file:context.md}}", "unknown", None, None, None),
+        ("{{FILE:context.md}}", "unknown", "context.md", None, None),
+        ("{{unknown: key }}", "unknown", "key", None, None),
+        ("{{param:key}}", "param", "key", None, None),
+        ("{{PARAM:key}}", "unknown", "key", None, None),
+        ("{{env: }}", "env", "", None, None),
+        ("{{var: key }}", "var", "key", None, None),
+        ("{{build.step.output}}", "node", None, "build.step", "output"),
+        ("{{ build.step.OUTPUT }}", "node", None, "build.step", "OUTPUT"),
+        ("{{BUILD.output}}", "unknown", None, None, None),
+    ],
+)
+def test_template_references_preserve_lexical_contract(
+    token: str,
+    kind: str,
+    key: str | None,
+    node_id: str | None,
+    artifact_name: str | None,
+) -> None:
+    references = iter_template_references(token)
+
+    assert len(references) == 1
+    reference = references[0]
+    assert (
+        reference.raw_token,
+        reference.start,
+        reference.end,
+        reference.kind,
+        reference.key,
+        reference.node_id,
+        reference.artifact_name,
+    ) == (token, 0, len(token), kind, key, node_id, artifact_name)
+
+
+@pytest.mark.parametrize("text", ["{file:x}", "{{file:x}", "{{file:{x}}"])
+def test_template_references_ignore_incomplete_delimiters(text: str) -> None:
+    assert iter_template_references(text) == ()
+
+
+def test_template_references_preserve_repeated_unicode_character_offsets() -> None:
+    references = iter_template_references(
+        "α🙂 {{build.step.output}} {{build.step.output}}"
+    )
+
+    assert [(reference.start, reference.end) for reference in references] == [
+        (3, 24),
+        (25, 46),
+    ]
+    assert references[0].raw_token == references[1].raw_token == "{{build.step.output}}"
+    nested = iter_template_references("{{{file:x}}}")
+    assert [
+        (reference.raw_token, reference.start, reference.end) for reference in nested
+    ] == [("{{file:x}}", 1, 11)]
 
 
 def test_render_token_occurrences_scan_each_segment_once(

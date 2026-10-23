@@ -17,6 +17,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
 )
+from crewplane.core.value_checks import optional_strict_int
 
 from .evidence_discovery import (
     path_has_symlink_component,
@@ -279,9 +280,7 @@ def _construct_claim(
     payload: dict[str, object],
     sections: _ClaimSections,
 ) -> WorkspaceClaim:
-    generation = sections.workspace.get("reuse_generation")
-    if not isinstance(generation, int) or isinstance(generation, bool):
-        generation = None
+    generation = optional_strict_int(sections.workspace.get("reuse_generation"))
     worktree_git_dir = sections.execution.get("worktree_git_dir")
     return WorkspaceClaim(
         state_path=state_path,

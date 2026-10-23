@@ -252,14 +252,51 @@ def test_cleanup_evidence_rejects_contradictory_placement_fields(
     assert decision.deletable is False
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [
+        f"workspaces/{REPOSITORY_ID}/{RUN_KEY}/snapshot",
+        f"snapshots/{REPOSITORY_ID}/{RUN_KEY}/node/snapshot",
+        f"snapshots/{REPOSITORY_ID}/{RUN_KEY}",
+        f"snapshots/other/{RUN_KEY}/snapshot",
+        f"snapshots/{REPOSITORY_ID}/other/snapshot",
+    ],
+)
 def test_cleanup_evidence_rejects_workspace_kind_cache_family_mismatch(
-    tmp_path: Path,
+    tmp_path: Path, relative: str
 ) -> None:
     cache_root = tmp_path / "cache"
     stage_root = tmp_path / "stages"
-    workspace_path = cache_root / "workspaces" / REPOSITORY_ID / RUN_KEY / "snapshot"
+    workspace_path = cache_root / relative
     (workspace_path / "checkout").mkdir(parents=True)
-    write_cleanup_claim(stage_root, RUN_KEY, snapshot_claim_payload(workspace_path))
+    write_cleanup_claim(
+        stage_root,
+        RUN_KEY,
+        snapshot_claim_payload(workspace_path, cache_root=cache_root),
+    )
+
+    decision = collect_cleanup_evidence(stage_root, cache_root).decision(
+        RUN_KEY, workspace_path
+    )
+
+    assert decision.status == "invalid"
+    assert decision.deletable is False
+
+
+@pytest.mark.parametrize(
+    ("parent", "role"), [("wrong-node", "reviewer"), ("build", "unknown")]
+)
+def test_cleanup_evidence_rejects_wrong_reviewer_parent_or_unknown_role(
+    tmp_path: Path, parent: str, role: str
+) -> None:
+    cache_root = tmp_path / "cache"
+    stage_root = tmp_path / "stages"
+    workspace_path = (
+        cache_root / "review-workspaces" / REPOSITORY_ID / RUN_KEY / parent / "reviewer"
+    )
+    payload = worktree_claim_payload(workspace_path)
+    payload["role"] = role
+    write_cleanup_claim(stage_root, RUN_KEY, payload)
 
     decision = collect_cleanup_evidence(stage_root, cache_root).decision(
         RUN_KEY, workspace_path

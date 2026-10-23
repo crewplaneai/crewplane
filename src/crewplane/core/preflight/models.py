@@ -15,7 +15,7 @@ from pydantic import (
 
 from crewplane.architecture.contracts import ArtifactContract, JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.token_budget import validate_token_budget_thresholds
+from crewplane.core.token_budget import TokenBudgetThresholds
 from crewplane.core.workflow.keywords import (
     NodeMode,
     ProviderRole,
@@ -247,18 +247,8 @@ class ProviderRecord(BaseModel):
     invoker_config_signature: str
 
 
-class TokenBudgetPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    fail_threshold_chars: int | None = Field(default=None, ge=1)
-    warn_threshold_chars: int | None = Field(default=None, ge=1)
-
-    @model_validator(mode="after")
-    def _validate_threshold_order(self) -> TokenBudgetPolicy:
-        validate_token_budget_thresholds(
-            self.warn_threshold_chars, self.fail_threshold_chars
-        )
-        return self
+class TokenBudgetPolicy(TokenBudgetThresholds):
+    pass
 
 
 class RetryPolicy(BaseModel):

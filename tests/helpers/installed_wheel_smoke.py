@@ -5,33 +5,16 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import tomllib
 import venv
-
-if __package__:
-    from .installed_package_assertions import smoke
-else:
-    from installed_package_assertions import smoke
 from pathlib import Path
 
-
-def run(command: list[str], cwd: Path, env: dict[str, str]) -> str:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        timeout=180,
-        check=False,
-    )
-    output = result.stdout.decode("utf-8", errors="replace")
-    if result.returncode:
-        raise RuntimeError(f"Command failed ({result.returncode}): {command}\n{output}")
-    return output
+if __package__:
+    from .installed_package_assertions import run, smoke
+else:
+    from installed_package_assertions import run, smoke
 
 
 def install(wheel: Path, root: Path, installer: str) -> tuple[Path, Path]:

@@ -183,7 +183,7 @@ def evidence_progress() -> CheckpointProgress:
         role="reviewer",
         audit=1,
         local_round=0,
-        output_path="stage/reviewer.md",
+        output_path="stage/reviewer.v2.md",
         evaluation=CheckpointEvaluation(
             verdict="NO_FINDINGS",
             approved=True,
@@ -203,7 +203,7 @@ def evidence_progress() -> CheckpointProgress:
         role="executor",
         audit=3,
         local_round=3,
-        output_path="stage/executor.md",
+        output_path="stage/executor.v2.md",
         producer_audit=1,
         producer_round=1,
         identity=CheckpointCandidateIdentity(kind="unverified", fingerprint=None),
@@ -233,11 +233,11 @@ def evidence_progress() -> CheckpointProgress:
 def evidence_paths(audit_rounds: int) -> list[str]:
     directory = "stage" if audit_rounds == 1 else "stage/review-audit-round-3"
     return [
-        "stage/reviewer.review.json",
-        "stage/reviewer.raw.txt",
+        "stage/reviewer.v2.review.json",
+        "stage/reviewer.v2.raw.txt",
         "stage/review-state/review-agent-round-0.state.json",
         f"{directory}/review-state/review-agent-round-0.state.json",
-        "stage/executor.candidate.json",
+        "stage/executor.v2.candidate.json",
     ]
 
 

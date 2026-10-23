@@ -25,7 +25,12 @@ from crewplane.core.review_checkpoint_state import (
 )
 
 from ..atomic import atomic_write_bytes
-from ..naming import safe_artifact_name
+from ..naming import (
+    candidate_identity_path,
+    review_metadata_path,
+    review_raw_output_path,
+    reviewer_state_relative_path,
+)
 
 
 def describe_checkpoint_file(
@@ -208,9 +213,9 @@ def _describe_reviewer_evidence(
         audit=review.audit,
         local_round=review.local_round,
     )
-    for suffix in (".review.json", ".raw.txt"):
+    for sidecar in (review_metadata_path(path), review_raw_output_path(path)):
         yield describe_checkpoint_file(
-            root, path.with_suffix(suffix).as_posix(), invocation, "review_metadata"
+            root, sidecar.as_posix(), invocation, "review_metadata"
         )
     yield describe_checkpoint_file(
         root,
@@ -237,7 +242,7 @@ def _describe_reviewer_failure(
 def _describe_candidate_identity(
     root: Path, candidate: CheckpointCandidate
 ) -> CheckpointFile:
-    relative = Path(candidate.output_path).with_suffix(".candidate.json").as_posix()
+    relative = candidate_identity_path(Path(candidate.output_path)).as_posix()
     invocation = CheckpointInvocation(
         task_id=candidate.task_id,
         role=candidate.role,
@@ -252,6 +257,5 @@ def _review_state_relative_path(
 ) -> str:
     return (
         directory
-        / "review-state"
-        / f"{safe_artifact_name(invocation.task_id)}-round-{invocation.local_round}.state.json"
+        / reviewer_state_relative_path(invocation.task_id, invocation.local_round)
     ).as_posix()

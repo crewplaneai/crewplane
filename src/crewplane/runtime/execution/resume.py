@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from crewplane.core.execution_state import (
     NodeState,
     ResumeOrigin,
 )
+from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -97,9 +97,11 @@ def _generated_file_descriptors(
 
 
 def _descriptor(kind: ArtifactKind, root: Path, path: Path) -> ArtifactDescriptor:
+    relative_path = path.relative_to(root).as_posix()
+    size_bytes, sha256 = file_size_and_sha256(path)
     return ArtifactDescriptor(
         kind=kind,
-        relative_path=path.relative_to(root).as_posix(),
-        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-        size_bytes=path.stat().st_size,
+        relative_path=relative_path,
+        sha256=sha256,
+        size_bytes=size_bytes,
     )

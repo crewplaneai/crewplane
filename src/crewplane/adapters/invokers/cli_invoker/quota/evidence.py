@@ -16,7 +16,7 @@ def _find_first_match(
     if not haystack:
         return None
     haystack_lower = haystack.lower()
-    haystack_collapsed = re.sub(r"[^a-z0-9]+", " ", haystack_lower).strip()
+    haystack_collapsed = _normalize_quota_hint(haystack_lower)
     haystack_squashed = re.sub(r"[^a-z0-9]+", "", haystack_lower)
     for needle in needles:
         if not needle:
@@ -24,7 +24,7 @@ def _find_first_match(
         needle_lower = needle.lower()
         if needle_lower in haystack_lower:
             return needle
-        needle_collapsed = re.sub(r"[^a-z0-9]+", " ", needle_lower).strip()
+        needle_collapsed = _normalize_quota_hint(needle_lower)
         if needle_collapsed and needle_collapsed in haystack_collapsed:
             return needle
         needle_squashed = re.sub(r"[^a-z0-9]+", "", needle_lower)

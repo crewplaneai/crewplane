@@ -20,7 +20,9 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointReview,
     CheckpointReviewerFailure,
 )
+from crewplane.core.review_policy import audit_round_context, audit_rounds_or_default
 
+from ..naming import candidate_identity_path, review_raw_output_path
 from ..run_history import RunHistoryRecord
 from ..workspace.checkpoint_state import validate_checkpoint_workspaces
 from .checkpoint_files import (
@@ -98,7 +100,7 @@ def _validate_review_evidence(
         root,
         checkpoint.progress,
         node.artifact_contract.stage_path or "",
-        node.execution_policy.audit_rounds or 1,
+        audit_rounds_or_default(node.execution_policy.audit_rounds),
     )
     _require_matching_evidence_descriptors(descriptors, expected)
     _validate_candidate_identities(root, checkpoint, descriptors)
@@ -120,7 +122,7 @@ def _validate_candidate_identities(
     descriptors: dict[str, CheckpointFile],
 ) -> None:
     for candidate in checkpoint.progress.candidates():
-        path = Path(candidate.output_path).with_suffix(".candidate.json").as_posix()
+        path = candidate_identity_path(Path(candidate.output_path)).as_posix()
         if json.loads(
             read_checkpoint_file(root, descriptors[path])
         ) != candidate.identity.model_dump(mode="json"):
@@ -142,7 +144,7 @@ def _validate_review_texts(
             raise ValueError(
                 "Checkpoint evaluation disagrees with its published review."
             )
-        raw = Path(review.output_path).with_suffix(".raw.txt").as_posix()
+        raw = review_raw_output_path(Path(review.output_path)).as_posix()
         if (
             read_checkpoint_file(root, descriptors[raw]).decode("utf-8")
             != review.evaluation.raw_text
@@ -182,9 +184,9 @@ def _review_state_fields(
 ) -> dict[str, object]:
     fields: dict[str, object] = {
         "task_id": record.task_id,
-        "audit_round_num": record.audit
-        if (node.execution_policy.audit_rounds or 1) > 1
-        else None,
+        "audit_round_num": audit_round_context(
+            node.execution_policy.audit_rounds, record.audit
+        ),
         "round_num": record.local_round,
     }
     if isinstance(record, CheckpointReview):

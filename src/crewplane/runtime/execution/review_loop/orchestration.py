@@ -8,10 +8,11 @@ from typing import NoReturn
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.results.findings import FindingsExtractionError
-from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import PreflightExecutionNode, ProviderRecord
 from crewplane.core.review_checkpoint_state import CheckpointPhase
+from crewplane.core.review_contract import ReviewLoopStopReason
+from crewplane.core.review_policy import audit_round_context
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
@@ -33,7 +34,6 @@ from .checkpoint import (
 )
 from .checkpoint_progress import ProgressRestorer
 from .policy import (
-    audit_round_context,
     audit_round_dir,
     consensus_failure_allows_continuation,
     resolve_audit_rounds,

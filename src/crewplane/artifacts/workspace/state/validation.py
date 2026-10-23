@@ -187,7 +187,7 @@ def checkpoint_invocation_is_valid(
         return False
     workspace = _mapping(payload.get("workspace"))
     if not (
-        _workspace_state_identity_matches(plan, node, payload, run_id, run_key_name)
+        workspace_state_identity_matches(plan, node, payload, run_id, run_key_name)
         and _workspace_state_policy_matches(policy.model_dump(mode="json"), payload)
         and _checkpoint_invocation_context_matches(
             source,
@@ -331,20 +331,21 @@ def _workspace_state_context_matches(
     status: WorkspaceStateStatus,
 ) -> bool:
     return (
-        _workspace_state_identity_matches(
+        workspace_state_identity_matches(
             plan, node, payload, source.manifest.run_id, source.manifest.run_key_name
         )
         and payload.get("status") == status
     )
 
 
-def _workspace_state_identity_matches(
+def workspace_state_identity_matches(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
     run_id: str,
     run_key_name: str,
 ) -> bool:
+    """Check the schema, run, workflow, and node identity of workspace evidence."""
     return (
         payload.get("version") == SCHEMA_VERSION
         and payload.get("run_id") == run_id

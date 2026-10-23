@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.artifacts.resume.checkpoint_files import read_checkpoint_file
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
@@ -18,6 +17,7 @@ from crewplane.core.review_checkpoint_state import (
     CheckpointReview,
     CheckpointStall,
 )
+from crewplane.core.review_contract import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..reviews.types import EvaluatedReviewResult

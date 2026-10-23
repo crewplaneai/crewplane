@@ -4,7 +4,6 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import NotRequired, Protocol, TypedDict
 
@@ -12,6 +11,7 @@ from crewplane.architecture.contracts.artifacts import build_review_audit_direct
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core import review_contract as _review_contract
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -30,13 +30,7 @@ REQUIRED_BOOLEAN_FIELDS = (
 )
 
 
-class ReviewLoopStopReason(StrEnum):
-    CONSENSUS = "consensus"
-    CONSENSUS_EXHAUSTED = "consensus_exhausted"
-    NO_PROGRESS = "no_progress"
-    NO_VALID_CANDIDATE = "no_valid_candidate"
-    CANCELLED = "cancelled"
-    FAILED = "failed"
+ReviewLoopStopReason = _review_contract.ReviewLoopStopReason
 
 
 class ReviewLoopStatusOutputEntry(TypedDict):

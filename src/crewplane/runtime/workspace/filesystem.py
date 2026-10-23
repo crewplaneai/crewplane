@@ -9,8 +9,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.workspace.cache import workspace_cache_root
-from crewplane.core.workspace.naming import safe_file_component
+from crewplane.core.workspace.cache import (
+    workspace_cache_root,
+    workspace_cache_run_hierarchy,
+)
 
 
 def workspace_run_hierarchy(
@@ -20,10 +22,9 @@ def workspace_run_hierarchy(
 ) -> tuple[Path, Path, Path, Path]:
     """Return cache, family, repository, and run paths without creating them."""
     cache_root = workspace_cache_root(runtime_workspace_cache_root(plan))
-    family_root = cache_root / family
-    repository_root = family_root / source.repository_id
-    run_root = repository_root / plan.run_key_name
-    return cache_root, family_root, repository_root, run_root
+    return workspace_cache_run_hierarchy(
+        cache_root, family, (source.repository_id, plan.run_key_name)
+    )
 
 
 def workspace_run_root(
@@ -35,17 +36,6 @@ def workspace_run_root(
     for directory in hierarchy:
         ensure_owner_private_dir(directory)
     return hierarchy[-1]
-
-
-def workspace_invocation_path(
-    run_root: Path,
-    slug: str,
-    parent_slug: str | None = None,
-) -> Path:
-    """Return the invocation path without creating directories."""
-    if parent_slug is not None:
-        run_root = run_root / safe_file_component(parent_slug)
-    return run_root / slug
 
 
 def runtime_workspace_cache_root(plan: PreflightExecutionPlan) -> str | None:

@@ -163,6 +163,36 @@ def test_dedicated_cleanup_accepts_writer_produced_claim(evidence: CleanupEviden
     )
 
 
+@pytest.mark.parametrize("transport_failure", [False, True])
+def test_live_git_identity_rejection_preserves_refs_and_evidence(
+    evidence: CleanupEvidence,
+    monkeypatch: pytest.MonkeyPatch,
+    transport_failure: bool,
+) -> None:
+    before = evidence.owner.state_path.read_bytes()
+    original_text = GitCommand.text
+    failure = subprocess.TimeoutExpired("git", 600)
+
+    def git_text(command: GitCommand, *args: str) -> str:
+        if args == ("rev-parse", "--git-common-dir"):
+            if transport_failure:
+                raise failure
+            return (evidence.repo / "foreign-git-dir").as_posix()
+        return original_text(command, *args)
+
+    monkeypatch.setattr(GitCommand, "text", git_text)
+    if transport_failure:
+        with pytest.raises(subprocess.TimeoutExpired) as caught:
+            evidence.cleanup()
+        assert caught.value is failure
+    else:
+        with pytest.raises(RuntimeError, match="repository identity changed"):
+            evidence.cleanup()
+
+    assert evidence.owner.state_path.read_bytes() == before
+    assert run_git_text(evidence.repo, "rev-parse", evidence.ref_name) == evidence.oid
+
+
 @pytest.mark.parametrize("external", [False, True])
 @pytest.mark.parametrize(
     ("damage", "failure_kind"),

@@ -9,7 +9,48 @@ from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.run import historical_summary
 from crewplane.observability.events import RuntimeLogEventPayload, event_from_record
 from crewplane.observability.events.types import EventType, LogLevel
+from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import make_plan, make_run_manifest
+
+
+@pytest.mark.parametrize("stage_path", ["renamed-stage", "custom/nested-stage"])
+@pytest.mark.parametrize("symlinked_ancestor", [False, True])
+def test_historical_summary_reads_compiled_workspace_stage_without_events(
+    tmp_path: Path, stage_path: str, symlinked_ancestor: bool
+) -> None:
+    record = _history_record(tmp_path)
+    plan = make_plan()
+    plan.nodes[0].artifact_contract.stage_path = stage_path
+    stage_dir = record.run_dir / stage_path
+    stage_dir.mkdir(parents=True)
+    (stage_dir / "workspace-state.json").write_text(
+        json.dumps(
+            {
+                "version": SCHEMA_VERSION,
+                "node_id": "a",
+                "status": "succeeded",
+                "workspace_kind": "worktree",
+                "workspace": {"retention": "deleted"},
+                "result": {"result_commit": "d" * 40},
+            }
+        )
+    )
+    if symlinked_ancestor:
+        linked = record.run_dir / stage_path.split("/")[0]
+        target = tmp_path / "moved"
+        linked.rename(target)
+        symlink_or_skip(linked, target, target_is_directory=True)
+
+    summary_path = historical_summary.refresh_historical_run_summary(plan, record)
+
+    text = summary_path.read_text(encoding="utf-8")
+    if symlinked_ancestor:
+        assert "result=" + "d" * 40 not in text
+    else:
+        assert f"state={stage_path}/workspace-state.json" in text
+        assert "retention=deleted" in text
+        assert "result=" + "d" * 40 in text
 
 
 @pytest.mark.parametrize("level", LogLevel)
