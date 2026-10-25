@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.artifacts.workspace.source_validation import (
+    checkpoint_invocation_source_matches,
+)
 from crewplane.artifacts.workspace.state.expected_set import (
     workspace_state_payloads_match_expected_set,
 )
@@ -116,6 +119,77 @@ def test_seeded_reviewer_rejects_older_matching_candidate(tmp_path: Path) -> Non
     assert not _source_matches(tmp_path, payloads, reviewer)
     assert not workspace_state_payloads_match_expected_set(
         payloads, (_expected(second), _expected(reviewer))
+    )
+
+
+@pytest.mark.parametrize("role", [ProviderRole.EXECUTOR, ProviderRole.REVIEWER])
+@pytest.mark.parametrize(
+    ("case", "matches"),
+    [
+        ("empty", False),
+        ("single", True),
+        ("latest", True),
+        ("older", False),
+        ("tie", False),
+        ("upper-bound", True),
+    ],
+)
+def test_checkpoint_candidate_source_requires_unique_latest_carried_result(
+    tmp_path: Path, role: ProviderRole, case: str, matches: bool
+) -> None:
+    first = _lineage_payload(1)
+    second = _lineage_payload(2, source=first)
+    source = first if case in {"empty", "single", "older"} else second
+    current = (
+        _lineage_payload(3, source=source)
+        if role == ProviderRole.EXECUTOR
+        else _reviewer_payload(2, None, source)
+    )
+    carried = {
+        "empty": (),
+        "single": (first,),
+        "latest": (second, first),
+        "older": (first, second),
+        "tie": (second, first, deepcopy(second)),
+        "upper-bound": (first, _lineage_payload(3), second),
+    }[case]
+    run = source_record(tmp_path)
+    plan = make_plan()
+
+    assert (
+        checkpoint_invocation_source_matches(run, plan, plan.nodes[0], current, carried)
+        is matches
+    )
+
+
+@pytest.mark.parametrize(
+    ("ref", "source_ref", "source_matches", "expected_set_matches"),
+    [
+        (None, None, True, True),
+        (17, None, True, False),
+        (17, 17, False, True),
+    ],
+)
+def test_candidate_source_preserves_caller_specific_ref_comparison(
+    tmp_path: Path,
+    ref: object,
+    source_ref: object,
+    source_matches: bool,
+    expected_set_matches: bool,
+) -> None:
+    first = _lineage_payload(1)
+    first["refs"] = {"result": ref}
+    current = _lineage_payload(2, source=first)
+    descriptor = current["source"]
+    assert isinstance(descriptor, dict)
+    descriptor["bundle_ref"] = source_ref
+    _set_invocation_source(current)
+    payloads = (first, current)
+
+    assert _source_matches(tmp_path, payloads, current) is source_matches
+    assert (
+        workspace_state_payloads_match_expected_set(payloads, (_expected(current),))
+        is expected_set_matches
     )
 
 

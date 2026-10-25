@@ -11,6 +11,7 @@ from pathlib import Path
 from packaging.version import InvalidVersion, Version
 
 from . import retry, smoke
+from .artifact_layout import release_artifact_layout
 from .plugins import release_plugins
 from .state import (
     ORIGIN_MASTER_ANCESTRY_ERROR,
@@ -327,12 +328,7 @@ def verified_github_release_plan(
     context = read_release_context(root)
     manifest = read_manifest(root)
     manifest_issues = manifest_context_issues(context, manifest)
-    expected_artifact_keys = {"pypi_sdist", "pypi_wheel", "npm_tarball"}
-    expected_artifact_keys.update(
-        plugin.artifact_key(kind)
-        for plugin in release_plugins(context)
-        for kind in ("sdist", "wheel")
-    )
+    expected_artifact_keys = set(release_artifact_layout(context))
     if set(manifest.artifacts) != expected_artifact_keys:
         manifest_issues.append(
             "release manifest must contain exactly the sdist, wheel, and npm tarball plus declared plugin artifacts"
@@ -375,18 +371,7 @@ def github_release_bundle_issues(
     context: ReleaseContext,
     manifest: ReleaseManifest,
 ) -> list[str]:
-    expected_paths = {
-        "pypi_sdist": Path("dist") / context.sdist_filename,
-        "pypi_wheel": Path("dist") / context.wheel_filename,
-        "npm_tarball": Path(".release") / "npm" / context.npm_filename,
-    }
-    for plugin in release_plugins(context):
-        expected_paths[plugin.artifact_key("sdist")] = (
-            Path("dist") / plugin.context.sdist_filename
-        )
-        expected_paths[plugin.artifact_key("wheel")] = (
-            Path("dist") / plugin.context.wheel_filename
-        )
+    expected_paths = release_artifact_layout(context)
     issues: list[str] = []
     for key, expected_path in expected_paths.items():
         if Path(manifest.artifact(key).path) != expected_path:

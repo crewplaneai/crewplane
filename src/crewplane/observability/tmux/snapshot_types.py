@@ -7,6 +7,25 @@ from crewplane.architecture.contracts.execution_status import LIFECYCLE_STATUSES
 from crewplane.core.value_checks import is_strict_int
 from crewplane.observability.events.types import InvocationStatus
 
+SNAPSHOT_SCHEMA_VERSION = 1
+SELECTION_CONTROL_SCHEMA_VERSION = 1
+
+
+class SelectionControlValues(TypedDict):
+    schema_version: int
+    selected_index: int
+    selection_generation: int
+    updated_at: float
+
+
+def initial_selection_control_values() -> SelectionControlValues:
+    return {
+        "schema_version": SELECTION_CONTROL_SCHEMA_VERSION,
+        "selected_index": -1,
+        "selection_generation": 0,
+        "updated_at": 0.0,
+    }
+
 
 class SelectedInvocationSnapshot(TypedDict):
     schema_version: int

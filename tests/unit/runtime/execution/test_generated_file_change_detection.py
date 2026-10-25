@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event, Thread
 from types import SimpleNamespace
+from unittest.mock import call, patch
 
 import pytest
 
@@ -19,6 +20,8 @@ from crewplane.artifacts.generated_files.paths import (
     GENERATED_FILE_SOURCE_METADATA_NAME,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import workspace_git_config_args
+from crewplane.runtime.execution.provider_call import generated_file_changes
 from crewplane.runtime.execution.provider_call.generated_files import (
     GeneratedFileChangeBaseline,
     capture_generated_file_change_baseline,
@@ -28,6 +31,175 @@ from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS, require_git
+
+
+@pytest.mark.parametrize("ignore_returncode", [0, 1, 2])
+def test_generated_file_git_launch_and_ignore_policy(tmp_path, ignore_returncode):
+    results = _git_capture_results(tmp_path, ignore_returncode)
+    ignore_command = results[-1].args
+    environment = {"GIT_CONFIG_NOSYSTEM": "1"}
+    failures: list[subprocess.CalledProcessError] = []
+
+    class RecordedGitError(subprocess.CalledProcessError):
+        def __init__(
+            self,
+            returncode: int,
+            cmd: list[str],
+            output: bytes | None = None,
+            stderr: bytes | None = None,
+        ) -> None:
+            super().__init__(returncode, cmd, output=output, stderr=stderr)
+            failures.append(self)
+
+    with (
+        patch.object(subprocess, "run", side_effect=results) as run,
+        patch.object(subprocess, "CalledProcessError", new=RecordedGitError),
+        patch.object(
+            generated_file_changes,
+            "sanitized_workspace_git_environment",
+            return_value=environment,
+        ) as sanitized_environment,
+    ):
+        baseline = GeneratedFileChangeBaseline.capture(tmp_path, True)
+
+    assert sanitized_environment.call_args_list == [call(read_only=True)] * 3
+    assert run.call_args_list == [
+        call(
+            result.args,
+            check=False,
+            capture_output=True,
+            env=environment,
+            timeout=30.0,
+        )
+        for result in results
+    ]
+    assert (baseline.git is not None) is (ignore_returncode == 1)
+    assert (baseline.filesystem_entries is not None) is (ignore_returncode != 1)
+    if ignore_returncode == 2:
+        assert len(failures) == 1
+        assert failures[0].returncode == 2
+        assert failures[0].cmd == ignore_command
+        assert failures[0].output == b"ignore output"
+        assert failures[0].stderr == b"ignore error"
+    else:
+        assert failures == []
+
+    generated = tmp_path / "generated.txt"
+    generated.write_text("generated", encoding="utf-8")
+    status = subprocess.CompletedProcess(results[1].args, 0, b"?? generated.txt\0", b"")
+    with patch.object(subprocess, "run", return_value=status):
+        assert baseline.candidate_files() == (generated,)
+
+
+def test_checked_generated_file_git_failure_preserves_process_details(tmp_path):
+    results = _git_capture_results(tmp_path)
+    with patch.object(subprocess, "run", side_effect=results):
+        baseline = GeneratedFileChangeBaseline.capture(tmp_path, False)
+    command = results[1].args
+    result = subprocess.CompletedProcess(command, 7, b"output", b"error")
+
+    with (
+        patch.object(subprocess, "run", return_value=result),
+        pytest.raises(subprocess.CalledProcessError) as caught,
+    ):
+        baseline.candidate_files()
+
+    assert caught.value.returncode == 7
+    assert caught.value.cmd == command
+    assert caught.value.output == b"output"
+    assert caught.value.stderr == b"error"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [subprocess.TimeoutExpired(["git"], 30.0), OSError("Git launch failed")],
+)
+def test_checked_generated_file_git_launch_failures_propagate(tmp_path, failure):
+    with patch.object(subprocess, "run", side_effect=_git_capture_results(tmp_path)):
+        baseline = GeneratedFileChangeBaseline.capture(tmp_path, False)
+
+    with (
+        patch.object(subprocess, "run", side_effect=failure),
+        pytest.raises(type(failure)) as caught,
+    ):
+        baseline.candidate_files()
+
+    assert caught.value is failure
+
+
+@pytest.mark.parametrize("filesystem_fallback", [True, False])
+@pytest.mark.parametrize(
+    "failure",
+    [subprocess.TimeoutExpired(["git"], 30.0), OSError("Git launch failed")],
+)
+def test_unchecked_generated_file_git_launch_failure_keeps_fallback(
+    tmp_path, filesystem_fallback, failure
+):
+    results = _git_capture_results(tmp_path)
+    with patch.object(subprocess, "run", side_effect=[*results[:2], failure]):
+        baseline = GeneratedFileChangeBaseline.capture(tmp_path, filesystem_fallback)
+
+    generated = tmp_path / "generated.txt"
+    generated.write_text("after", encoding="utf-8")
+    assert baseline.git is None
+    assert baseline.candidate_files() == ((generated,) if filesystem_fallback else None)
+
+
+@pytest.mark.parametrize("filesystem_fallback", [True, False])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(["git"], 30.0),
+        OSError("Git launch failed"),
+        subprocess.CalledProcessError(2, ["git"], output=b"output", stderr=b"error"),
+    ],
+)
+def test_generated_file_baseline_keeps_git_failure_fallback(
+    tmp_path, filesystem_fallback, failure
+):
+    (tmp_path / "existing.txt").write_text("before", encoding="utf-8")
+    with patch.object(subprocess, "run", side_effect=failure):
+        baseline = GeneratedFileChangeBaseline.capture(tmp_path, filesystem_fallback)
+
+    generated = tmp_path / "generated.txt"
+    generated.write_text("after", encoding="utf-8")
+    assert baseline.git is None
+    assert baseline.candidate_files() == ((generated,) if filesystem_fallback else None)
+
+
+def _git_capture_results(
+    root: Path, ignore_returncode: int = 1
+) -> list[subprocess.CompletedProcess[bytes]]:
+    command = ["git", *workspace_git_config_args(), "-C", root.as_posix()]
+    return [
+        subprocess.CompletedProcess(
+            [*command, "rev-parse", "--show-toplevel"],
+            0,
+            root.as_posix().encode("utf-8"),
+            b"",
+        ),
+        subprocess.CompletedProcess(
+            [
+                *command,
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--ignored=no",
+                "--",
+                ".",
+            ],
+            0,
+            b"",
+            b"",
+        ),
+        subprocess.CompletedProcess(
+            [*command, "check-ignore", "-q", "--", "."],
+            ignore_returncode,
+            b"ignore output",
+            b"ignore error",
+        ),
+    ]
 
 
 def test_shared_project_root_does_not_capture_unclaimed_changes(

@@ -222,6 +222,67 @@ def test_prepare_homebrew_formula_uses_verified_canonical_pypi_sdist(
     assert source_formula.read_text(encoding="utf-8") == source_text
 
 
+def test_render_formula_changes_only_top_level_release_fields() -> None:
+    source = """class Crewplane < Formula
+  url "https://example.com/crewplane-1.2.3.tar.gz"
+  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  version "1.2.3"
+
+  depends_on "libyaml"
+  resource "dependency" do
+    url "https://example.com/dependency-4.5.6.tar.gz"
+    sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    version "4.5.6"
+  end
+end
+"""
+    expected = """class Crewplane < Formula
+  url "https://files.pythonhosted.org/crewplane-2.0.0.tar.gz"
+  sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+  depends_on "libyaml"
+  resource "dependency" do
+    url "https://example.com/dependency-4.5.6.tar.gz"
+    sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    version "4.5.6"
+  end
+end
+"""
+
+    rendered = homebrew.render_formula(
+        source, "https://files.pythonhosted.org/crewplane-2.0.0.tar.gz", "c" * 64
+    )
+
+    assert rendered == expected
+
+
+@pytest.mark.parametrize(
+    "version_lines",
+    (
+        pytest.param("", id="missing"),
+        pytest.param('  version "1.2.3"\n  version "1.2.4"\n', id="duplicate"),
+        pytest.param('  version "1.2.3"', id="missing-trailing-newline"),
+    ),
+)
+def test_render_formula_requires_exactly_one_newline_terminated_version(
+    version_lines: str,
+) -> None:
+    source = (
+        "class Crewplane < Formula\n"
+        '  url "https://example.com/crewplane-1.2.3.tar.gz"\n'
+        f'  sha256 "{"a" * 64}"\n'
+        '  depends_on "libyaml"\n'
+        f"{version_lines}"
+    )
+
+    with pytest.raises(state.ReleaseError) as error:
+        homebrew.render_formula(source, "https://example.com/new.tar.gz", "c" * 64)
+
+    assert str(error.value) == (
+        "Homebrew formula must contain exactly one top-level version"
+    )
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected_error"),
     (

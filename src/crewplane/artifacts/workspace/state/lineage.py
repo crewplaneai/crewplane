@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,3 +52,15 @@ def invocation_round_order(payload: dict[str, object]) -> tuple[int, int] | None
     if not audit_round_num.valid:
         return None
     return (audit_round_num.value or 0, round_num)
+
+
+def unique_latest_lineage_payload(
+    ordered_payloads: Sequence[tuple[tuple[int, int], dict[str, object]]],
+) -> dict[str, object] | None:
+    """Select the uniquely greatest already-eligible, keyed lineage payload."""
+
+    if not ordered_payloads:
+        return None
+    latest_order = max(order for order, _ in ordered_payloads)
+    latest = [payload for order, payload in ordered_payloads if order == latest_order]
+    return latest[0] if len(latest) == 1 else None

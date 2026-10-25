@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.observability.tmux import inspect_control
+from crewplane.observability.tmux.commands import INSPECT_KEY_TABLE
 from crewplane.observability.tmux.inspect_snapshot import read_inspect_snapshot
 from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
@@ -96,8 +97,10 @@ def test_inspect_control_commits_runtime_state_after_respawn_succeeds(
     assert snapshot["log_file"] == str(log_file)
     assert calls[0][0][:5] == ["tmux", "respawn-pane", "-k", "-t", "%20"]
     assert calls[0][1] is True
-    assert calls[1][0][:4] == ["tmux", "set-option", "-t", "session"]
-    assert calls[1][1] is False
+    assert calls[1] == (
+        ["tmux", "set-option", "-t", "session", "key-table", INSPECT_KEY_TABLE],
+        False,
+    )
     assert calls[2] == (["tmux", "select-pane", "-t", "%20"], False)
 
 
@@ -315,6 +318,7 @@ def test_inspect_uses_socket_and_survives_control_activation_failure(
         "set-option",
         "select-pane",
     ]
+    assert commands[1][4:] == ["-t", "session", "key-table", INSPECT_KEY_TABLE]
     assert runtime_files.mode.read_text(encoding="utf-8") == MODE_INSPECT
 
 

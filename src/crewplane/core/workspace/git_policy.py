@@ -279,6 +279,27 @@ def effective_policy_lines(path: Path) -> tuple[str, ...]:
     )
 
 
+def has_replacement_refs(
+    common_git_dir: Path,
+    ignored_packed_prefixes: tuple[str, ...] = (),
+) -> bool:
+    replace_root = common_git_dir / "refs" / "replace"
+    if replace_root.exists() and any(
+        path.is_file() for path in replace_root.rglob("*")
+    ):
+        return True
+    packed_refs = common_git_dir / "packed-refs"
+    if not packed_refs.exists():
+        return False
+    return any(
+        " refs/replace/" in line
+        for line in packed_refs.read_text(
+            encoding="utf-8", errors="ignore"
+        ).splitlines()
+        if not line.startswith(ignored_packed_prefixes)
+    )
+
+
 def _is_rejected_remote_config_key(key: str) -> bool:
     return key.startswith("remote.") and key.endswith(REJECTED_REMOTE_CONFIG_SUFFIXES)
 

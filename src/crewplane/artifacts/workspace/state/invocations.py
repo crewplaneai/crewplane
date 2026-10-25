@@ -148,7 +148,7 @@ def expected_workspace_invocations(
         ExpectedWorkspaceInvocation(
             task_id=provider.task_id,
             role=ProviderRole.EXECUTOR,
-            round_num=node.execution_policy.depth or 1,
+            round_num=node.execution_policy.single_provider_total_rounds,
             audit_round_num=None,
             lineage_source_required=True,
         ),

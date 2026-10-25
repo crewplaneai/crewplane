@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from crewplane.observability.tmux.snapshot_types import initial_selection_control_values
+
 MODE_DASHBOARD = "dashboard"
 MODE_INSPECT = "inspect"
 
@@ -42,10 +44,10 @@ def initial_runtime_file_contents(runtime_files: RuntimeFiles) -> dict[Path, str
         runtime_files.right_content: "Waiting for node output...",
         runtime_files.node_count: "0",
         runtime_files.mode: MODE_DASHBOARD,
-        runtime_files.selection_control: (
-            '{"schema_version":1,"selected_index":-1,'
-            '"selection_generation":0,"updated_at":0.0}\n'
-        ),
+        runtime_files.selection_control: json.dumps(
+            initial_selection_control_values(), separators=(",", ":")
+        )
+        + "\n",
         runtime_files.selected_invocation: "",
         runtime_files.inspect_invocation: "",
         runtime_files.quit_requested: "",

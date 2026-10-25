@@ -10,6 +10,7 @@ from crewplane.architecture.contracts import validate_log_presentation_descripto
 from crewplane.observability.log_presentation.limits import (
     DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
 )
+from crewplane.observability.tmux import snapshot_types as _snapshot_types
 from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     write_json_atomic,
@@ -26,7 +27,7 @@ from crewplane.observability.tmux.snapshot_types import (
     is_selected_invocation_snapshot,
 )
 
-SNAPSHOT_SCHEMA_VERSION = 1
+SNAPSHOT_SCHEMA_VERSION = _snapshot_types.SNAPSHOT_SCHEMA_VERSION
 _INSPECT_SNAPSHOT_FIELDS = ("inspect_view", "line_budget", "created_at")
 
 

@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from .artifact_layout import release_artifact_layout
 from .plugins import release_plugins
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
@@ -20,6 +21,7 @@ from .state import (
     query_registry_state,
     read_clean_source_commit,
     read_release_context,
+    serialize_manifest,
     sync_generated_metadata,
     sync_homebrew_formula_metadata,
     verify_local_manifest_artifacts,
@@ -79,25 +81,17 @@ def build_release_artifacts(
     build_python_artifacts(context, runner)
     run_twine_check(context, runner)
     npm_artifact = build_npm_artifact(context, runner)
-    sdist = context.root / "dist" / context.sdist_filename
-    wheel = context.root / "dist" / context.wheel_filename
-    ensure_file(sdist)
-    ensure_file(wheel)
-    artifacts = {
-        "pypi_sdist": artifact_identity(sdist, context.root, "pypi_sdist"),
-        "pypi_wheel": artifact_identity(wheel, context.root, "pypi_wheel"),
-        "npm_tarball": artifact_identity(npm_artifact, context.root, "npm_tarball"),
+    ensure_file(context.root / "dist" / context.sdist_filename)
+    ensure_file(context.root / "dist" / context.wheel_filename)
+    paths = release_artifact_layout(context)
+    return {
+        key: artifact_identity(
+            npm_artifact if key == "npm_tarball" else context.root / path,
+            context.root,
+            key,
+        )
+        for key, path in paths.items()
     }
-    for plugin in release_plugins(context):
-        for kind, filename in (
-            ("sdist", plugin.context.sdist_filename),
-            ("wheel", plugin.context.wheel_filename),
-        ):
-            key = plugin.artifact_key(kind)
-            artifacts[key] = artifact_identity(
-                context.root / "dist" / filename, context.root, key
-            )
-    return artifacts
 
 
 def build_python_artifacts(context: ReleaseContext, runner: CommandRunner) -> None:
@@ -233,28 +227,16 @@ def write_release_manifest(
     artifacts: dict[str, ArtifactIdentity],
     source_commit: str = "",
 ) -> ReleaseManifest:
-    payload = {
-        "schema_version": 1,
-        "source_commit": source_commit,
-        "package": {
-            "name": context.package_name,
-            "project_version": context.version.project,
-            "python_version": context.version.python,
-            "npm_version": context.version.npm,
-            "git_tag": context.version.tag,
-        },
-        "artifacts": {
-            key: {
-                "path": artifact.path,
-                "filename": artifact.filename,
-                "size": artifact.size,
-                "sha256": artifact.sha256,
-                "sha1": artifact.sha1,
-                "integrity": artifact.integrity,
-            }
-            for key, artifact in artifacts.items()
-        },
-    }
+    manifest = ReleaseManifest(
+        package_name=context.package_name,
+        project_version=context.version.project,
+        python_version=context.version.python,
+        npm_version=context.version.npm,
+        git_tag=context.version.tag,
+        artifacts=artifacts,
+        source_commit=source_commit,
+    )
+    payload = serialize_manifest(manifest)
     manifest_path = context.root / MANIFEST_PATH
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     write_json(manifest_path, payload)
@@ -268,15 +250,7 @@ def write_release_manifest(
     loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
     if loaded != payload:
         raise ReleaseError("release manifest read-back validation failed")
-    return ReleaseManifest(
-        package_name=context.package_name,
-        project_version=context.version.project,
-        python_version=context.version.python,
-        npm_version=context.version.npm,
-        git_tag=context.version.tag,
-        artifacts=artifacts,
-        source_commit=source_commit,
-    )
+    return manifest
 
 
 def bind_release_manifest(

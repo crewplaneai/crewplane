@@ -6,7 +6,28 @@ import pytest
 from crewplane.observability.tmux.inspect_snapshot import (
     read_inspect_snapshot,
     read_snapshot,
+    selected_snapshot_is_current,
 )
+from crewplane.observability.tmux.selection_control import SelectionControlState
+
+
+@pytest.mark.parametrize("version", [None, 2, "1", True, 1.0])
+@pytest.mark.parametrize("inspect", [False, True])
+def test_snapshot_readers_reject_wrong_schema_versions(tmp_path, version, inspect):
+    snapshot = inspect_snapshot() if inspect else selected_snapshot()
+    snapshot["schema_version"] = version
+    path = write_snapshot(tmp_path, snapshot)
+
+    assert read_snapshot(path) is None
+    assert read_inspect_snapshot(path) is None
+
+
+@pytest.mark.parametrize("generation", [False, 0.0])
+def test_snapshot_currentness_preserves_numeric_equality(generation):
+    assert selected_snapshot_is_current(
+        {"selection_generation": generation, "requested_selected_index": -1.0},
+        SelectionControlState(-1, 0, 0.0),
+    )
 
 
 def test_read_snapshot_accepts_complete_selected_invocation_snapshot(

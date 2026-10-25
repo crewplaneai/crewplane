@@ -29,6 +29,7 @@ from .state.lineage import (
     invocation_round_order,
     is_seeded_audit_round,
     review_output_coordinates,
+    unique_latest_lineage_payload,
 )
 from .state.source_fields import (
     normalized_source_descriptor,
@@ -378,20 +379,12 @@ def _latest_lineage_payload(
     before: tuple[int, int] | None = None,
 ) -> dict[str, object] | None:
     lineage_payloads = [
-        payload
+        (_lineage_payload_order(payload), payload)
         for payload in payloads
         if _lineage_payload_is_ordered_source(payload)
         and (before is None or _lineage_payload_order(payload) < before)
     ]
-    if not lineage_payloads:
-        return None
-    latest_order = max(map(_lineage_payload_order, lineage_payloads))
-    latest = [
-        payload
-        for payload in lineage_payloads
-        if _lineage_payload_order(payload) == latest_order
-    ]
-    return latest[0] if len(latest) == 1 else None
+    return unique_latest_lineage_payload(lineage_payloads)
 
 
 def _lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:

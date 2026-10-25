@@ -9,7 +9,7 @@ from .invocations import (
     lineage_payload_order,
     resolve_expected_workspace_payload,
 )
-from .lineage import is_seeded_audit_round
+from .lineage import is_seeded_audit_round, unique_latest_lineage_payload
 from .source_fields import source_matches_bundle_fields, source_matches_result_fields
 
 
@@ -79,24 +79,15 @@ def _candidate_source_payload(
         source_order[1], source_order[0]
     )
     candidates = [
-        candidate
+        (lineage_payload_order(candidate), candidate)
         for candidate in payloads
         if lineage_payload_order(candidate) == source_order
         or (allow_prior and (0, 0) <= lineage_payload_order(candidate) < source_order)
     ]
-    if not candidates:
+    latest = unique_latest_lineage_payload(candidates)
+    if latest is None or not _payload_result_matches_candidate_source(latest, source):
         return None
-    latest_order = max(map(lineage_payload_order, candidates))
-    latest = [
-        candidate
-        for candidate in candidates
-        if lineage_payload_order(candidate) == latest_order
-    ]
-    if len(latest) != 1 or not _payload_result_matches_candidate_source(
-        latest[0], source
-    ):
-        return None
-    return latest[0]
+    return latest
 
 
 def _payload_produces_lineage(payload: dict[str, object]) -> bool:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.observability.tmux.bindings import TmuxCompactKeyBindings
+from crewplane.observability.tmux.commands import INSPECT_KEY_TABLE
 from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
     MODE_INSPECT,
@@ -27,7 +28,7 @@ def test_bindings_install_dashboard_inspect_and_copy_mode_tables(
 
     table_keys = binding_keys(client.calls)
     assert ("crewplane-dashboard", "Enter") in table_keys
-    assert ("crewplane-inspect", "Escape") in table_keys
+    assert (INSPECT_KEY_TABLE, "Escape") in table_keys
     assert ("copy-mode", "Up") in table_keys
     assert ("copy-mode-vi", "WheelDownPane") in table_keys
     enter_binding = table_keys[("crewplane-dashboard", "Enter")]
@@ -35,8 +36,8 @@ def test_bindings_install_dashboard_inspect_and_copy_mode_tables(
     assert "--view auto" in enter_binding
     assert "respawn-pane" not in enter_binding
     assert ("crewplane-dashboard", "r") in table_keys
-    assert ("crewplane-inspect", "r") in table_keys
-    assert ("crewplane-inspect", "f") in table_keys
+    assert (INSPECT_KEY_TABLE, "r") in table_keys
+    assert (INSPECT_KEY_TABLE, "f") in table_keys
 
 
 def test_bindings_do_not_embed_dynamic_log_or_descriptor_values(
