@@ -118,6 +118,29 @@ def assert_no_release_mutations(calls: tuple[str, ...]) -> None:
     assert not any(call.startswith(MUTATING_COMMANDS) for call in calls)
 
 
+def assert_create_command(
+    calls: tuple[str, ...], tmp_path: Path, notes_start_tag: str = ""
+) -> None:
+    creates = [call.split("\t") for call in calls if call.startswith("release\tcreate")]
+    expected = [
+        "release",
+        "create",
+        "v1.2.3",
+        *(str(tmp_path / "dist" / name) for name in EXPECTED_ASSETS),
+        "--repo",
+        "crewplaneai/crewplane",
+        "--draft",
+        "--verify-tag",
+        "--generate-notes",
+        "--notes",
+        RELEASE_AUTOMATION_MARKER,
+    ]
+    if notes_start_tag:
+        expected.extend(("--notes-start-tag", notes_start_tag))
+    expected.extend(("--title", "v1.2.3", "--prerelease=false", "--latest=false"))
+    assert creates == [expected]
+
+
 @pytest.mark.parametrize(
     ("prerelease", "latest"),
     (("false", "true"), ("false", "false"), ("true", "false")),
@@ -281,12 +304,8 @@ def test_absent_release_is_created_as_verified_draft_then_published(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "Published GitHub Release v1.2.3.\n"
-    create = next(call for call in calls if call.startswith("release\tcreate"))
+    assert_create_command(calls, tmp_path)
     edit = next(call for call in calls if call.startswith("release\tedit"))
-    assert "\t--draft\t" in create
-    assert "\t--notes-start-tag\t" not in create
-    assert f"\t--notes\t{RELEASE_AUTOMATION_MARKER}\t" in create
-    assert "\t--title\tv1.2.3\t" in create
     assert all(f"\t{flag}" in edit for flag in expected_edit_flags)
     assert final_state["draft"] is False
     assert final_state["prerelease"] is (prerelease == "true")
@@ -304,9 +323,43 @@ def test_delayed_release_uses_verified_notes_predecessor(tmp_path: Path) -> None
     )
 
     assert result.returncode == 0, result.stderr
-    create = next(call for call in calls if call.startswith("release\tcreate"))
-    assert "\t--notes-start-tag\tv1.1.0\t" in create
+    assert_create_command(calls, tmp_path, "v1.1.0")
     assert final_state["draft"] is False
+
+
+@pytest.mark.parametrize("notes_start_tag", ("", "v1.1.0"))
+def test_create_preserves_artifact_paths_with_spaces(
+    tmp_path: Path, notes_start_tag: str
+) -> None:
+    project = tmp_path / "release project"
+    project.mkdir()
+
+    result, calls, final_state = run_release(
+        project,
+        release_state(exists=False, assets=[]),
+        expected_notes_start_tag=notes_start_tag,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert_create_command(calls, project, notes_start_tag)
+    assert final_state["assets"] == exact_assets()
+
+
+@pytest.mark.parametrize("notes_start_tag", ("", "v1.1.0"))
+def test_corrupt_new_draft_prevents_publication(
+    tmp_path: Path, notes_start_tag: str
+) -> None:
+    result, calls, final_state = run_release(
+        tmp_path,
+        release_state(exists=False, assets=[], corrupt_after_create=True),
+        expected_notes_start_tag=notes_start_tag,
+    )
+
+    assert result.returncode != 0
+    assert "New draft assets do not match" in result.stderr
+    assert_create_command(calls, tmp_path, notes_start_tag)
+    assert not any(call.startswith("release\tedit") for call in calls)
+    assert final_state["draft"] is True
 
 
 @pytest.mark.parametrize(
@@ -465,6 +518,7 @@ def test_draft_mutation_during_second_plan_prevents_publication(
 
     assert result.returncode != 0
     assert "Final draft assets do not match" in result.stderr
+    assert_create_command(calls, tmp_path)
     assert not any(call.startswith("release\tedit") for call in calls)
     assert final_state["draft"] is True
 

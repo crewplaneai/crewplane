@@ -240,6 +240,32 @@ class ReleaseManifest:
             ) from error
 
 
+def serialize_manifest(manifest: ReleaseManifest) -> dict[str, Any]:
+    """Translate a release manifest to its ordered persisted representation."""
+    return {
+        "schema_version": 1,
+        "source_commit": manifest.source_commit,
+        "package": {
+            "name": manifest.package_name,
+            "project_version": manifest.project_version,
+            "python_version": manifest.python_version,
+            "npm_version": manifest.npm_version,
+            "git_tag": manifest.git_tag,
+        },
+        "artifacts": {
+            key: {
+                "path": artifact.path,
+                "filename": artifact.filename,
+                "size": artifact.size,
+                "sha256": artifact.sha256,
+                "sha1": artifact.sha1,
+                "integrity": artifact.integrity,
+            }
+            for key, artifact in manifest.artifacts.items()
+        },
+    }
+
+
 @dataclass(frozen=True)
 class PypiFile:
     filename: str
@@ -374,6 +400,7 @@ def write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(
         json.dumps(payload, allow_nan=False, indent=2, sort_keys=False) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

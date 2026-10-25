@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from crewplane.observability.tmux.commands import INSPECT_KEY_TABLE
 from crewplane.observability.tmux.control_state import (
     PaneGeometry,
     TmuxCompactControlState,
@@ -55,7 +56,7 @@ def test_inspect_resize_restores_inspect_table_and_right_focus() -> None:
         "-t",
         "crewplane-test",
         "key-table",
-        "crewplane-inspect",
+        INSPECT_KEY_TABLE,
     ] in commands
     assert ["select-pane", "-t", "%20"] in commands
 
@@ -87,7 +88,7 @@ def test_failed_resize_restore_is_retried() -> None:
     ("mode", "key_table", "pane_id"),
     [
         (MODE_DASHBOARD, "crewplane-dashboard", "%10"),
-        (MODE_INSPECT, "crewplane-inspect", "%20"),
+        (MODE_INSPECT, INSPECT_KEY_TABLE, "%20"),
     ],
 )
 def test_failed_key_table_restore_still_selects_pane_in_order(

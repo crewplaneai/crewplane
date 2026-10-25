@@ -6,6 +6,7 @@ from pathlib import Path
 from crewplane.core.workspace.git_policy import (
     config_keys_from_scoped_records,
     effective_policy_lines,
+    has_replacement_refs,
     is_rejected_config_key,
     normalize_config_key,
 )
@@ -90,18 +91,4 @@ def common_git_config_rejected_keys(repo_root: Path) -> tuple[str, ...]:
 
 
 def replacement_refs_exist(common_git_dir: Path) -> bool:
-    replace_root = common_git_dir / "refs" / "replace"
-    if replace_root.exists() and any(
-        path.is_file() for path in replace_root.rglob("*")
-    ):
-        return True
-    packed_refs = common_git_dir / "packed-refs"
-    if not packed_refs.exists():
-        return False
-    return any(
-        " refs/replace/" in line
-        for line in packed_refs.read_text(
-            encoding="utf-8",
-            errors="ignore",
-        ).splitlines()
-    )
+    return has_replacement_refs(common_git_dir)

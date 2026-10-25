@@ -19,8 +19,6 @@ from .common import (
 from .review_loop import execute_review_loop_stage
 from .workspace_files.source_resolution import WorkspaceCandidateSourceContext
 
-DEFAULT_SINGLE_PROVIDER_ROUNDS = 1
-
 
 def _resolve_single_provider_rounds(node: PreflightExecutionNode) -> int:
     depth = node.execution_policy.depth
@@ -28,7 +26,7 @@ def _resolve_single_provider_rounds(node: PreflightExecutionNode) -> int:
         raise ValueError(
             f"Sequential node '{node.id}' depth must be greater than 0 when provided."
         )
-    return depth or DEFAULT_SINGLE_PROVIDER_ROUNDS
+    return node.execution_policy.single_provider_total_rounds
 
 
 async def _execute_single_provider_sequential_node(

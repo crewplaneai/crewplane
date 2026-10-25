@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -14,12 +15,64 @@ from crewplane.observability.tmux.runtime_files import (
 )
 from crewplane.observability.tmux.selection_control import (
     SelectionControlState,
+    initial_selection_control,
     main,
     move_selection,
     read_selection_control,
     selection_control_from_mapping,
     write_selection_control,
 )
+
+
+def test_selection_control_bootstrap_bytes_and_reader_round_trip(tmp_path):
+    runtime_files = initialized_runtime_files(tmp_path)
+    bootstrap = runtime_files.selection_control.read_bytes()
+
+    assert bootstrap == (
+        b'{"schema_version":1,"selected_index":-1,'
+        b'"selection_generation":0,"updated_at":0.0}\n'
+    )
+    assert read_selection_control(runtime_files) == initial_selection_control()
+    assert initial_selection_control() == SelectionControlState(-1, 0, 0.0)
+
+    write_selection_control(runtime_files, initial_selection_control())
+
+    assert runtime_files.selection_control.read_text("utf-8") == (
+        '{"schema_version": 1, "selected_index": -1, '
+        '"selection_generation": 0, "updated_at": 0.0}\n'
+    )
+    assert asdict(read_selection_control(runtime_files)) == asdict(
+        initial_selection_control()
+    )
+
+
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_selection_control_version_preserves_numeric_equality(version):
+    assert selection_control_from_mapping(
+        {"schema_version": version, "selected_index": 2, "selection_generation": 3}
+    ) == SelectionControlState(2, 3, 0.0)
+
+
+@pytest.mark.parametrize("version", [True, 1.0])
+@pytest.mark.parametrize("generation", [False, 0.0])
+def test_partial_selected_snapshot_preserves_numeric_equality(
+    tmp_path, version, generation
+):
+    runtime_files = initialized_runtime_files(tmp_path)
+    write_atomic(runtime_files.node_count, "3")
+    write_json_atomic(
+        runtime_files.selected_invocation,
+        {
+            "schema_version": version,
+            "selection_generation": generation,
+            "requested_selected_index": -1.0,
+            "resolved_selected_index": 2,
+        },
+    )
+
+    move_selection(runtime_files, "down")
+
+    assert read_selection_control(runtime_files).selected_index == 0
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,7 @@ from crewplane.core.workspace.git_policy import (
     GitTreeMode,
     config_keys_from_scoped_records,
     effective_policy_lines,
+    has_replacement_refs,
     local_config_policy_summary,
     portable_path_key,
     summarize_paths,
@@ -364,21 +365,7 @@ def run_clean_start(settings: Settings) -> str:
 
 
 def replacement_refs_exist(common_git_dir: Path) -> bool:
-    replace_root = common_git_dir / "refs" / "replace"
-    if replace_root.exists() and any(
-        path.is_file() for path in replace_root.rglob("*")
-    ):
-        return True
-    packed_refs = common_git_dir / "packed-refs"
-    if not packed_refs.exists():
-        return False
-    return any(
-        " refs/replace/" in line
-        for line in packed_refs.read_text(
-            encoding="utf-8", errors="ignore"
-        ).splitlines()
-        if line and not line.startswith(("#", "^"))
-    )
+    return has_replacement_refs(common_git_dir, ignored_packed_prefixes=("#", "^"))
 
 
 def status_path(record: str) -> str:

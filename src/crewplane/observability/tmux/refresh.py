@@ -22,7 +22,6 @@ from crewplane.observability.tmux.control_state import (
     TmuxCompactControlState,
 )
 from crewplane.observability.tmux.inspect_snapshot import (
-    SNAPSHOT_SCHEMA_VERSION,
     read_inspect_snapshot,
 )
 from crewplane.observability.tmux.labels import counts_line, status_line
@@ -53,6 +52,7 @@ from crewplane.observability.tmux.selection_control import (
 )
 from crewplane.observability.tmux.session_lifecycle import StartedCompactSession
 from crewplane.observability.tmux.snapshot_types import (
+    SNAPSHOT_SCHEMA_VERSION,
     SelectedInvocationSnapshot,
     snapshot_string,
 )

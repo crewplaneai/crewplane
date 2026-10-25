@@ -10,6 +10,7 @@ from typing import Literal
 from crewplane.observability.log_presentation.limits import (
     DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
 )
+from crewplane.observability.tmux.commands import INSPECT_KEY_TABLE
 from crewplane.observability.tmux.inspect_snapshot import (
     has_valid_presentation,
     read_inspect_snapshot,
@@ -152,7 +153,7 @@ def activate_inspect_controls(args: argparse.Namespace) -> None:
             "-t",
             args.session_name,
             "key-table",
-            "crewplane-inspect",
+            INSPECT_KEY_TABLE,
         ]
     )
     run_tmux_best_effort([*tmux, "select-pane", "-t", args.right_pane_id])

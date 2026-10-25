@@ -172,6 +172,7 @@ def test_invocation_timeout_bounds_open_stdin(tmp_path: Path, prompt: bytes) -> 
         assert queue.inspect() == []
 
 
+@pytest.mark.race
 def test_independent_connections_cannot_claim_twice(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
@@ -184,6 +185,8 @@ def test_independent_connections_cannot_claim_twice(tmp_path):
         def claim():
             contender = Queue(tmp_path)
             try:
+                # Resolve competing claims within the test deadline, not 50 ms.
+                contender.db.execute("PRAGMA busy_timeout=5000")
                 barrier.wait(timeout=5)
                 try:
                     return contender.claim(job, 30)["token"]

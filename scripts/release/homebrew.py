@@ -193,7 +193,9 @@ def render_formula(source: str, sdist_url: str, sha256: str) -> str:
     rendered = replace_one_formula_line(
         rendered, r'^  sha256 "[a-f0-9]{64}"$', f'  sha256 "{sha256}"', "sha256"
     )
-    rendered = remove_one_formula_line(rendered, r'^  version "[^"]+"\n', "version")
+    rendered = replace_one_formula_line(
+        rendered, r'^  version "[^"]+"\n', "", "version"
+    )
     if rendered.count('  depends_on "libyaml"') != 1:
         raise ReleaseError(
             'Homebrew formula must contain one depends_on "libyaml" line'
@@ -212,15 +214,6 @@ def replace_one_formula_line(
             f"Homebrew formula must contain exactly one top-level {label}"
         )
     return re.sub(pattern, replacement, text, count=1, flags=re.MULTILINE)
-
-
-def remove_one_formula_line(text: str, pattern: str, label: str) -> str:
-    matches = re.findall(pattern, text, re.MULTILINE)
-    if len(matches) != 1:
-        raise ReleaseError(
-            f"Homebrew formula must contain exactly one top-level {label}"
-        )
-    return re.sub(pattern, "", text, count=1, flags=re.MULTILINE)
 
 
 def formula_without_bottle_block(formula: str) -> str:

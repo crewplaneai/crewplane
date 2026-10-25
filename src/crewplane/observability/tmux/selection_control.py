@@ -9,14 +9,18 @@ from time import time
 from typing import Any
 
 from crewplane.core.value_checks import is_strict_int, optional_strict_int
+from crewplane.observability.tmux import snapshot_types as _snapshot_types
 from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     read_index,
     write_json_atomic,
 )
+from crewplane.observability.tmux.snapshot_types import (
+    SNAPSHOT_SCHEMA_VERSION,
+    initial_selection_control_values,
+)
 
-SELECTION_CONTROL_SCHEMA_VERSION = 1
-_SELECTED_INVOCATION_SCHEMA_VERSION = 1
+SELECTION_CONTROL_SCHEMA_VERSION = _snapshot_types.SELECTION_CONTROL_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
@@ -91,7 +95,7 @@ def _resolved_snapshot_index(
         return None
     if not isinstance(value, dict):
         return None
-    if value.get("schema_version") != _SELECTED_INVOCATION_SCHEMA_VERSION:
+    if value.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
         return None
     if value.get("selection_generation") != current.selection_generation:
         return None
@@ -105,19 +109,19 @@ def _is_valid_index(index: int, count: int) -> bool:
 
 
 def initial_selection_control() -> SelectionControlState:
-    return SelectionControlState(
-        selected_index=-1,
-        selection_generation=0,
-        updated_at=0.0,
-    )
+    return SelectionControlState(**initial_selection_control_values())
 
 
 def selection_control_from_mapping(value: dict[str, Any]) -> SelectionControlState:
     if value.get("schema_version") != SELECTION_CONTROL_SCHEMA_VERSION:
         return initial_selection_control()
-    selected_index = _int_value(value.get("selected_index"), -1)
-    selection_generation = max(0, _int_value(value.get("selection_generation"), 0))
-    updated_at = _float_value(value.get("updated_at"), 0.0)
+    initial = initial_selection_control()
+    selected_index = _int_value(value.get("selected_index"), initial.selected_index)
+    selection_generation = max(
+        0,
+        _int_value(value.get("selection_generation"), initial.selection_generation),
+    )
+    updated_at = _float_value(value.get("updated_at"), initial.updated_at)
     return SelectionControlState(
         selected_index=selected_index,
         selection_generation=selection_generation,

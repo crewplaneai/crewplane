@@ -277,6 +277,11 @@ class ExecutionPolicy(BaseModel):
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     concurrency_policy: ConcurrencyPolicy = Field(default_factory=ConcurrencyPolicy)
 
+    @property
+    def single_provider_total_rounds(self) -> int:
+        """Resolve single-provider total rounds without changing serialized depth."""
+        return self.depth or 1
+
     @field_validator("depth", "audit_rounds", mode="before")
     @classmethod
     def _validate_positive_round_policy(

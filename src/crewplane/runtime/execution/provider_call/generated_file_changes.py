@@ -189,13 +189,9 @@ def _run_git_text(cwd: Path, *args: str) -> str:
 
 
 def _run_git(cwd: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", *workspace_git_config_args(), "-C", cwd.as_posix(), *args],
-        check=True,
-        capture_output=True,
-        env=sanitized_workspace_git_environment(read_only=True),
-        timeout=GENERATED_FILE_GIT_TIMEOUT_SECONDS,
-    )
+    result = _run_git_unchecked(cwd, *args)
+    result.check_returncode()
+    return result
 
 
 def _run_git_unchecked(cwd: Path, *args: str) -> subprocess.CompletedProcess[bytes]:

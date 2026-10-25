@@ -25,13 +25,17 @@ from crewplane.core.workflow.models import (
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.tmux.inspect_snapshot import (
+    read_inspect_snapshot,
     read_snapshot,
     write_inspect_snapshot,
 )
 from crewplane.observability.tmux.selection_control import (
     SelectionControlState,
+    move_selection,
+    read_selection_control,
     write_selection_control,
 )
+from crewplane.observability.tmux.snapshot_types import SNAPSHOT_SCHEMA_VERSION
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.workflow import execute_workflow
 from crewplane.version import SCHEMA_VERSION
@@ -418,6 +422,45 @@ def test_compact_runtime_dashboard_help_mentions_log_inspect_mode(
 
     assert "[Enter] inspect" in left_text
     assert "[r] raw inspect" in left_text
+
+
+def test_selected_snapshot_producer_round_trips_through_both_readers(
+    tmp_path: Path,
+    run_visualization_case,
+) -> None:
+    case_data = VisualizationCase(
+        case_id="compact-selected-snapshot-contract",
+        build_workflow=build_compact_linear_workflow,
+        snapshot_event_type=EventType.NODE_STARTED,
+        snapshot_node_id="design.iteration",
+        selected_node_id="design.iteration",
+    )
+    run_result = run_visualization_case(tmp_path, case_data)
+    runtime = SimulatedTmuxRuntime()
+    with runtime.running(
+        RunContext(
+            workflow_topology=topology_from_workflow(run_result.workflow),
+            run_id="compact-selected-snapshot-contract",
+            refresh_per_second=0,
+        )
+    ):
+        runtime.on_snapshot(None, run_result.selected_snapshot)
+        runtime.refresh_once()
+        runtime_files = runtime.runtime_files
+
+        snapshot = read_snapshot(runtime_files.selected_invocation)
+        assert snapshot is not None
+        assert snapshot["schema_version"] == SNAPSHOT_SCHEMA_VERSION
+        assert snapshot["resolved_selected_index"] == 1
+        assert snapshot == json.loads(
+            runtime_files.selected_invocation.read_text("utf-8")
+        )
+        inspect = write_inspect_snapshot(runtime_files, snapshot, "raw")
+        assert read_inspect_snapshot(runtime_files.inspect_invocation) == inspect
+
+        move_selection(runtime_files, "down")
+
+        assert read_selection_control(runtime_files).selected_index == 0
 
 
 def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
