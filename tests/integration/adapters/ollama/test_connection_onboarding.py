@@ -34,11 +34,11 @@ def configured_project(ollama, discovery_server, tmp_path, monkeypatch):
             cli_cmd: [missing-codex, exec]
             provider_kind: codex
           local:
-            cli_cmd: [old-ollama, run, --keepalive, 5m]
+            cli_cmd: [old-ollama-agent]
             provider_kind: ollama
             default_model: kept-model
             invocation_timeout_seconds: 47
-            extra_args: [--verbose]
+            extra_args: []
             environment:
               KEEP_ME: existing-value
               OLLAMA_HOST: http://old-host:11434
@@ -92,13 +92,16 @@ def test_existing_project_saves_wsl_connection_without_changing_workflows(
     before = load_config(config_path)
     original_workflow = workflow.read_bytes()
     configure_connection(
-        tmp_path, console, {"ollama": str(ollama.executable)}, ["y", "1", "y"]
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1", "y"],
     )
 
     after = load_config(config_path)
     assert after.agents["local"] == before.agents["local"].model_copy(
         update={
-            "cli_cmd": [str(ollama.executable), "run", "--keepalive", "5m"],
+            "cli_cmd": [str(ollama.executable)],
             "environment": {
                 "KEEP_ME": "existing-value",
                 "OLLAMA_HOST": "http://172.20.0.1:11434",
@@ -115,7 +118,7 @@ def test_existing_project_saves_wsl_connection_without_changing_workflows(
     assert "# Keep project settings and provider comments." in config_path.read_text()
     assert workflow.read_bytes() == original_workflow
     assert list(workflow.parent.iterdir()) == [workflow]
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
     assert "Ollama connection saved" in stream.getvalue()
 
 
@@ -138,7 +141,7 @@ def test_connection_uses_configured_executable_outside_terminal_path(
     )
     monkeypatch.chdir(tmp_path.parent)
     monkeypatch.setenv("PATH", "")
-    assert shutil.which("ollama") is None
+    assert shutil.which("crewplane-ollama-agent") is None
     answers = deque(["y", "1", "y"])
 
     run_onboarding(
@@ -158,7 +161,7 @@ def test_connection_uses_configured_executable_outside_terminal_path(
     after = load_config(config_path).agents["local"]
     assert after == agent.model_copy(
         update={
-            "cli_cmd": [str(ollama.executable), *agent.cli_cmd[1:]],
+            "cli_cmd": [str(ollama.executable)],
             "environment": {
                 **agent.environment,
                 "OLLAMA_HOST": "http://172.20.0.1:11434",
@@ -173,7 +176,11 @@ def test_missing_ollama_leaves_existing_project_usable(
 ):
     config_path, workflow, stream, console = configured_project
     before = config_path.read_bytes(), workflow.read_bytes()
-    commands = {"ollama": str(ollama.executable)} if failure != "client" else {}
+    commands = (
+        {"crewplane-ollama-agent": str(ollama.executable)}
+        if failure != "client"
+        else {}
+    )
     if failure == "server":
 
         def unavailable(request):
@@ -185,7 +192,7 @@ def test_missing_ollama_leaves_existing_project_usable(
 
     assert (config_path.read_bytes(), workflow.read_bytes()) == before
     assert "Ollama was not configured" in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 @pytest.mark.parametrize("answers", [["n"], ["y", "0"], ["y", "1", "n"]])
@@ -194,7 +201,9 @@ def test_declining_connection_setup_preserves_existing_files(
 ):
     config_path, workflow, _, console = configured_project
     before = config_path.read_bytes(), workflow.read_bytes()
-    configure_connection(tmp_path, console, {"ollama": str(ollama.executable)}, answers)
+    configure_connection(
+        tmp_path, console, {"crewplane-ollama-agent": str(ollama.executable)}, answers
+    )
     assert (config_path.read_bytes(), workflow.read_bytes()) == before
 
 
@@ -213,20 +222,23 @@ def test_existing_project_can_add_local_agent(
         if request.url.path == "/api/tags":
             return httpx.Response(200, json={"models": [{"name": "local-text"}]})
         if request.url.path == "/api/show":
-            return httpx.Response(200, json={"capabilities": ["completion"]})
+            return httpx.Response(200, json={"capabilities": ["completion", "tools"]})
         if request.url.host == "127.0.0.1":
             raise httpx.ConnectError("No WSL server", request=request)
         return httpx.Response(200, json={"version": "1"})
 
     discovery_server(handler)
     configure_connection(
-        tmp_path, console, {"ollama": str(ollama.executable)}, ["y", "1", "1", "y"]
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1", "1", "y"],
     )
 
     after = load_config(config_path)
     assert after.agents["codex"] == before.agents["codex"]
     assert after.agents["local"].default_model == "local-text"
-    assert after.agents["local"].cli_cmd == [str(ollama.executable), "run"]
+    assert after.agents["local"].cli_cmd == [str(ollama.executable)]
     assert after.agents["local"].environment == {
         "OLLAMA_HOST": "http://172.20.0.1:11434"
     }
@@ -234,7 +246,7 @@ def test_existing_project_can_add_local_agent(
     assert workflow.read_bytes() == original_workflow
     assert list(workflow.parent.iterdir()) == [workflow]
     assert "Ollama connection saved" in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 def test_missing_plugin_skips_optional_connection_setup(
@@ -274,7 +286,11 @@ def test_failed_save_preserves_config_and_cleans_temporary_file(
         config_path.write_bytes(expected)
 
     configure_connection(
-        tmp_path, console, {"ollama": str(ollama.executable)}, ["y", "1", "y"], write
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1", "y"],
+        write,
     )
 
     assert config_path.read_bytes() == expected
@@ -293,9 +309,10 @@ def test_shared_command_anchor_reports_failure_without_changing_files(
         version: "1.0"
         agents:
           local:
-            cli_cmd: &shared_command [old-ollama, run]
+            cli_cmd: &shared_command [old-ollama-agent]
             provider_kind: ollama
             default_model: kept-model
+            invocation_timeout_seconds: 47
           backup:
             cli_cmd: *shared_command
             provider_kind: ollama
@@ -306,7 +323,10 @@ def test_shared_command_anchor_reports_failure_without_changing_files(
     before = config_path.read_bytes(), workflow.read_bytes()
 
     configure_connection(
-        tmp_path, console, {"ollama": str(ollama.executable)}, ["y", "1"]
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1"],
     )
 
     assert (config_path.read_bytes(), workflow.read_bytes()) == before
@@ -339,7 +359,7 @@ def test_invoker_change_during_confirmation_preserves_config(
             True,
             True,
             read_input,
-            {"ollama": str(ollama.executable)}.get,
+            {"crewplane-ollama-agent": str(ollama.executable)}.get,
             write_text_file,
         )
     )
@@ -365,3 +385,107 @@ def test_connection_setup_does_not_replace_another_local_provider(
     assert config_path.read_text() == original
     assert workflow.read_bytes() == original_workflow
     assert "already belongs to another provider" in stream.getvalue()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"cli_cmd": ["ollama", "run", "--keepalive", "5m"]},
+        {"extra_args": ["--verbose"]},
+        {"invocation_timeout_seconds": None},
+        {"prompt_transport": "argv", "prompt_transport_arg": "--prompt"},
+        {"prompt_transport_arg": "--prompt"},
+    ],
+)
+def test_legacy_profile_is_not_silently_migrated(
+    ollama, configured_project, tmp_path, monkeypatch, changes
+):
+    config_path, workflow, stream, console = configured_project
+    config = load_config(config_path)
+    config.agents["local"] = config.agents["local"].model_copy(update=changes)
+    config_path.write_text(
+        yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+    )
+    before = config_path.read_bytes(), workflow.read_bytes()
+    discovery = importlib.import_module("crewplane_ollama.discovery")
+
+    async def forbidden(*args):
+        del args
+        pytest.fail("legacy profiles must fail structural validation before discovery")
+
+    monkeypatch.setattr(discovery, "run_discovery", forbidden)
+    configure_connection(
+        tmp_path, console, {"crewplane-ollama-agent": str(ollama.executable)}, ["y"]
+    )
+
+    assert (config_path.read_bytes(), workflow.read_bytes()) == before
+    assert "Regenerate or deliberately reconfigure" in stream.getvalue()
+    assert "Ollama connection saved" not in stream.getvalue()
+    assert not list(ollama.receipts.iterdir())
+
+
+def test_connection_discloses_host_authority_and_endpoint_before_save(
+    ollama, configured_project, tmp_path
+):
+    _, _, stream, console = configured_project
+    writes = []
+
+    def write(path, content):
+        output = " ".join(stream.getvalue().split())
+        assert "Inference endpoint: http://172.20.0.1:11434" in output
+        assert "your user permissions" in output
+        assert "credentials" in output
+        assert "context is sent to this server" in output
+        assert "are not sandboxes" in output
+        writes.append(path)
+        write_text_file(path, content)
+
+    configure_connection(
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1", "y"],
+        write,
+    )
+    assert len(writes) == 1
+
+
+def test_connection_preserves_workflow_only_model_selection(
+    ollama, configured_project, tmp_path
+):
+    config_path, _, _, console = configured_project
+    config = load_config(config_path)
+    config.agents["local"].default_model = None
+    config_path.write_text(
+        yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+    )
+    configure_connection(
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1", "y"],
+    )
+    assert load_config(config_path).agents["local"].default_model is None
+
+
+def test_discovered_command_is_validated_in_full_before_refresh(
+    ollama, configured_project, tmp_path, monkeypatch
+):
+    config_path, workflow, stream, console = configured_project
+    before = config_path.read_bytes(), workflow.read_bytes()
+    discovery = importlib.import_module("crewplane_ollama.discovery")
+
+    def legacy_discovery(request):
+        del request
+        return (str(ollama.executable), "run")
+
+    monkeypatch.setattr(discovery, "discover_client", legacy_discovery)
+    configure_connection(
+        tmp_path,
+        console,
+        {"crewplane-ollama-agent": str(ollama.executable)},
+        ["y", "1"],
+    )
+    assert (config_path.read_bytes(), workflow.read_bytes()) == before
+    assert "exactly one executable" in stream.getvalue()
+    assert "Ollama connection saved" not in stream.getvalue()

@@ -41,8 +41,9 @@ def run_clock():
 def config_for(ollama):
     return provider_config(
         AgentConfig(
-            cli_cmd=[str(ollama.executable), "run"],
+            cli_cmd=[str(ollama.executable)],
             provider_kind="ollama",
+            invocation_timeout_seconds=60,
             default_model="default-model",
         ),
         ollama.options,
@@ -66,11 +67,7 @@ def manifests(root):
 
 
 def execution_receipts(ollama):
-    return [
-        item
-        for item in command_receipts(ollama.receipts, "run")
-        if item["stdin"] != "Reply with OK only."
-    ]
+    return command_receipts(ollama.receipts, "run")
 
 
 def test_validation_and_dry_run_are_artifact_free(ollama, tmp_path, monkeypatch):
@@ -83,7 +80,7 @@ def test_validation_and_dry_run_are_artifact_free(ollama, tmp_path, monkeypatch)
     assert not list(ollama.receipts.iterdir())
     for scenario, expected_error in [
         ("success", False),
-        ("show-fail", True),
+        ("check-fail", True),
         ("partial", True),
     ]:
         monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", scenario)
@@ -99,8 +96,8 @@ def test_validation_and_dry_run_are_artifact_free(ollama, tmp_path, monkeypatch)
         assert preview.has_errors() == expected_error
         assert not (tmp_path / ".crewplane").exists()
     assert all(
-        receipt["argv"][2] == "override"
-        for receipt in command_receipts(ollama.receipts, "show")
+        receipt["argv"][-1] == "override"
+        for receipt in command_receipts(ollama.receipts, "check")
     )
 
 
@@ -114,7 +111,6 @@ def test_workflow_execution_resolves_symlinked_executable(
     config = config_for(ollama)
     config.agents["local"].cli_cmd = [
         str(link) if executable_form == "absolute" else link.name,
-        "run",
     ]
 
     asyncio.run(run(config, provider_source(), tmp_path))
@@ -136,11 +132,11 @@ def test_full_preflight_resolves_relative_path_entries_against_project(
     caller.mkdir()
     executable_directory = (project if in_project else caller) / search_entry
     executable_directory.mkdir(exist_ok=True)
-    (executable_directory / "ollama").symlink_to(ollama.executable)
+    (executable_directory / "crewplane-ollama-agent").symlink_to(ollama.executable)
     monkeypatch.chdir(caller)
     monkeypatch.setenv("PATH", search_entry)
     config = config_for(ollama)
-    config.agents["local"].cli_cmd = ["ollama", "run"]
+    config.agents["local"].cli_cmd = ["crewplane-ollama-agent"]
     source = provider_source("override")
 
     preview = compile_workflow_preview(
@@ -164,11 +160,10 @@ def test_full_preflight_resolves_relative_path_entries_against_project(
     assert preview.has_errors() is not in_project
     assert bool(diagnostics.errors) is not in_project
     if in_project:
-        for phase in ("show", "run"):
-            receipts = command_receipts(ollama.receipts, phase)
-            assert len(receipts) == 2
-            assert all(item["argv"][0] == str(ollama.executable) for item in receipts)
-            assert all(item["argv"][2] == "override" for item in receipts)
+        receipts = command_receipts(ollama.receipts, "check")
+        assert len(receipts) == 2
+        assert all(item["argv"][0] == str(ollama.executable) for item in receipts)
+        assert all(item["argv"][-1] == "override" for item in receipts)
     else:
         assert any("not found in PATH" in error for error in diagnostics.errors)
         assert not list(ollama.receipts.iterdir())
@@ -184,11 +179,11 @@ def test_cli_resolves_relative_path_entries_against_project(
     executable_directory = project / "bin"
     executable_directory.mkdir(parents=True)
     caller.mkdir()
-    (executable_directory / "ollama").symlink_to(ollama.executable)
+    (executable_directory / "crewplane-ollama-agent").symlink_to(ollama.executable)
     state_dir = project / ".crewplane"
     state_dir.mkdir()
     config = config_for(ollama)
-    config.agents["local"].cli_cmd = ["ollama", "run"]
+    config.agents["local"].cli_cmd = ["crewplane-ollama-agent"]
     config_path = state_dir / "config.yml"
     config_path.write_text(json.dumps(config.model_dump(mode="json")))
     workflow = project / "workflow.task.md"
@@ -206,9 +201,9 @@ def test_cli_resolves_relative_path_entries_against_project(
     result = CliRunner().invoke(app, args)
 
     assert result.exit_code == 0, (result.output, result.exception)
-    assert command_receipts(ollama.receipts, "show")
+    assert command_receipts(ollama.receipts, "check")
     receipts = command_receipts(ollama.receipts, "run")
-    assert receipts
+    assert bool(receipts) == (command == "run")
     assert all(item["argv"][0] == str(ollama.executable) for item in receipts)
     assert all(item["cwd"] == str(project) for item in receipts)
     if command == "validate":
@@ -240,8 +235,8 @@ def test_blackboard_handoff_dedupe_force_and_identity_changes(ollama, tmp_path):
     assert len(manifests(tmp_path)) == 1
     asyncio.run(run(config, source, tmp_path, force=True))
     assert len(execution_receipts(ollama)) == 4
-    metadata = tmp_path / "crewplane_ollama-0.1.0.dist-info/METADATA"
-    metadata.write_text("Name: crewplane-ollama\nVersion: 0.2.0\n")
+    metadata = tmp_path / "crewplane_ollama-0.2.0.dist-info/METADATA"
+    metadata.write_text("Name: crewplane-ollama\nVersion: 0.3.0\n")
     asyncio.run(run(config, source, tmp_path))
     assert len(execution_receipts(ollama)) == 6
     assert manifests(tmp_path)[-1]["workflow_signature"] != original
@@ -254,7 +249,7 @@ def test_probe_failure_precedes_dedupe_and_writes_failure_bundle(
     config = config_for(ollama)
     source = provider_source()
     asyncio.run(run(config, source, tmp_path))
-    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "show-fail")
+    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "check-fail")
     with pytest.raises(typer.Exit):
         asyncio.run(run(config, source, tmp_path))
     assert len(execution_receipts(ollama)) == 1
@@ -280,8 +275,8 @@ def test_completed_node_resume_is_bound_to_plugin_identity(
     )
     monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "success")
     if change_identity:
-        (tmp_path / "crewplane_ollama-0.1.0.dist-info/METADATA").write_text(
-            "Name: crewplane-ollama\nVersion: 0.2.0\n"
+        (tmp_path / "crewplane_ollama-0.2.0.dist-info/METADATA").write_text(
+            "Name: crewplane-ollama\nVersion: 0.3.0\n"
         )
     asyncio.run(run(config, source, tmp_path))
     latest = manifests(tmp_path)[-1]
@@ -295,7 +290,7 @@ def test_completed_node_resume_is_bound_to_plugin_identity(
 def test_real_run_preflight_cancellation_cleans_before_return(
     ollama, tmp_path, monkeypatch
 ):
-    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-show")
+    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-check")
     captures = tmp_path / "captures"
     captures.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(captures))

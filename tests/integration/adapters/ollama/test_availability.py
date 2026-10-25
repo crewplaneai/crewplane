@@ -22,9 +22,13 @@ from tests.helpers.cli_provider import command_receipts, wait_for_receipt
 from tests.helpers.platforms import requires_posix
 
 
-def request_for(ollama, root):
+def request_for(ollama, root, timeout=60):
     return CliInvocationRequest(
-        AgentConfig(cli_cmd=[str(ollama.executable), "run"], provider_kind="ollama"),
+        AgentConfig(
+            cli_cmd=[str(ollama.executable)],
+            provider_kind="ollama",
+            invocation_timeout_seconds=timeout,
+        ),
         "effective-model",
         command_strategy=command_strategy(),
         working_directory=root,
@@ -40,21 +44,19 @@ def test_resolved_symlink_probes_exact_model_and_environment(
     request = request_for(ollama, tmp_path)
     request = replace(
         request,
-        config=request.config.model_copy(update={"cli_cmd": ["./linked-cli", "run"]}),
+        config=request.config.model_copy(update={"cli_cmd": ["./linked-cli"]}),
     )
     asyncio.run(ollama.capability.check_availability(request))
-    show = command_receipts(ollama.receipts, "show")[0]
-    run = command_receipts(ollama.receipts, "run")[0]
-    assert show["argv"] == [str(ollama.executable), "show", "effective-model"]
-    assert run["argv"] == [
+    check = command_receipts(ollama.receipts, "check")[0]
+    assert check["argv"] == [
         str(ollama.executable),
-        "run",
+        "--check",
+        "--model",
         "effective-model",
-        "--nowordwrap",
-        "--hidethinking",
     ]
-    assert run["stdin"] == "Reply with OK only."
-    assert show["host"] == run["host"] == "http://127.0.0.1:18999"
+    assert check["stdin"] == ""
+    assert check["host"] == "http://127.0.0.1:18999"
+    assert not command_receipts(ollama.receipts, "run")
     assert not (tmp_path / ".crewplane").exists()
 
 
@@ -62,11 +64,13 @@ def test_relative_path_environment_is_resolved_against_request_cwd(ollama, tmp_p
     request = request_for(ollama, tmp_path)
     request = replace(
         request,
-        config=request.config.model_copy(update={"cli_cmd": ["ollama", "run"]}),
+        config=request.config.model_copy(
+            update={"cli_cmd": ["crewplane-ollama-agent"]}
+        ),
         environment={**os.environ, "PATH": "."},
     )
     asyncio.run(ollama.capability.check_availability(request))
-    assert command_receipts(ollama.receipts, "show")[0]["argv"][0] == str(
+    assert command_receipts(ollama.receipts, "check")[0]["argv"][0] == str(
         ollama.executable
     )
 
@@ -74,10 +78,10 @@ def test_relative_path_environment_is_resolved_against_request_cwd(ollama, tmp_p
 @pytest.mark.parametrize(
     "scenario,phase",
     [
-        ("show-fail", "model lookup"),
-        ("empty", "inference"),
-        ("stderr", "inference"),
-        ("partial", "inference"),
+        ("check-fail", "readiness"),
+        ("empty", "readiness"),
+        ("stderr", "readiness"),
+        ("partial", "readiness"),
     ],
 )
 def test_probe_failures_identify_phase_and_model(
@@ -91,9 +95,8 @@ def test_probe_failures_identify_phase_and_model(
         ValueError, match=f"provider 'ollama'.*effective-model.*{phase}"
     ):
         asyncio.run(ollama.capability.check_availability(request_for(ollama, tmp_path)))
-    assert len(command_receipts(ollama.receipts, "run")) == (
-        0 if scenario == "show-fail" else 1
-    )
+    assert len(command_receipts(ollama.receipts, "check")) == 1
+    assert not command_receipts(ollama.receipts, "run")
     assert not list(captures.iterdir())
     assert not (tmp_path / ".crewplane").exists()
 
@@ -102,32 +105,31 @@ def test_probe_failures_identify_phase_and_model(
 def test_missing_executables_cannot_launch_probe(ollama, tmp_path, command):
     request = request_for(ollama, tmp_path)
     request = replace(
-        request, config=request.config.model_copy(update={"cli_cmd": [command, "run"]})
+        request, config=request.config.model_copy(update={"cli_cmd": [command]})
     )
     with pytest.raises(ValueError, match="executable resolution"):
         asyncio.run(ollama.capability.check_availability(request))
     assert not list(ollama.receipts.iterdir())
 
 
-@pytest.mark.parametrize("phase", ["show", "run"])
 def test_one_deadline_cancels_owned_probe_before_reporting(
-    ollama, tmp_path, monkeypatch, phase
+    ollama, tmp_path, monkeypatch
 ):
     cleaned = []
 
     async def command(**kwargs):
-        if kwargs["cmd"][1] != phase:
-            return CommandResult(0, "model", "")
+        assert kwargs["cmd"][1] == "--check"
         try:
             await asyncio.Event().wait()
         finally:
-            cleaned.append(phase)
+            cleaned.append("check")
 
     monkeypatch.setattr(ollama.availability, "run_command_once", command)
-    monkeypatch.setattr(ollama.availability, "PROBE_TIMEOUT_SECONDS", 0.02)
     with pytest.raises(ValueError, match="deadline exceeded"):
-        asyncio.run(ollama.capability.check_availability(request_for(ollama, tmp_path)))
-    assert cleaned == [phase]
+        asyncio.run(
+            ollama.capability.check_availability(request_for(ollama, tmp_path, 0.02))
+        )
+    assert cleaned == ["check"]
 
 
 @pytest.mark.parametrize("failure", [PermissionError, TimeoutError])
@@ -176,7 +178,7 @@ def test_probe_cleanup_accepts_optional_and_missing_paths(
     monkeypatch.setattr(ollama.availability, "run_command_once", command)
     asyncio.run(
         ollama.availability._probe_command(
-            request_for(ollama, tmp_path), CliCommand(["ollama", "show"], None), False
+            request_for(ollama, tmp_path), CliCommand(["agent", "--check"], None)
         )
     )
 
@@ -229,11 +231,10 @@ def test_cleanup_evidence_survives_deadline_and_cancellation(
                 raise exc from error
 
         monkeypatch.setattr(ollama.availability, "run_command_once", command)
-        monkeypatch.setattr(
-            ollama.availability, "PROBE_TIMEOUT_SECONDS", 60 if cancel else 0.05
-        )
         task = asyncio.create_task(
-            ollama.capability.check_availability(request_for(ollama, tmp_path))
+            ollama.capability.check_availability(
+                request_for(ollama, tmp_path, 60 if cancel else 0.05)
+            )
         )
         try:
             await asyncio.wait_for(ready.wait(), 2)
@@ -256,7 +257,7 @@ def test_cleanup_evidence_survives_deadline_and_cancellation(
 def test_cancellation_drains_child_descendant_and_captures(
     ollama, tmp_path, monkeypatch
 ):
-    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-run")
+    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-check")
     captures = tmp_path / "captures"
     captures.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(captures))

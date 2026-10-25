@@ -1,10 +1,12 @@
 import asyncio
 import importlib
+import shutil
 
 import httpx
 import pytest
 
 from crewplane.adapters.invokers.cli_invoker import CliDiscoveryRequest
+from tests.helpers.platforms import requires_posix
 
 
 @pytest.fixture
@@ -16,6 +18,63 @@ def discovery(ollama_package, monkeypatch):
     monkeypatch.setattr(platform.platform, "release", lambda: "linux")
     monkeypatch.setattr(platform, "default_route_host", lambda: "172.20.0.1")
     return module, platform
+
+
+@pytest.mark.parametrize(
+    "system,wsl",
+    [("Linux", False), ("Darwin", False), ("Windows", False), ("Linux", True)],
+)
+def test_discovery_finds_installed_agent_without_path(
+    discovery, ollama_scripts, tmp_path, monkeypatch, system, wsl
+):
+    _, platform = discovery
+    monkeypatch.setattr(platform.platform, "system", lambda: system)
+    name = (
+        "crewplane-ollama-agent.exe"
+        if system == "Windows"
+        else "crewplane-ollama-agent"
+    )
+    executable = ollama_scripts / name
+    executable.write_bytes(b"MZ" if system == "Windows" else b"#!/bin/sh\n")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", "")
+    assert shutil.which(name) is None
+    request = CliDiscoveryRequest(
+        tmp_path, {"WSL_DISTRO_NAME": "Ubuntu"} if wsl else {}, shutil.which
+    )
+
+    assert platform.discover_client(request) == (str(executable),)
+
+
+def test_discovery_prefers_lookup_over_installed_agent(
+    discovery, ollama, ollama_scripts, tmp_path
+):
+    _, platform = discovery
+    installed = ollama_scripts / "crewplane-ollama-agent"
+    installed.write_bytes(b"#!/bin/sh\n")
+    installed.chmod(0o755)
+    request = CliDiscoveryRequest(
+        tmp_path, {}, {"crewplane-ollama-agent": str(ollama.executable)}.get
+    )
+
+    assert platform.discover_client(request) == (str(ollama.executable),)
+
+
+@requires_posix
+@pytest.mark.parametrize("kind", ["directory", "not-executable", "windows-binary"])
+def test_discovery_rejects_unusable_installed_agent(
+    discovery, ollama_scripts, tmp_path, kind
+):
+    _, platform = discovery
+    executable = ollama_scripts / "crewplane-ollama-agent"
+    if kind == "directory":
+        executable.mkdir()
+    else:
+        executable.write_bytes(b"MZ" if kind == "windows-binary" else b"#!/bin/sh\n")
+        executable.chmod(0o644 if kind == "not-executable" else 0o755)
+    request = CliDiscoveryRequest(tmp_path, {"WSL_DISTRO_NAME": "Ubuntu"}, {}.get)
+
+    assert platform.discover_client(request) == ()
 
 
 @pytest.mark.parametrize(
@@ -42,10 +101,13 @@ def test_discovery_uses_platform_endpoints(
     request = CliDiscoveryRequest(
         tmp_path,
         {"WSL_DISTRO_NAME": "Ubuntu"} if wsl else {},
-        {"ollama": str(ollama.executable), "ollama.exe": str(ollama.executable)}.get,
+        {
+            "crewplane-ollama-agent": str(ollama.executable),
+            "crewplane-ollama-agent.exe": str(ollama.executable),
+        }.get,
     )
     result = asyncio.run(module.discover(request))
-    assert result.command == (str(ollama.executable), "run")
+    assert result.command == (str(ollama.executable),)
     assert calls == expected
     assert [endpoint.environment["OLLAMA_HOST"] for endpoint in result.endpoints] == [
         f"http://{host}:11434" for host in expected
@@ -54,7 +116,9 @@ def test_discovery_uses_platform_endpoints(
         assert "acceptance is still pending" in " ".join(result.diagnostics)
 
 
-def test_windows_default_install_path_with_spaces(discovery, tmp_path, monkeypatch):
+def test_windows_discovery_requires_installed_harness_not_original_client(
+    discovery, tmp_path, monkeypatch
+):
     _, platform = discovery
     monkeypatch.setattr(platform.platform, "system", lambda: "Windows")
     local = tmp_path / "Windows User" / "AppData" / "Local"
@@ -62,11 +126,13 @@ def test_windows_default_install_path_with_spaces(discovery, tmp_path, monkeypat
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"MZ")
     request = CliDiscoveryRequest(tmp_path, {"LOCALAPPDATA": str(local)}, {}.get)
-    assert platform.discover_client(request) == (str(executable), "run")
+    assert platform.discover_client(request) == ()
 
 
-@pytest.mark.parametrize("client", [None, "ollama.exe", "renamed-windows-client"])
-def test_wsl_reachable_windows_server_requires_linux_client(
+@pytest.mark.parametrize(
+    "client", [None, "crewplane-ollama-agent.exe", "renamed-windows-client"]
+)
+def test_wsl_reachable_windows_server_requires_native_harness(
     discovery, discovery_server, tmp_path, client
 ):
     module, _ = discovery
@@ -80,9 +146,9 @@ def test_wsl_reachable_windows_server_requires_linux_client(
         return httpx.Response(200, json={"version": "1"})
 
     discovery_server(respond)
-    found = {"ollama.exe": str(executable)}
+    found = {"crewplane-ollama-agent.exe": str(executable)}
     if client:
-        found["ollama"] = str(executable)
+        found["crewplane-ollama-agent"] = str(executable)
     result = asyncio.run(
         module.discover(
             CliDiscoveryRequest(
@@ -93,7 +159,7 @@ def test_wsl_reachable_windows_server_requires_linux_client(
     assert result.command == ()
     assert len(result.endpoints) == 1
     assert result.endpoints[0].label == "http://172.20.0.1:11434"
-    assert "Linux Ollama client" in " ".join(result.diagnostics)
+    assert "crewplane-ollama-agent not found" in " ".join(result.diagnostics)
 
 
 @pytest.mark.parametrize("response", [{"version": "1"}, {"unrelated": True}])
@@ -113,7 +179,7 @@ def test_explicit_endpoint_is_authoritative(
             CliDiscoveryRequest(
                 tmp_path,
                 {"OLLAMA_HOST": "my-server:14444", "WSL_DISTRO_NAME": "Ubuntu"},
-                {"ollama": str(ollama.executable)}.get,
+                {"crewplane-ollama-agent": str(ollama.executable)}.get,
             )
         )
     )
@@ -138,7 +204,8 @@ def test_discovery_filters_cloud_and_embedding_models(
                 200,
                 json={
                     "models": [
-                        {"name": name} for name in ("text", "embed", "cloud", "broken")
+                        {"name": name}
+                        for name in ("text", "embed", "cloud", "broken", "no-tools")
                     ]
                 },
             )
@@ -147,13 +214,21 @@ def test_discovery_filters_cloud_and_embedding_models(
         name = json.loads(request.content)["model"]
         if name == "broken":
             return httpx.Response(404)
-        details = {"capabilities": ["embedding" if name == "embed" else "completion"]}
+        details = {
+            "capabilities": ["embedding"]
+            if name == "embed"
+            else ["completion", "tools"]
+        }
+        if name == "no-tools":
+            details["capabilities"] = ["completion"]
         if name == "cloud":
             details["remote_host"] = "https://cloud.invalid"
         return httpx.Response(200, json=details)
 
     discovery_server(respond)
-    request = CliDiscoveryRequest(tmp_path, {}, {"ollama": str(ollama.executable)}.get)
+    request = CliDiscoveryRequest(
+        tmp_path, {}, {"crewplane-ollama-agent": str(ollama.executable)}.get
+    )
 
     async def inspect():
         result = await module.discover(request)

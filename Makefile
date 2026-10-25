@@ -144,7 +144,8 @@ ollama-package-build:
 ollama-package-check: package-build
 	$(RUN_PYTHON) -m twine check dist/*
 	$(RUN_PYTHON) tests/helpers/check_cli_provider_packages.py \
-		--crewplane-wheel dist/crewplane-*.whl --ollama-wheel dist/crewplane_ollama-*.whl
+		--crewplane-wheel dist/crewplane-*.whl --ollama-wheel dist/crewplane_ollama-*.whl \
+		--crewplane-sdist dist/crewplane-*.tar.gz --ollama-sdist dist/crewplane_ollama-*.tar.gz
 
 package-check:
 	$(RUN_RELEASE) package-check

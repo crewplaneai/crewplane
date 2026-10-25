@@ -30,14 +30,14 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
             "second [server]", {"OLLAMA_HOST": "http://second:11434"}
         ),
     )
-    command = ("/new/ollama", "run", "--discovered-option")
+    command = ("/new/ollama-agent",)
     loops = []
     prompt_output = []
     answers = iter(["2"] if has_existing_agent else ["2", "2"])
-    inspection = "Inspecting Ollama clients and servers (read-only checks)...\n"
+    inspection = "Inspecting the Ollama agent and servers (read-only checks)...\n"
     server_menu = (
         inspection + "   Ollama: endpoint [diagnostic]\n"
-        "Ollama client: /new/ollama\n"
+        "Ollama agent: /new/ollama-agent\n"
         "Choose Ollama server:\n"
         "  [1] first server\n"
         "  [2] second [server]\n"
@@ -45,7 +45,7 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
     selected_server = server_menu + "Selected endpoint: second [server]\n"
     model_menu = (
         selected_server + "   Ollama: model [diagnostic]\n"
-        "Choose installed local text model:\n"
+        "Choose installed local tool-capable model:\n"
         "  [1] first-model\n"
         "  [2] second-model\n"
     )
@@ -82,16 +82,22 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
     monkeypatch.setattr(
         plugin_setup,
         "verify_provider_options",
-        Mock(return_value={"ollama": SimpleNamespace(onboarding=onboarding)}),
+        Mock(
+            return_value={
+                "ollama": SimpleNamespace(
+                    onboarding=onboarding, validate_request=Mock()
+                )
+            }
+        ),
     )
     existing = (
         AgentConfig(
-            cli_cmd=["/old/ollama", "run", "--keepalive", "5m"],
+            cli_cmd=["/old/ollama-agent"],
             provider_kind="ollama",
             default_model="kept-model",
             environment={"KEEP_ME": "value", "OLLAMA_HOST": "http://old:11434"},
             invocation_timeout_seconds=47,
-            extra_args=["--verbose"],
+            extra_args=[],
             max_retries=2,
         )
         if has_existing_agent
@@ -110,7 +116,7 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
         assert existing.model_dump() == original
         assert result == existing.model_copy(
             update={
-                "cli_cmd": [command[0], *existing.cli_cmd[1:]],
+                "cli_cmd": list(command),
                 "environment": {**existing.environment, **endpoints[1].environment},
             }
         )
@@ -118,7 +124,7 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
         assert result.environment is not existing.environment
         assert len(loops) == 1
         assert prompt_output == [server_menu]
-        assert stream.getvalue() == selected_server
+        assert stream.getvalue().startswith(selected_server)
     else:
         assert result == AgentConfig(
             cli_cmd=list(command),
@@ -126,8 +132,14 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
             default_model="second-model",
             environment=dict(endpoints[1].environment),
             invocation_timeout_seconds=900,
+            invocation_idle_timeout_seconds=None,
         )
         assert len(loops) == 2
         assert loops[0] is not loops[1]
         assert prompt_output == [server_menu, model_menu]
-        assert stream.getvalue() == model_menu
+        assert stream.getvalue().startswith(model_menu)
+    output = stream.getvalue()
+    assert "Inference endpoint: http://second:11434" in output
+    assert "your user permissions" in output
+    assert "credentials" in output
+    assert "are not sandboxes" in output

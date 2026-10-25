@@ -10,7 +10,7 @@ links to complete recipes and guides.
 | Example | Default agent profiles | What to prepare | Outcome with real providers |
 | --- | --- | --- | --- |
 | [Code review](code-review-example.task.md) | `codex`, `claude`, `gemini` | The project to inspect | Reports findings, including unresolved concerns and missing coverage. |
-| [Text generation](text-generation-example.task.md) | `local` | The [Ollama profile](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#local-ollama-text-generation) and a local text model | Summarizes an injected brief and refines the upstream answer. |
+| [Text generation](text-generation-example.task.md) | `local` | The [Ollama profile](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#local-ollama-tool-enabled-execution) and a local tool-capable model | Summarizes an injected brief and refines the upstream answer. |
 | [Feature implementation](feature-implement-example.task.md) | `claude`, `codex`, `gemini` | A [feature brief](sample-inputs/feature-brief.md) | Implements, reviews, and fixes code and tests. |
 | [Bug fix](bug-fix-example.task.md) | `claude`, `codex` | Existing code and a [bug report](sample-inputs/bug-report.md) | Reproduces, diagnoses, fixes, and verifies a supported defect. |
 | [Review an existing change](review-existing-change-example.task.md) | `claude`, `codex` | Local changes and a [review brief](sample-inputs/change-review-brief.md) | Reviews first, fixes confirmed issues, and verifies the result. |

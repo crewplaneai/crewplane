@@ -64,6 +64,23 @@ def fake_ollama(monkeypatch: pytest.MonkeyPatch, root: Path) -> tuple[Path, Path
     return executable, receipts
 
 
+def fake_ollama_agent(monkeypatch: pytest.MonkeyPatch, root: Path) -> tuple[Path, Path]:
+    if os.name != "posix":
+        pytest.skip("Fake Ollama agent executable requires POSIX shebang support")
+    program = (
+        Path(__file__).resolve().parents[1] / "fixtures/providers/ollama_agent_cli.py"
+    )
+    executable = root / "crewplane-ollama-agent"
+    executable.write_text(
+        f"#!{sys.executable}\n" + program.read_text(), encoding="utf-8"
+    )
+    executable.chmod(0o755)
+    receipts = root / "receipts"
+    receipts.mkdir()
+    monkeypatch.setenv("CREWPLANE_FAKE_ROOT", str(receipts))
+    return executable, receipts
+
+
 async def wait_for_receipt(root: Path, pattern: str) -> Path:
     async with asyncio.timeout(10):
         while not (paths := list(root.glob(pattern))):

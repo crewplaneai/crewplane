@@ -1,4 +1,4 @@
-"""Local Ollama text generation through the supported Crewplane CLI contract."""
+"""Tool-enabled local Ollama execution through the supported Crewplane CLI contract."""
 
 from datetime import datetime
 
@@ -36,7 +36,7 @@ def classify_failure(result: CommandResult) -> InvocationFailureSummary:
             or result.stdout_text
             or f"Ollama exited with status {result.returncode}"
         )[-2000:],
-        advice="Check the local Ollama server, model, and invocation log.",
+        advice="Check the selected Ollama server, model, and invocation log.",
         condensed=False,
     )
 
@@ -50,6 +50,7 @@ OLLAMA = CliProviderCapability(
     quota_classifier=classify_quota,
     failure_classifier=classify_failure,
     log_presentation_format="plain",
+    supports_output_idle_timeout=False,
     check_availability=check_availability,
     onboarding=CliProviderOnboarding(discover=discover, list_models=list_models),
 )

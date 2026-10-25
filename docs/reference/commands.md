@@ -130,8 +130,10 @@ workflow files, detects supported provider CLIs on `PATH`, prompts for one or
 more providers, updates unchanged generated defaults, and validates the result.
 
 For projects already using CLI providers, onboarding offers Ollama connection
-setup without changing workflows. After saving, run `crewplane validate` on a
-workflow that uses `local` to check the model.
+setup without changing workflows or existing model settings. After saving, run
+`crewplane validate` on a workflow that uses `local` to check the model. See the
+[plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md#configure-crewplane)
+for profile requirements and migration from older versions.
 
 The command does not install provider software or authenticate providers.
 If `.crewplane/` or generated files are missing, it may offer a
@@ -162,9 +164,10 @@ Arguments and options:
 
 `validate` writes no run artifacts. The `cli` invoker checks executables and
 awaits availability callbacks for configured capabilities. Ollama checks model
-presence and performs a bounded local diagnostic inference. Registration
-validation itself runs no probes. See [Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
-for prerequisites and resource/cancellation limits.
+eligibility and sends a short prompt without tools; it cannot execute
+model-selected commands. Registration validation itself runs no probes. See the
+[plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md#check-and-run)
+for prerequisites and readiness behavior.
 If `repeat_force_run_count` is set, it also checks that workspace isolation is
 disabled and no worktrees are declared.
 

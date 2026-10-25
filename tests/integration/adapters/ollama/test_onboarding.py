@@ -49,7 +49,7 @@ def onboarding_project(ollama, discovery_server, tmp_path, monkeypatch):
             return httpx.Response(200, json={"version": "1"})
         if request.url.path == "/api/tags":
             return httpx.Response(200, json={"models": [{"name": "local-text"}]})
-        return httpx.Response(200, json={"capabilities": ["completion"]})
+        return httpx.Response(200, json={"capabilities": ["completion", "tools"]})
 
     discovery_server(handler)
     return stream, console
@@ -57,7 +57,11 @@ def onboarding_project(ollama, discovery_server, tmp_path, monkeypatch):
 
 def run_setup(root, console, executable, answers, write=write_text_file, commands=None):
     pending = deque(answers)
-    lookup = commands if commands is not None else {"ollama": str(executable)}
+    lookup = (
+        commands
+        if commands is not None
+        else {"crewplane-ollama-agent": str(executable)}
+    )
     run_onboarding(
         OnboardingOptions(
             root,
@@ -82,7 +86,7 @@ def test_onboarding_persists_endpoint_for_validation_and_later_run(
     config = load_config(tmp_path / ".crewplane/config.yml")
     agent = config.agents["local"]
     assert agent.provider_kind == "ollama"
-    assert agent.cli_cmd == [str(ollama.executable), "run"]
+    assert agent.cli_cmd == [str(ollama.executable)]
     assert agent.default_model == "local-text"
     assert agent.environment == {"OLLAMA_HOST": "http://172.20.0.1:11434"}
     assert config.settings.integrations.invoker.options == ollama.options
@@ -94,7 +98,7 @@ def test_onboarding_persists_endpoint_for_validation_and_later_run(
     )
     assert all(
         receipt["host"] == "http://172.20.0.1:11434"
-        for receipt in command_receipts(ollama.receipts, "run")
+        for receipt in command_receipts(ollama.receipts, "check")
     )
 
     monkeypatch.setenv("OLLAMA_HOST", "http://wrong-host:9")
@@ -111,8 +115,11 @@ def test_onboarding_persists_endpoint_for_validation_and_later_run(
     assert result.exit_code == 0, result.output
     assert all(
         receipt["host"] == "http://172.20.0.1:11434"
-        for receipt in command_receipts(ollama.receipts, "run")
+        for receipt in command_receipts(ollama.receipts, "check")
     )
+    invocations = command_receipts(ollama.receipts, "run")
+    assert len(invocations) == 2
+    assert all(receipt["host"] == "http://172.20.0.1:11434" for receipt in invocations)
     assert os.environ["OLLAMA_HOST"] == "http://wrong-host:9"
 
 
@@ -143,7 +150,7 @@ def test_cancel_or_decline_preserves_defaults(
     run_setup(tmp_path, console, ollama.executable, answers)
     assert path.read_bytes() == before
     assert "No files changed" in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 def test_no_models_does_not_write_config(
@@ -160,7 +167,7 @@ def test_no_models_does_not_write_config(
     before = path.read_bytes()
     run_setup(tmp_path, console, ollama.executable, ["1", "1", "1", "1"])
     assert path.read_bytes() == before
-    assert "No installed local text-generation models" in stream.getvalue()
+    assert "No installed local tool-capable completion models" in stream.getvalue()
 
 
 @pytest.mark.parametrize("failure", ["client", "server", "models"])
@@ -168,9 +175,12 @@ def test_ollama_setup_failure_can_continue_with_other_selected_provider(
     ollama, onboarding_project, discovery_server, tmp_path, failure
 ):
     stream, console = onboarding_project
-    commands = {"codex": str(ollama.executable), "ollama": str(ollama.executable)}
+    commands = {
+        "codex": str(ollama.executable),
+        "crewplane-ollama-agent": str(ollama.executable),
+    }
     if failure == "client":
-        del commands["ollama"]
+        del commands["crewplane-ollama-agent"]
 
     def handler(request):
         if failure == "server":
@@ -195,7 +205,7 @@ def test_ollama_setup_failure_can_continue_with_other_selected_provider(
     )
     assert "Ollama was not configured." in stream.getvalue()
     assert "Onboarding configured: codex." in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 def test_cancelling_ollama_selection_can_return_to_other_providers(
@@ -207,12 +217,15 @@ def test_cancelling_ollama_selection_can_return_to_other_providers(
         console,
         ollama.executable,
         ["1", "2", "0", "1", "1", "y"],
-        commands={"codex": str(ollama.executable), "ollama": str(ollama.executable)},
+        commands={
+            "codex": str(ollama.executable),
+            "crewplane-ollama-agent": str(ollama.executable),
+        },
     )
     assert set(load_config(tmp_path / ".crewplane/config.yml").agents) == {"codex"}
     assert "Ollama setup was cancelled." in stream.getvalue()
     assert "Onboarding configured: codex." in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 def test_ollama_plugin_is_not_loaded_when_another_provider_is_selected(
@@ -225,11 +238,14 @@ def test_ollama_plugin_is_not_loaded_when_another_provider_is_selected(
         console,
         ollama.executable,
         ["1", "1", "y"],
-        commands={"codex": str(ollama.executable), "ollama": str(ollama.executable)},
+        commands={
+            "codex": str(ollama.executable),
+            "crewplane-ollama-agent": str(ollama.executable),
+        },
     )
     assert "Onboarding configured: codex." in stream.getvalue()
     assert "Inspecting Ollama" not in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 @pytest.mark.parametrize("selection", ["1,2", "2"])
@@ -245,7 +261,10 @@ def test_failed_readiness_can_remove_ollama_and_finish_other_provider(
         ["1", selection, "1", "1", "y", "1"]
         + (["1"] if selection == "2" else [])
         + ["y"],
-        commands={"codex": str(ollama.executable), "ollama": str(ollama.executable)},
+        commands={
+            "codex": str(ollama.executable),
+            "crewplane-ollama-agent": str(ollama.executable),
+        },
     )
 
     config = load_config(tmp_path / ".crewplane/config.yml")
@@ -256,11 +275,11 @@ def test_failed_readiness_can_remove_ollama_and_finish_other_provider(
         in (tmp_path / ".crewplane/workflows/single-agent-review.task.md").read_text()
     )
     output = stream.getvalue()
-    assert "inference failed" in output
+    assert "readiness failed" in output
     assert "Replace the settings saved by this attempt to use codex" in output
     assert "Onboarding configured: codex." in output
     assert "Ollama is configured and passed" not in output
-    assert len(command_receipts(ollama.receipts, "run")) == 1
+    assert len(command_receipts(ollama.receipts, "check")) == 1
 
 
 def test_failed_ollama_only_readiness_can_restore_mock_settings(
@@ -298,7 +317,7 @@ def test_declining_readiness_recovery_keeps_saved_settings(
             ["1", "1,2", "1", "1", "y", *decision],
             commands={
                 "codex": str(ollama.executable),
-                "ollama": str(ollama.executable),
+                "crewplane-ollama-agent": str(ollama.executable),
             },
         )
     assert set(load_config(tmp_path / ".crewplane/config.yml").agents) == {
@@ -329,7 +348,10 @@ def test_readiness_recovery_preserves_files_changed_after_saving(
             path.write_bytes(changed if edit == "comment" else b"\xff")
         return "y"
 
-    commands = {"codex": str(ollama.executable), "ollama": str(ollama.executable)}
+    commands = {
+        "codex": str(ollama.executable),
+        "crewplane-ollama-agent": str(ollama.executable),
+    }
     with pytest.raises(typer.Exit):
         run_onboarding(
             OnboardingOptions(
@@ -368,7 +390,7 @@ def test_readiness_recovery_reports_partial_writes(
             write=fail_replacement,
             commands={
                 "codex": str(ollama.executable),
-                "ollama": str(ollama.executable),
+                "crewplane-ollama-agent": str(ollama.executable),
             },
         )
 
@@ -382,7 +404,7 @@ def test_readiness_recovery_reports_partial_writes(
         tmp_path / ".crewplane/workflows/single-agent-review.task.md"
     ).read_text()
     assert ("local" in workflow) == (failed_file == "single-agent-review.task.md")
-    assert len(command_receipts(ollama.receipts, "run")) == 1
+    assert len(command_receipts(ollama.receipts, "check")) == 1
 
 
 def test_readiness_cleanup_failure_is_not_offered_as_optional_recovery(
@@ -394,8 +416,8 @@ def test_readiness_cleanup_failure_is_not_offered_as_optional_recovery(
         ProcessDrainEvidence(42101, 42102, True, False), "probe cleanup unconfirmed"
     )
 
-    async def failed_probe(request, command, require_answer):
-        del request, command, require_answer
+    async def failed_probe(request, command):
+        del request, command
         raise cleanup_error
 
     monkeypatch.setattr(availability, "_probe_command", failed_probe)
@@ -447,7 +469,7 @@ def test_custom_discovery_budget_reaches_both_phases(
             True,
             True,
             answers.popleft,
-            {"ollama": str(ollama.executable)}.get,
+            {"crewplane-ollama-agent": str(ollama.executable)}.get,
             write_text_file,
             discovery_timeout_seconds=60,
         )
@@ -488,7 +510,7 @@ def test_discovery_cleanup_failure_is_not_swallowed(
     assert unconfirmed_process_cleanup(caught.value) is cleanup_error
     assert [path.read_bytes() for path in paths] == before
     assert "No files changed" not in stream.getvalue()
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
 
 
 @requires_posix
@@ -533,7 +555,7 @@ def test_selection_exits_on_first_sigint(ollama, onboarding_project, tmp_path, p
             expected = (
                 "Choose Ollama server:"
                 if phase == "server"
-                else "Choose installed local text model:"
+                else "Choose installed local tool-capable model:"
             )
             assert expected in stdout.decode()
         finally:
@@ -543,4 +565,30 @@ def test_selection_exits_on_first_sigint(ollama, onboarding_project, tmp_path, p
 
     asyncio.run(scenario())
     assert [path.read_bytes() for path in paths] == before
-    assert command_receipts(ollama.receipts, "run") == []
+    assert command_receipts(ollama.receipts, "check") == []
+
+
+def test_new_profile_discloses_host_authority_and_endpoint_before_write(
+    ollama, onboarding_project, tmp_path
+):
+    stream, console = onboarding_project
+    writes = []
+
+    def write(path, content):
+        output = " ".join(stream.getvalue().split())
+        assert "Inference endpoint: http://127.0.0.1:11434" in output
+        assert "your user permissions" in output
+        assert "reachable files, credentials, and networks" in output
+        assert "are not sandboxes" in output
+        writes.append(path)
+        write_text_file(path, content)
+
+    run_setup(
+        tmp_path, console, ollama.executable, ["1", "1", "1", "1", "y"], write=write
+    )
+    assert len(writes) == 2
+    agent = load_config(tmp_path / ".crewplane/config.yml").agents["local"]
+    assert agent.invocation_timeout_seconds == 900
+    assert agent.invocation_idle_timeout_seconds is None
+    assert agent.extra_args == []
+    assert agent.max_retries == 0

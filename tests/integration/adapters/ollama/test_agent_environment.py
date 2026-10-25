@@ -17,8 +17,9 @@ def test_configured_path_and_host_apply_to_preflight_and_execution(
 ):
     monkeypatch.setenv("PATH", "")
     agent = AgentConfig(
-        cli_cmd=["ollama", "run"],
+        cli_cmd=["crewplane-ollama-agent"],
         provider_kind="ollama",
+        invocation_timeout_seconds=60,
         default_model="text",
         environment={"PATH": ".", "OLLAMA_HOST": "http://configured:11434"},
     )
@@ -40,7 +41,9 @@ def test_configured_path_and_host_apply_to_preflight_and_execution(
         )
     )
     assert "supplied content" in (tmp_path / "answer.md").read_text()
-    receipts = command_receipts(ollama.receipts, "run")
+    receipts = command_receipts(ollama.receipts, "run") + command_receipts(
+        ollama.receipts, "check"
+    )
     assert len(receipts) == 2
     assert all(receipt["host"] == "http://configured:11434" for receipt in receipts)
     assert os.environ["PATH"] == ""
@@ -50,8 +53,9 @@ def test_overlapping_agents_keep_distinct_environments(ollama, tmp_path, monkeyp
     monkeypatch.setenv("OLLAMA_HOST", "http://inherited:11434")
     agents = [
         AgentConfig(
-            cli_cmd=[str(ollama.executable), "run"],
+            cli_cmd=[str(ollama.executable)],
             provider_kind="ollama",
+            invocation_timeout_seconds=60,
             environment={"OLLAMA_HOST": f"http://server-{index}:11434"},
         )
         for index in range(2)

@@ -129,7 +129,7 @@ def test_missing_ollama_plugin_can_quit_for_installation(tmp_path: Path) -> None
     )
 
     assert "crewplane-ollama" in output
-    assert "provider-setup.md#local-ollama-text-generation" in output
+    assert "provider-setup.md#local-ollama-tool-enabled-execution" in output
     assert "Onboarding complete" not in output
     assert all(
         (tmp_path / path).read_bytes() == content for path, content in before.items()
