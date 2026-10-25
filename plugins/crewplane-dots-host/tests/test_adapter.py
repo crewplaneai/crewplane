@@ -124,6 +124,8 @@ def test_workspace_disabled_invocation_publishes_output(
 
     async def run() -> None:
         with closing(Queue(tmp_path / "queue")) as queue:
+            # The test host can wait; invocation connections need short signal latency.
+            queue.db.execute("PRAGMA busy_timeout=5000")
             task = asyncio.create_task(
                 invoker.invoke(agent, agent.default_model, "Review", output, tmp_path)
             )

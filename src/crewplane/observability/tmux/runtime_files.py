@@ -82,7 +82,7 @@ def read_index(path: Path) -> int:
 
 def write_atomic(path: Path, content: str) -> None:
     temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    temp_path.write_text(content, encoding="utf-8")
+    temp_path.write_text(content, encoding="utf-8", newline="\n")
     temp_path.replace(path)
 
 
