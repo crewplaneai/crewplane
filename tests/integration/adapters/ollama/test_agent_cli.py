@@ -148,25 +148,31 @@ def test_invalid_selected_endpoint_has_no_fallback(tmp_path, endpoint):
     assert result.returncode != 0 and not result.stdout
 
 
-def test_system_instruction_preserves_role_and_explicit_skill_contract(
-    tmp_path, monkeypatch
-):
-    monkeypatch.chdir(tmp_path)
-    text = importlib.import_module("crewplane_ollama.instructions").system_instruction()
-    assert str(tmp_path) in text
-    for required in (
-        "scoped AGENTS.md",
-        "read-only",
-        "SKILL.md",
-        "source directory",
-        "MCP",
-        "host API",
-        "blocker",
-        "foreground",
-        "environment",
-        "not a sandbox",
-    ):
-        assert required in text
+def test_text_task_uses_static_instruction_across_working_directories(tmp_path):
+    instruction = importlib.import_module(
+        "crewplane_ollama.instructions"
+    ).SYSTEM_INSTRUCTION
+    prompt = "Write a one-sentence story about a fox. Return only the story."
+    answer = "The fox followed the moon home."
+    script = ScriptedOllama([final_response(answer), final_response(answer)])
+
+    with ollama_server(script) as endpoint:
+        for name in ("first workspace", "second workspace"):
+            workspace = tmp_path / name
+            workspace.mkdir()
+            result = invoke_agent(workspace, endpoint, prompt)
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.decode() == answer
+            assert b"tool 1 start" not in result.stderr
+            assert not list(workspace.iterdir())
+
+    assert len(script.requests) == 2
+    for request in script.requests:
+        assert request["messages"] == [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": prompt},
+        ]
+        assert str(tmp_path) not in request["messages"][0]["content"]
 
 
 def test_unencodable_final_text_fails_without_canonical_output(tmp_path):

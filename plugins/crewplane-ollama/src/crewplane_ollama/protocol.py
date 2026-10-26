@@ -10,8 +10,11 @@ RUN_COMMAND_TOOL: dict[str, object] = {
     "function": {
         "name": "run_command",
         "description": (
-            "Run a foreground command in the supplied workspace. Use an explicit "
-            "interpreter or shell when needed. Obey the task's read-only and other restrictions."
+            "Run a foreground command with literal argv in the prepared working "
+            "directory and environment. Each call starts with the same cwd and "
+            "environment; command-local changes do not persist. Use an explicit "
+            "shell for shell syntax or an interpreter for scripts. Do not start "
+            "background or detached processes. Obey the task's read-only and other restrictions."
         ),
         "parameters": {
             "type": "object",

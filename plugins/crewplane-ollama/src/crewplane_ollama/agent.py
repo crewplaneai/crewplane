@@ -11,7 +11,7 @@ import httpx
 from .command_executor import execute_command
 from .discovery_http import execution_client, read_json
 from .discovery_platform import normalize_endpoint
-from .instructions import system_instruction
+from .instructions import SYSTEM_INSTRUCTION
 from .limits import MAX_DIAGNOSTIC_CHARACTERS, MAX_TOOL_ATTEMPTS
 from .models import validate_model
 from .protocol import ToolCall, chat_request, parse_response, tool_message
@@ -55,7 +55,7 @@ async def run(model: str, prompt: str) -> str:
     async with execution_client() as client:
         await verify_model(client, endpoint, model)
         messages: list[dict[str, object]] = [
-            {"role": "system", "content": system_instruction()},
+            {"role": "system", "content": SYSTEM_INSTRUCTION},
             {"role": "user", "content": prompt},
         ]
         attempts = 0
