@@ -4,7 +4,7 @@ set -eu
 PACKAGE_NAME="crewplane"
 CREWPLANE_VERSION="${CREWPLANE_VERSION:-}"
 # BEGIN GENERATED UV BOOTSTRAP METADATA
-UV_VERSION="0.13.0"
+UV_VERSION="0.13.5"
 UV_RELEASE_BASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
 
 uv_archive_details() {
@@ -22,32 +22,32 @@ uv_archive_details() {
         Darwin:arm64)
             printf '%s|%s\n' \
                 "aarch64-apple-darwin" \
-                "a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6"
+                "743f85035a1996ecb350659e01cd9faea9709829be09b1b4b03c73eaf3c9cd73"
             ;;
         Darwin:x86_64)
             printf '%s|%s\n' \
                 "x86_64-apple-darwin" \
-                "5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026d3dde742c"
+                "b0f52b0e3945b4107d89024ea38e625683011fbfc05a0d98f9fa2d6dcee28c66"
             ;;
         Linux:aarch64:gnu|Linux:arm64:gnu)
             printf '%s|%s\n' \
                 "aarch64-unknown-linux-gnu" \
-                "3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
+                "4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403"
             ;;
         Linux:aarch64:musl|Linux:arm64:musl)
             printf '%s|%s\n' \
                 "aarch64-unknown-linux-musl" \
-                "281ca6cf43f4e26e35474839ad4861be86de42af2682f74134460f5b2071b96d"
+                "7906c79adb21c81abd559841ba76bb1d9af9d791acac7a041b2972e03ae16538"
             ;;
         Linux:x86_64:gnu|Linux:amd64:gnu)
             printf '%s|%s\n' \
                 "x86_64-unknown-linux-gnu" \
-                "1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
+                "f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
             ;;
         Linux:x86_64:musl|Linux:amd64:musl)
             printf '%s|%s\n' \
                 "x86_64-unknown-linux-musl" \
-                "b0828fc4cdc47d65951e94b5f0a15a5364420e8dcd88723f3b21e7a2eb30bbc3"
+                "57ef9d9ccb01fb1bd998df995b0dd221b52f7d7841fbea93f2d4463bf61fb7a9"
             ;;
         *)
             fail "unsupported platform for automatic uv installation: $uv_platform"
