@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import os
 import sys
 
 import pytest
@@ -22,7 +23,7 @@ def test_native_multiple_calls_rounds_ids_thinking_and_final_only(tmp_path):
         messages = payload["messages"]
         assert messages[-3]["content"] == "intermediate"
         assert messages[-3]["thinking"] == "private reasoning"
-        assert json.loads(messages[-2]["content"])["stdout"] == "one\n"
+        assert json.loads(messages[-2]["content"])["stdout"] == f"one{os.linesep}"
         assert messages[-2]["tool_name"] == "run_command"
         assert messages[-2]["tool_call_id"] == "first"
         assert "tool_call_id" not in messages[-1]

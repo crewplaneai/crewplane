@@ -21,14 +21,17 @@ def execute(executor, arguments):
     return asyncio.run(run())
 
 
+@pytest.mark.parametrize("child_encoding", ["utf-8", "cp1252"])
 def test_command_inherits_workspace_environment_and_literal_arguments(
-    executor, tmp_path, monkeypatch
+    executor, tmp_path, monkeypatch, child_encoding
 ):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GIT_INDEX_FILE", "/controlled/index")
+    monkeypatch.setenv("PYTHONIOENCODING", child_encoding)
     script = (
         "import json, os, sys; "
-        "print(json.dumps([os.getcwd(), os.environ['GIT_INDEX_FILE'], sys.argv[1:], sys.stdin.read()]))"
+        "stdin = sys.stdin.buffer.read().decode('utf-8'); "
+        "print(json.dumps([os.getcwd(), os.environ['GIT_INDEX_FILE'], sys.argv[1:], stdin]))"
     )
     result = execute(
         executor,
@@ -56,8 +59,30 @@ def test_missing_stdin_closes_pipe(executor):
         executor,
         {"argv": [sys.executable, "-c", "import sys; print(repr(sys.stdin.read()))"]},
     )
-    assert result["stdout"] == "''\n"
+    assert result["stdout"] == f"''{os.linesep}"
     assert result["exit_code"] == 0
+
+
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_command_preserves_utf8_and_line_endings(executor, line_ending):
+    content = f"héllo{line_ending}"
+    script = (
+        "import sys; data = sys.stdin.buffer.read(); "
+        "sys.stdout.buffer.write(data); sys.stderr.buffer.write(data)"
+    )
+    result = execute(
+        executor,
+        {"argv": [sys.executable, "-c", script], "stdin": content},
+    )
+    assert result == {
+        "exit_code": 0,
+        "stdout": content,
+        "stderr": content,
+        "stdout_bytes": len(content.encode("utf-8")),
+        "stderr_bytes": len(content.encode("utf-8")),
+        "stdout_truncated": False,
+        "stderr_truncated": False,
+    }
 
 
 def test_nonzero_exit_and_non_utf8_are_explicit_feedback(executor):
@@ -211,7 +236,7 @@ def test_early_stdin_close_does_not_fail_completed_command(executor):
         },
     )
     assert result["exit_code"] == 0
-    assert result["stdout"] == "finished\n"
+    assert result["stdout"] == f"finished{os.linesep}"
 
 
 def test_windows_explicit_interpreter_does_not_reject_batch_argument(
@@ -230,7 +255,7 @@ def test_windows_explicit_interpreter_does_not_reject_batch_argument(
         },
     )
     assert result["exit_code"] == 0
-    assert result["stdout"] == "script.cmd\n"
+    assert result["stdout"] == f"script.cmd{os.linesep}"
 
 
 def test_stream_io_error_is_fatal_not_successful_tool_feedback(executor):
