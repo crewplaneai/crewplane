@@ -33,7 +33,7 @@ async def discover(request: CliDiscoveryRequest) -> CliProviderDiscovery:
         )
     if not command:
         diagnostics.append(
-            "crewplane-ollama-agent not found. Install crewplane-ollama in Crewplane's Python environment, then rerun onboarding."
+            "ollama-agent not found. Install crewplane-ollama in Crewplane's Python environment, then rerun onboarding."
         )
     if running_in_wsl(request):
         diagnostics.append(

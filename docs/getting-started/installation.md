@@ -3,7 +3,7 @@
 Install Crewplane to add the `crewplane` command to your shell.
 
 All installation methods below include the official `crewplane-ollama` plugin.
-The included `crewplane-ollama-agent` connects to a separately prepared Ollama
+The included `ollama-agent` connects to a separately prepared Ollama
 server with an installed local tool-capable model. Follow
 [Ollama setup](provider-setup.md#local-ollama-tool-enabled-execution).
 

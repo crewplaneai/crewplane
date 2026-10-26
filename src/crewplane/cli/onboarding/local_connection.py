@@ -135,11 +135,7 @@ def connection_executable_lookup(
     )
 
     def find_executable(command: str) -> str | None:
-        if command == (
-            "crewplane-ollama-agent.exe"
-            if os.name == "nt"
-            else "crewplane-ollama-agent"
-        ):
+        if command == ("ollama-agent.exe" if os.name == "nt" else "ollama-agent"):
             return lookup(configured) or options.which_fn(command)
         return options.which_fn(command)
 

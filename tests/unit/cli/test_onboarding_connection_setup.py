@@ -36,8 +36,8 @@ def connection_setup(tmp_path, monkeypatch):
     stream = io.StringIO()
     commands = {
         "configured-ollama": "/configured/ollama",
-        "crewplane-ollama-agent": "/bin/ollama",
-        "crewplane-ollama-agent.exe": "/bin/ollama",
+        "ollama-agent": "/bin/ollama",
+        "ollama-agent.exe": "/bin/ollama",
     }
     options = OnboardingOptions(
         project_root=tmp_path,
@@ -79,11 +79,7 @@ def test_connection_setup_preserves_discovery_context_and_handled_results(
         assert request.environment == os.environ
         assert request.environment is not os.environ
         assert request.timeout_seconds == 2.5
-        command = (
-            "crewplane-ollama-agent.exe"
-            if os.name == "nt"
-            else "crewplane-ollama-agent"
-        )
+        command = "ollama-agent.exe" if os.name == "nt" else "ollama-agent"
         assert request.executable_lookup(command) == "/configured/ollama"
         assert console is options.console
         assert agent == existing

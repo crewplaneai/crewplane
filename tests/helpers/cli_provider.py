@@ -70,7 +70,7 @@ def fake_ollama_agent(monkeypatch: pytest.MonkeyPatch, root: Path) -> tuple[Path
     program = (
         Path(__file__).resolve().parents[1] / "fixtures/providers/ollama_agent_cli.py"
     )
-    executable = root / "crewplane-ollama-agent"
+    executable = root / "ollama-agent"
     executable.write_text(
         f"#!{sys.executable}\n" + program.read_text(), encoding="utf-8"
     )

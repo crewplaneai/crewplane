@@ -28,7 +28,7 @@ def validate_request(request: CliInvocationRequest) -> None:
     if request.requested_reasoning is not None:
         raise ValueError("Ollama does not support first-class reasoning")
     config = request.config
-    guidance = "Regenerate or deliberately reconfigure the Ollama profile for crewplane-ollama-agent; legacy text-only profiles are not migrated."
+    guidance = "Regenerate or deliberately reconfigure the Ollama profile for ollama-agent; legacy text-only profiles are not migrated."
     if config.prompt_transport != "stdin" or config.prompt_transport_arg is not None:
         raise ValueError(
             "Ollama requires stdin prompt transport without prompt_transport_arg. "

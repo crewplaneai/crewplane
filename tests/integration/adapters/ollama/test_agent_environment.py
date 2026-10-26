@@ -17,7 +17,7 @@ def test_configured_path_and_host_apply_to_preflight_and_execution(
 ):
     monkeypatch.setenv("PATH", "")
     agent = AgentConfig(
-        cli_cmd=["crewplane-ollama-agent"],
+        cli_cmd=["ollama-agent"],
         provider_kind="ollama",
         invocation_timeout_seconds=60,
         default_model="text",

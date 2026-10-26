@@ -137,7 +137,7 @@ async def launch_agent(executable, workspace, environment, check):
 
 async def check_installed_agent():
     binary = Path(sys.executable).parent
-    name = "crewplane-ollama-agent.exe" if os.name == "nt" else "crewplane-ollama-agent"
+    name = "ollama-agent.exe" if os.name == "nt" else "ollama-agent"
     executable = binary / name
     assert executable.is_file(), executable
     workspace = Path.cwd() / "workspace with spaces"
@@ -179,9 +179,7 @@ async def check_installed_agent():
 def main():
     distribution = importlib.metadata.distribution("crewplane-ollama")
     entry = next(
-        entry
-        for entry in distribution.entry_points
-        if entry.name == "crewplane-ollama-agent"
+        entry for entry in distribution.entry_points if entry.name == "ollama-agent"
     )
     assert entry.group == "console_scripts"
     assert entry.value == "crewplane_ollama.agent_cli:main"

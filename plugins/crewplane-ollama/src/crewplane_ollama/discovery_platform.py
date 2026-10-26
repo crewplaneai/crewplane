@@ -20,7 +20,7 @@ def running_in_wsl(request: CliDiscoveryRequest) -> bool:
 
 def discover_client(request: CliDiscoveryRequest) -> tuple[str, ...]:
     windows = platform.system() == "Windows"
-    name = "crewplane-ollama-agent.exe" if windows else "crewplane-ollama-agent"
+    name = "ollama-agent.exe" if windows else "ollama-agent"
     executable = request.executable_lookup(name)
     if executable is None:
         executable = str(Path(sysconfig.get_path("scripts")) / name)

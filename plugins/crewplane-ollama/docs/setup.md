@@ -1,6 +1,6 @@
 # Set Up the Ollama Plugin
 
-Use the included `crewplane-ollama-agent` to run workflows with an installed local
+Use the included `ollama-agent` to run workflows with an installed local
 tool-capable model. This guide targets Ollama v0.40.2, Python 3.13+, and
 Crewplane 0.3.8+. For the tool contract and execution limits, see the
 [plugin reference](reference.md).
@@ -54,7 +54,7 @@ invoker options with the `cli` options below.
 ```yaml
 agents:
   local:
-    cli_cmd: [crewplane-ollama-agent]
+    cli_cmd: [ollama-agent]
     provider_kind: ollama
     default_model: "<installed-tool-capable-model>"
     prompt_transport: stdin
@@ -84,7 +84,7 @@ Use `providers: [local]` on workflow nodes. A workflow `model` overrides the age
 default. Keep the command, prompt, and timeout settings shown above; omit
 `prompt_transport_arg` and workflow `reasoning`. Increase the invocation timeout
 for slower hardware or model loading. Keep `max_retries: 0` unless repeating
-command effects is acceptable; see the [retry and cancellation contract](reference.md#authority-lifecycle-and-evidence).
+command effects is acceptable; see the [retry and cancellation behavior](reference.md#execution-lifecycle).
 
 ### Upgrade from plugin 0.1
 
@@ -92,7 +92,7 @@ command effects is acceptable; see the [retry and cancellation contract](referen
 execution, with no text-only compatibility mode or automatic migration. After
 reviewing the privileges above, update the existing profile:
 
-- Replace `cli_cmd` with the single `crewplane-ollama-agent` executable or its
+- Replace `cli_cmd` with the single `ollama-agent` executable or its
   absolute path, and clear `extra_args` to `[]`.
 - Use `prompt_transport: stdin`, remove `prompt_transport_arg`, set a finite
   positive `invocation_timeout_seconds`, and set `invocation_idle_timeout_seconds`
@@ -119,7 +119,7 @@ A short readiness response does not prove adequate context for task/skill
 instructions, repository reads, tool results, and the final response. The agent
 retains complete history without automatic compaction. If context is exhausted,
 increase server context or reduce the task's inputs. The
-[resource limits](reference.md#initial-resource-limits) bound application resources,
+[resource limits](reference.md#resource-limits) bound application resources,
 not model context. Choose workflow concurrency according to server memory;
 Crewplane has no GPU scheduler.
 

@@ -57,11 +57,7 @@ def onboarding_project(ollama, discovery_server, tmp_path, monkeypatch):
 
 def run_setup(root, console, executable, answers, write=write_text_file, commands=None):
     pending = deque(answers)
-    lookup = (
-        commands
-        if commands is not None
-        else {"crewplane-ollama-agent": str(executable)}
-    )
+    lookup = commands if commands is not None else {"ollama-agent": str(executable)}
     run_onboarding(
         OnboardingOptions(
             root,
@@ -177,10 +173,10 @@ def test_ollama_setup_failure_can_continue_with_other_selected_provider(
     stream, console = onboarding_project
     commands = {
         "codex": str(ollama.executable),
-        "crewplane-ollama-agent": str(ollama.executable),
+        "ollama-agent": str(ollama.executable),
     }
     if failure == "client":
-        del commands["crewplane-ollama-agent"]
+        del commands["ollama-agent"]
 
     def handler(request):
         if failure == "server":
@@ -219,7 +215,7 @@ def test_cancelling_ollama_selection_can_return_to_other_providers(
         ["1", "2", "0", "1", "1", "y"],
         commands={
             "codex": str(ollama.executable),
-            "crewplane-ollama-agent": str(ollama.executable),
+            "ollama-agent": str(ollama.executable),
         },
     )
     assert set(load_config(tmp_path / ".crewplane/config.yml").agents) == {"codex"}
@@ -240,7 +236,7 @@ def test_ollama_plugin_is_not_loaded_when_another_provider_is_selected(
         ["1", "1", "y"],
         commands={
             "codex": str(ollama.executable),
-            "crewplane-ollama-agent": str(ollama.executable),
+            "ollama-agent": str(ollama.executable),
         },
     )
     assert "Onboarding configured: codex." in stream.getvalue()
@@ -263,7 +259,7 @@ def test_failed_readiness_can_remove_ollama_and_finish_other_provider(
         + ["y"],
         commands={
             "codex": str(ollama.executable),
-            "crewplane-ollama-agent": str(ollama.executable),
+            "ollama-agent": str(ollama.executable),
         },
     )
 
@@ -317,7 +313,7 @@ def test_declining_readiness_recovery_keeps_saved_settings(
             ["1", "1,2", "1", "1", "y", *decision],
             commands={
                 "codex": str(ollama.executable),
-                "crewplane-ollama-agent": str(ollama.executable),
+                "ollama-agent": str(ollama.executable),
             },
         )
     assert set(load_config(tmp_path / ".crewplane/config.yml").agents) == {
@@ -350,7 +346,7 @@ def test_readiness_recovery_preserves_files_changed_after_saving(
 
     commands = {
         "codex": str(ollama.executable),
-        "crewplane-ollama-agent": str(ollama.executable),
+        "ollama-agent": str(ollama.executable),
     }
     with pytest.raises(typer.Exit):
         run_onboarding(
@@ -390,7 +386,7 @@ def test_readiness_recovery_reports_partial_writes(
             write=fail_replacement,
             commands={
                 "codex": str(ollama.executable),
-                "crewplane-ollama-agent": str(ollama.executable),
+                "ollama-agent": str(ollama.executable),
             },
         )
 
@@ -469,7 +465,7 @@ def test_custom_discovery_budget_reaches_both_phases(
             True,
             True,
             answers.popleft,
-            {"crewplane-ollama-agent": str(ollama.executable)}.get,
+            {"ollama-agent": str(ollama.executable)}.get,
             write_text_file,
             discovery_timeout_seconds=60,
         )

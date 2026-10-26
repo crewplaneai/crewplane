@@ -94,7 +94,7 @@ def test_existing_project_saves_wsl_connection_without_changing_workflows(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1", "y"],
     )
 
@@ -141,7 +141,7 @@ def test_connection_uses_configured_executable_outside_terminal_path(
     )
     monkeypatch.chdir(tmp_path.parent)
     monkeypatch.setenv("PATH", "")
-    assert shutil.which("crewplane-ollama-agent") is None
+    assert shutil.which("ollama-agent") is None
     answers = deque(["y", "1", "y"])
 
     run_onboarding(
@@ -176,11 +176,7 @@ def test_missing_ollama_leaves_existing_project_usable(
 ):
     config_path, workflow, stream, console = configured_project
     before = config_path.read_bytes(), workflow.read_bytes()
-    commands = (
-        {"crewplane-ollama-agent": str(ollama.executable)}
-        if failure != "client"
-        else {}
-    )
+    commands = {"ollama-agent": str(ollama.executable)} if failure != "client" else {}
     if failure == "server":
 
         def unavailable(request):
@@ -202,7 +198,7 @@ def test_declining_connection_setup_preserves_existing_files(
     config_path, workflow, _, console = configured_project
     before = config_path.read_bytes(), workflow.read_bytes()
     configure_connection(
-        tmp_path, console, {"crewplane-ollama-agent": str(ollama.executable)}, answers
+        tmp_path, console, {"ollama-agent": str(ollama.executable)}, answers
     )
     assert (config_path.read_bytes(), workflow.read_bytes()) == before
 
@@ -231,7 +227,7 @@ def test_existing_project_can_add_local_agent(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1", "1", "y"],
     )
 
@@ -288,7 +284,7 @@ def test_failed_save_preserves_config_and_cleans_temporary_file(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1", "y"],
         write,
     )
@@ -325,7 +321,7 @@ def test_shared_command_anchor_reports_failure_without_changing_files(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1"],
     )
 
@@ -359,7 +355,7 @@ def test_invoker_change_during_confirmation_preserves_config(
             True,
             True,
             read_input,
-            {"crewplane-ollama-agent": str(ollama.executable)}.get,
+            {"ollama-agent": str(ollama.executable)}.get,
             write_text_file,
         )
     )
@@ -415,7 +411,7 @@ def test_legacy_profile_is_not_silently_migrated(
 
     monkeypatch.setattr(discovery, "run_discovery", forbidden)
     configure_connection(
-        tmp_path, console, {"crewplane-ollama-agent": str(ollama.executable)}, ["y"]
+        tmp_path, console, {"ollama-agent": str(ollama.executable)}, ["y"]
     )
 
     assert (config_path.read_bytes(), workflow.read_bytes()) == before
@@ -443,7 +439,7 @@ def test_connection_discloses_host_authority_and_endpoint_before_save(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1", "y"],
         write,
     )
@@ -462,7 +458,7 @@ def test_connection_preserves_workflow_only_model_selection(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1", "y"],
     )
     assert load_config(config_path).agents["local"].default_model is None
@@ -483,7 +479,7 @@ def test_discovered_command_is_validated_in_full_before_refresh(
     configure_connection(
         tmp_path,
         console,
-        {"crewplane-ollama-agent": str(ollama.executable)},
+        {"ollama-agent": str(ollama.executable)},
         ["y", "1"],
     )
     assert (config_path.read_bytes(), workflow.read_bytes()) == before

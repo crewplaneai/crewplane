@@ -5,7 +5,7 @@ checks, and follow explicitly selected filesystem skills. The plugin also
 supports text tasks and returns a final answer through Crewplane's normal
 artifacts.
 
-Standard Crewplane installs include this plugin and its `crewplane-ollama-agent`
+Standard Crewplane installs include this plugin and its `ollama-agent`
 executable. It requires Python 3.13+ and Crewplane 0.3.8+.
 
 ## Get started

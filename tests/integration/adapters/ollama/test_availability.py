@@ -64,9 +64,7 @@ def test_relative_path_environment_is_resolved_against_request_cwd(ollama, tmp_p
     request = request_for(ollama, tmp_path)
     request = replace(
         request,
-        config=request.config.model_copy(
-            update={"cli_cmd": ["crewplane-ollama-agent"]}
-        ),
+        config=request.config.model_copy(update={"cli_cmd": ["ollama-agent"]}),
         environment={**os.environ, "PATH": "."},
     )
     asyncio.run(ollama.capability.check_availability(request))

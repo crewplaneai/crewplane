@@ -26,7 +26,7 @@ agents:
   # Use crewplane onboarding to save the agent's absolute path if it is not on PATH.
   # Setup: https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#local-ollama-tool-enabled-execution
   # local:
-  #   cli_cmd: ["crewplane-ollama-agent"]
+  #   cli_cmd: ["ollama-agent"]
   #   provider_kind: "ollama"
   #   environment:
   #     OLLAMA_HOST: "http://127.0.0.1:11434"

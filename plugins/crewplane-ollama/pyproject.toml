@@ -8,7 +8,7 @@ license = "Apache-2.0"
 dependencies = ["crewplane>=0.3.8", "httpx>=0.28.1,<1"]
 
 [project.scripts]
-crewplane-ollama-agent = "crewplane_ollama.agent_cli:main"
+ollama-agent = "crewplane_ollama.agent_cli:main"
 
 [build-system]
 requires = ["hatchling==1.32.4"]

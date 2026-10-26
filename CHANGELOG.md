@@ -7,7 +7,7 @@ All notable user-facing changes are recorded here.
 ### Changed
 
 - **Breaking:** The included Ollama plugin now supports command execution; existing
-  profiles require [migration to `crewplane-ollama-agent`](plugins/crewplane-ollama/docs/setup.md#upgrade-from-plugin-01).
+  profiles require [migration to `ollama-agent`](plugins/crewplane-ollama/docs/setup.md#upgrade-from-plugin-01).
 
 ### Fixed
 

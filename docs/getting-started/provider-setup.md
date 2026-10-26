@@ -195,7 +195,7 @@ copilot version
 ## Local Ollama Tool-enabled Execution
 
 Crewplane includes the `crewplane-ollama` plugin and its
-`crewplane-ollama-agent` executable. Prepare an Ollama server with an installed
+`ollama-agent` executable. Prepare an Ollama server with an installed
 local tool-capable model, then run `crewplane onboarding` and select Ollama.
 Onboarding saves the executable, model, and server connection.
 
@@ -203,7 +203,7 @@ Onboarding saves the executable, model, and server connection.
 > Repository content and tool results go to the selected server. Workspaces and
 > template restrictions are not sandboxes.
 
-For manual setup, use `cli_cmd: [crewplane-ollama-agent]`, `provider_kind: ollama`,
+For manual setup, use `cli_cmd: [ollama-agent]`, `provider_kind: ollama`,
 `prompt_transport: stdin`, empty `extra_args`, and a finite positive invocation
 timeout. The [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md#manual-configuration)
 provides the complete profile and required registration. Use `providers: [local]`

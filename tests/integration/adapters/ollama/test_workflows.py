@@ -132,11 +132,11 @@ def test_full_preflight_resolves_relative_path_entries_against_project(
     caller.mkdir()
     executable_directory = (project if in_project else caller) / search_entry
     executable_directory.mkdir(exist_ok=True)
-    (executable_directory / "crewplane-ollama-agent").symlink_to(ollama.executable)
+    (executable_directory / "ollama-agent").symlink_to(ollama.executable)
     monkeypatch.chdir(caller)
     monkeypatch.setenv("PATH", search_entry)
     config = config_for(ollama)
-    config.agents["local"].cli_cmd = ["crewplane-ollama-agent"]
+    config.agents["local"].cli_cmd = ["ollama-agent"]
     source = provider_source("override")
 
     preview = compile_workflow_preview(
@@ -179,11 +179,11 @@ def test_cli_resolves_relative_path_entries_against_project(
     executable_directory = project / "bin"
     executable_directory.mkdir(parents=True)
     caller.mkdir()
-    (executable_directory / "crewplane-ollama-agent").symlink_to(ollama.executable)
+    (executable_directory / "ollama-agent").symlink_to(ollama.executable)
     state_dir = project / ".crewplane"
     state_dir.mkdir()
     config = config_for(ollama)
-    config.agents["local"].cli_cmd = ["crewplane-ollama-agent"]
+    config.agents["local"].cli_cmd = ["ollama-agent"]
     config_path = state_dir / "config.yml"
     config_path.write_text(json.dumps(config.model_dump(mode="json")))
     workflow = project / "workflow.task.md"
