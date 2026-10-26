@@ -30,7 +30,7 @@ def test_generated_ollama_config_runs_bundled_text_workflow(
     options = uncomment_yaml_comment_block(config[start:end], 6)
     config = config.replace("      options: {}", options, 1)
     config_path.write_text(
-        config.replace("<installed-local-text-model>", "provisioned-text-model"),
+        config.replace("<installed-local-tool-model>", "provisioned-text-model"),
         encoding="utf-8",
     )
 
@@ -42,11 +42,7 @@ def test_generated_ollama_config_runs_bundled_text_workflow(
 
     executed = runner.invoke(app, ["run", "--no-live", "--tasks", str(workflow)])
     assert executed.exit_code == 0, executed.output
-    invocations = [
-        receipt
-        for receipt in command_receipts(ollama.receipts, "run")
-        if receipt["stdin"] != "Reply with OK only."
-    ]
+    invocations = command_receipts(ollama.receipts, "run")
     assert len(invocations) == 2
     brief = (examples / "sample-inputs/feature-brief.md").read_text(encoding="utf-8")
     assert brief.strip() in invocations[0]["stdin"]

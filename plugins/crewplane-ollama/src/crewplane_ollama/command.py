@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import shutil
 from dataclasses import replace
@@ -7,10 +8,6 @@ from pathlib import Path
 
 from crewplane.adapters.invokers.cli_invoker import CliCommand, CliInvocationRequest
 from crewplane.architecture.contracts import CommandResult
-
-_VALUE_OPTIONS = frozenset({"--keepalive", "--format"})
-_BOOL_OPTIONS = frozenset({"--verbose", "--insecure"})
-_MANAGED_OPTIONS = frozenset({"--nowordwrap", "--hidethinking"})
 
 
 def cleanup_temporary_captures(result: CommandResult) -> None:
@@ -23,49 +20,40 @@ def cleanup_temporary_captures(result: CommandResult) -> None:
 
 
 def validate_request(request: CliInvocationRequest) -> None:
-    """Validate text-only stdin transport before constructing a command."""
+    """Validate the managed agent contract without probing the executable or server."""
     if request.model is None or not request.model.strip():
         raise ValueError("Ollama requires a nonblank effective model")
-    if request.model.startswith("-"):
-        raise ValueError("Ollama model cannot start with '-' (an option)")
+    if request.model.startswith("-") or "\0" in request.model:
+        raise ValueError("Ollama model cannot start with '-' or contain NUL")
     if request.requested_reasoning is not None:
         raise ValueError("Ollama does not support first-class reasoning")
     config = request.config
+    guidance = "Regenerate or deliberately reconfigure the Ollama profile for ollama-agent; legacy text-only profiles are not migrated."
     if config.prompt_transport != "stdin" or config.prompt_transport_arg is not None:
         raise ValueError(
-            "Ollama requires stdin prompt transport without prompt_transport_arg"
+            "Ollama requires stdin prompt transport without prompt_transport_arg. "
+            + guidance
         )
-    if len(config.cli_cmd) < 2 or config.cli_cmd[1] != "run":
+    if (
+        len(config.cli_cmd) != 1
+        or not config.cli_cmd[0].strip()
+        or "\0" in config.cli_cmd[0]
+    ):
         raise ValueError(
-            "Ollama cli_cmd must start with the configured executable and 'run'"
+            "Ollama cli_cmd must contain exactly one executable, without command tails or flags. "
+            + guidance
         )
-    _validate_options(config.cli_cmd[2:])
-    _validate_options(config.extra_args)
-
-
-def _validate_options(arguments: list[str]) -> None:
-    tokens = iter(arguments)
-    for token in tokens:
-        name, separator, value = token.partition("=")
-        if name in _MANAGED_OPTIONS:
-            raise ValueError(f"Ollama option {name} conflicts with a managed flag")
-        if name in _VALUE_OPTIONS:
-            if not separator:
-                value = next(tokens, "")
-            if not value.strip() or value.startswith("--"):
-                raise ValueError(f"Ollama option {name} requires a value")
-        elif name in _BOOL_OPTIONS:
-            if separator and value not in {"true", "false"}:
-                raise ValueError(f"Ollama option {name} requires true or false")
-        elif name == "--think":
-            if separator and value not in {"true", "false", "high", "medium", "low"}:
-                raise ValueError(
-                    "Ollama --think requires true, false, high, medium, or low"
-                )
-        else:
-            raise ValueError(
-                f"Ollama rejects unsupported options or competing positional model/prompt arguments: {token!r}"
-            )
+    if config.extra_args:
+        raise ValueError(
+            "Ollama requires empty extra_args; managed flags cannot be overridden. "
+            + guidance
+        )
+    timeout = config.invocation_timeout_seconds
+    if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError(
+            "Ollama requires a finite positive invocation_timeout_seconds or null. "
+            + guidance
+        )
 
 
 def build_command(request: CliInvocationRequest, prompt: str) -> CliCommand:
@@ -73,20 +61,13 @@ def build_command(request: CliInvocationRequest, prompt: str) -> CliCommand:
     request = resolve_request_executable(request)
     assert request.model is not None
     return CliCommand(
-        [
-            *request.config.cli_cmd[:2],
-            request.model,
-            "--nowordwrap",
-            "--hidethinking",
-            *request.config.cli_cmd[2:],
-            *request.config.extra_args,
-        ],
+        [request.config.cli_cmd[0], "--model", request.model],
         prompt.encode("utf-8"),
     )
 
 
 def resolve_request_executable(request: CliInvocationRequest) -> CliInvocationRequest:
-    """Resolve symlinks to avoid Ollama's macOS app auto-launch path."""
+    """Resolve the configured executable against the invocation cwd and environment."""
     cwd = request.working_directory or Path.cwd()
     executable = request.config.cli_cmd[0]
     path = Path(executable)

@@ -116,10 +116,10 @@ def _prepare_connection_agent(
 def connection_executable_lookup(
     options: OnboardingOptions, existing: AgentConfig | None
 ) -> Callable[[str], str | None]:
-    """Build discovery lookup with the configured Ollama executable preferred.
+    """Build discovery lookup with the configured Ollama agent executable preferred.
 
     With no existing agent, return options.which_fn unchanged. Otherwise, look
-    up the platform's standard Ollama name using existing.cli_cmd[0] first.
+    up the platform's standard agent name using existing.cli_cmd[0] first.
     Resolve command paths and relative agent PATH entries against project_root;
     an agent PATH overrides the fallback lookup for the configured command.
     If that command is unavailable, try options.which_fn for the standard name.
@@ -135,7 +135,7 @@ def connection_executable_lookup(
     )
 
     def find_executable(command: str) -> str | None:
-        if command == ("ollama.exe" if os.name == "nt" else "ollama"):
+        if command == ("ollama-agent.exe" if os.name == "nt" else "ollama-agent"):
             return lookup(configured) or options.which_fn(command)
         return options.which_fn(command)
 

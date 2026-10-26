@@ -27,11 +27,12 @@ from tests.helpers.processes import kill_process_group
 def test_isolated_sigint_awaits_and_reports_probe_cleanup(
     ollama, tmp_path, monkeypatch, command, cleanup_confirmed
 ):
-    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-run")
+    monkeypatch.setenv("CREWPLANE_FAKE_SCENARIO", "hold-check")
     config = provider_config(
         AgentConfig(
-            cli_cmd=[str(ollama.executable), "run"],
+            cli_cmd=[str(ollama.executable)],
             provider_kind="ollama",
+            invocation_timeout_seconds=60,
             default_model="text-model",
         ),
         ollama.options,
@@ -124,8 +125,9 @@ def test_cli_reports_unconfirmed_probe_cleanup(ollama, tmp_path, monkeypatch, co
     monkeypatch.setattr(ollama.availability, "run_command_once", failed_probe)
     config = provider_config(
         AgentConfig(
-            cli_cmd=[str(ollama.executable), "run"],
+            cli_cmd=[str(ollama.executable)],
             provider_kind="ollama",
+            invocation_timeout_seconds=60,
             default_model="text-model",
         ),
         ollama.options,

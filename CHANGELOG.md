@@ -4,6 +4,13 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The included Ollama plugin now supports command execution; existing
+  profiles require [migration to `ollama-agent`](plugins/crewplane-ollama/docs/setup.md#upgrade-from-plugin-01).
+- Ollama readiness checks have a separate timeout, and task execution can run
+  without a time limit.
+
 ### Fixed
 
 - Include persisted workspace details in run summaries when compiled stages use renamed or nested paths.

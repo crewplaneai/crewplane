@@ -162,9 +162,6 @@ crewplane onboarding
 The command guides you through setup:
 
 - Looks for supported AI commands your terminal can run.
-- Offers Ollama through its included plugin; see
-  [Ollama setup](provider-setup.md#local-ollama-text-generation) for server and
-  model prerequisites.
 - Asks you to choose at least one provider by entering numbers separated by
   commas, such as `1,2`.
 - Updates the starter settings and workflow to use your chosen providers, then
@@ -173,36 +170,10 @@ The command guides you through setup:
 Install your AI tools before onboarding, and sign in if they require an account.
 For providers such as Codex and Claude, Crewplane checks that their commands
 are available; it does not check your account or access to a particular model.
+See [provider setup](provider-setup.md) for prerequisites and configuration.
 
 When switching from mock mode, onboarding updates only starter files you
 haven't edited. Extra examples keep their own provider choices.
-
-For Ollama, start your server, then select Ollama, a server, and a downloaded
-text model. Crewplane saves your choices in `.crewplane/config.yml` and tests
-the model with a short prompt. This may load the model into memory and use
-your graphics card.
-
-If you already use real providers, rerun `crewplane onboarding` to add or
-update the Ollama connection, even if you've edited your settings. Your
-workflows and existing model choice stay the same. This setup skips the model
-test; run `crewplane validate` on a workflow that uses `local` to check it.
-
-By default, Crewplane looks for Ollama on the same computer. In Windows
-Subsystem for Linux (WSL), it also checks for an Ollama server running in
-Windows. You need the Linux Ollama command installed inside WSL; see
-[Windows server setup](provider-setup.md#windows-hosted-ollama-from-wsl).
-To choose a specific server, set the `OLLAMA_HOST` environment variable to its
-address before running onboarding.
-
-Crewplane uses the saved server address for future checks and runs. If the
-address changes, update `agents.local.environment.OLLAMA_HOST` in
-`.crewplane/config.yml` and run `crewplane validate`.
-
-If the search for servers or models takes too long, Crewplane shows what it
-found and tells you the search is incomplete. Give each search up to 60 seconds
-by running
-`crewplane onboarding --discovery-timeout 60`. See the
-[option reference](../reference/commands.md#crewplane-onboarding) for details.
 
 When setup finishes, start your first run with real providers when you are ready:
 

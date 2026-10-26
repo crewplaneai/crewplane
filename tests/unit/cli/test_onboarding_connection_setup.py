@@ -28,7 +28,7 @@ def connection_setup(tmp_path, monkeypatch):
         'version: "1.0"\n'
         "agents:\n"
         "  local:\n"
-        "    cli_cmd: [configured-ollama, run]\n"
+        "    cli_cmd: [configured-ollama]\n"
         "    provider_kind: ollama\n"
         "    default_model: kept-model\n",
         encoding="utf-8",
@@ -36,8 +36,8 @@ def connection_setup(tmp_path, monkeypatch):
     stream = io.StringIO()
     commands = {
         "configured-ollama": "/configured/ollama",
-        "ollama": "/bin/ollama",
-        "ollama.exe": "/bin/ollama",
+        "ollama-agent": "/bin/ollama",
+        "ollama-agent.exe": "/bin/ollama",
     }
     options = OnboardingOptions(
         project_root=tmp_path,
@@ -79,7 +79,7 @@ def test_connection_setup_preserves_discovery_context_and_handled_results(
         assert request.environment == os.environ
         assert request.environment is not os.environ
         assert request.timeout_seconds == 2.5
-        command = "ollama.exe" if os.name == "nt" else "ollama"
+        command = "ollama-agent.exe" if os.name == "nt" else "ollama-agent"
         assert request.executable_lookup(command) == "/configured/ollama"
         assert console is options.console
         assert agent == existing
@@ -88,7 +88,7 @@ def test_connection_setup_preserves_discovery_context_and_handled_results(
             return LocalSetupFailure.CANCELLED
         if outcome == "unavailable":
             return LocalSetupFailure.UNAVAILABLE
-        return agent.model_copy(update={"cli_cmd": ["/configured/ollama", "run"]})
+        return agent.model_copy(update={"cli_cmd": ["/configured/ollama"]})
 
     monkeypatch.setattr(local_connection, "prepare_local_agent", prepare)
 
@@ -104,9 +104,7 @@ def test_connection_setup_preserves_discovery_context_and_handled_results(
     assert not list(path.parent.glob(".ollama-*"))
     if outcome == "saved":
         agent = load_config_mapping(path.read_text(), "after").agents["local"]
-        assert agent == existing.model_copy(
-            update={"cli_cmd": ["/configured/ollama", "run"]}
-        )
+        assert agent == existing.model_copy(update={"cli_cmd": ["/configured/ollama"]})
         assert "Ollama connection saved" in stream.getvalue()
     else:
         assert path.read_bytes() == original

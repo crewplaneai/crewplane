@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import platform
+import sysconfig
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -19,17 +20,10 @@ def running_in_wsl(request: CliDiscoveryRequest) -> bool:
 
 def discover_client(request: CliDiscoveryRequest) -> tuple[str, ...]:
     windows = platform.system() == "Windows"
-    executable = request.executable_lookup("ollama.exe" if windows else "ollama")
-    if (
-        executable is None
-        and windows
-        and (local := request.environment.get("LOCALAPPDATA"))
-    ):
-        candidate = Path(local) / "Programs" / "Ollama" / "ollama.exe"
-        if candidate.is_file():
-            executable = str(candidate)
+    name = "ollama-agent.exe" if windows else "ollama-agent"
+    executable = request.executable_lookup(name)
     if executable is None:
-        return ()
+        executable = str(Path(sysconfig.get_path("scripts")) / name)
     path = (request.project_root / executable).resolve()
     if not path.is_file() or (not windows and not os.access(path, os.X_OK)):
         return ()
@@ -37,7 +31,7 @@ def discover_client(request: CliDiscoveryRequest) -> tuple[str, ...]:
         with path.open("rb") as stream:
             if path.suffix.lower() == ".exe" or stream.read(2) == b"MZ":
                 return ()
-    return (str(path), "run")
+    return (str(path),)
 
 
 def default_route_host() -> str | None:

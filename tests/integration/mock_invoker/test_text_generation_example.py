@@ -27,7 +27,8 @@ def test_bundled_text_example_renders_and_hands_off_content(tmp_path):
         version=SCHEMA_VERSION,
         agents={
             "local": {
-                "cli_cmd": ["ollama", "run"],
+                "cli_cmd": ["ollama-agent"],
+                "invocation_timeout_seconds": 900,
                 "provider_kind": "ollama",
                 "default_model": "provisioned-text-model",
                 "prompt_transport": "stdin",

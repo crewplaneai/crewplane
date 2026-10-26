@@ -183,7 +183,17 @@ def print_ollama_setup_link(console: Console) -> None:
         "Install crewplane-ollama in the Python environment running Crewplane."
     )
     print_provider_setup_link(
-        console, "Ollama installation:", "local-ollama-text-generation"
+        console, "Ollama installation:", "local-ollama-tool-enabled-execution"
+    )
+
+
+def print_ollama_command_warning(console: Console, endpoint: str) -> None:
+    console.print(f"Inference endpoint: {endpoint}", markup=False)
+    console.print(
+        "Ollama workflow commands run on the Crewplane host with your user permissions. "
+        "They can access reachable files, credentials, and networks; repository and "
+        "tool context is sent to this server. Worktrees, template allowlists, and argv "
+        "are not sandboxes. Use external isolation when required."
     )
 
 
@@ -246,10 +256,10 @@ def print_file_preparation_confirmation(console: Console, provider: str) -> None
     console.print("")
     if "local" in provider.split(", "):
         console.print(
-            "Ollama readiness will run 'ollama show' and a short 'Reply with OK only.' inference prompt after saving. This may load the model and use your GPU."
+            "Ollama readiness will check the selected model and send 'Reply with OK only.' without tools after saving. This may load the model and use your GPU."
         )
         console.print(
-            "Ollama provides text generation from supplied content, without file or tool access."
+            "Workflow execution can run model-selected commands; the readiness check never executes tools."
         )
     else:
         console.print(
@@ -424,6 +434,7 @@ __all__ = [
     "provider_display_name",
     "print_provider_diagnostic",
     "print_ollama_choices",
+    "print_ollama_command_warning",
     "print_ollama_setup_link",
     "print_ollama_unconfigured",
     "print_recovery_confirmation",

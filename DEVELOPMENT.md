@@ -453,8 +453,12 @@ under `plugins/`, register their exports through
 requirements above.
 
 `make check` includes plugin sources. With package-index access, run
-`make ollama-package-check` to verify the core and Ollama distributions in an
-isolated environment. For changes to the Ollama integration, also verify
+`make ollama-package-check` to install the core and Ollama wheel and source
+archives into separate isolated environments. The check launches the installed
+agent outside the checkout against a scripted local HTTP server, verifies a real
+command exchange without the original Ollama CLI, and checks external-consumer
+typing. It requires access to the package index for build/install dependencies.
+For changes to the Ollama integration, also verify
 readiness, output handoff, failure handling, and cancellation with a live model
 on Linux and macOS.
 

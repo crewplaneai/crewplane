@@ -121,7 +121,7 @@ settings use dotted paths in the left column.
 | `quota_retry_max_wait_seconds` | Optional limit on the total seconds spent waiting for quota resets during one invocation. Retries stop before the next wait would reach this limit. |
 | `quota_retry_max_attempts` | Optional limit on quota retries during one invocation, separate from `max_retries`. |
 | `invocation_timeout_seconds` | Maximum running time in seconds for each provider command. Defaults to `null` (no fixed time limit). |
-| `invocation_idle_timeout_seconds` | Seconds a provider command may go without output before it is stopped. Defaults to `1800.0`. Disabled for Gemini's JSON mode and Pi's text mode; use `invocation_timeout_seconds` to limit their running time. |
+| `invocation_idle_timeout_seconds` | Seconds a provider command may go without output before it is stopped. Defaults to `1800.0`. Disabled for Gemini's JSON mode, Pi's text mode, and the Ollama agent; use `invocation_timeout_seconds` to limit their running time. |
 | `pricing` | Optional token pricing buckets. |
 
 For `provider_kind: pi`, use `prompt_transport: stdin` and omit
@@ -293,15 +293,10 @@ credential, approval, and sandbox settings. Crewplane coordinates them and
 records artifacts; it does not sandbox them.
 
 The generated config includes a commented `local` agent and an Ollama plugin
-registration. Enable both after installing `crewplane-ollama` in Crewplane's
-Python environment. The agent uses `cli_cmd: [ollama, run]`,
-`provider_kind: ollama`, a nonblank `default_model` (or workflow `model`), and
-`prompt_transport: stdin`. Omit `prompt_transport_arg`, `model_arg`, and workflow
-`reasoning`. Register `crewplane_ollama:OLLAMA` from distribution
-`crewplane-ollama` under `options.providers.ollama`. Follow
-[local Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
-to install the package and provision the server/model. `model_arg` is ignored
-for external capabilities as it is for other non-generic providers.
+registration. The included plugin uses `cli_cmd: [ollama-agent]`,
+`provider_kind: ollama`, `prompt_transport: stdin`, and `extra_args: []`. It requires
+a model. Follow the [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md)
+for the complete configuration and migration from older `ollama run` profiles.
 
 ### `mock` invoker
 

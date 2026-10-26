@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, Field, FiniteFloat
 
 from .discovery_http import discovery_client, read_json
+from .models import is_local_tool_model
 
 MAX_MODELS = 128
 
@@ -89,7 +90,7 @@ async def query_models(task: DiscoveryTask, report_path: Path) -> DiscoveryRepor
                 except ValueError as exc:
                     diagnostics.append(f"Skipped {name}: {exc}")
                 else:
-                    if is_local_text_model(details):
+                    if is_local_tool_model(details):
                         models.append(name)
                 write_report(
                     DiscoveryReport(
@@ -103,7 +104,7 @@ async def query_models(task: DiscoveryTask, report_path: Path) -> DiscoveryRepor
         )
     if not models and not diagnostics:
         diagnostics.append(
-            "No installed local text-generation models found. Download a text model on the selected server with 'ollama pull <model>', then rerun onboarding. Embedding-only and cloud models are excluded."
+            "No installed local tool-capable completion models found. Install an eligible model on the selected server with 'ollama pull <model>', then rerun onboarding. Models without completion and tools capabilities, and cloud-backed models, are excluded."
         )
     return DiscoveryReport(values=tuple(models), diagnostics=tuple(diagnostics))
 
@@ -123,16 +124,6 @@ def model_names(data: dict[str, object]) -> tuple[str, ...]:
             raise ValueError("Ollama model list contains an invalid name")
         names.add(name)
     return tuple(sorted(names))
-
-
-def is_local_text_model(details: dict[str, object]) -> bool:
-    capabilities = details.get("capabilities")
-    return (
-        isinstance(capabilities, list)
-        and "completion" in capabilities
-        and not details.get("remote_model")
-        and not details.get("remote_host")
-    )
 
 
 def write_report(report: DiscoveryReport, destination: Path) -> None:

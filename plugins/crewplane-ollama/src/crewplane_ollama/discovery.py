@@ -33,13 +33,9 @@ async def discover(request: CliDiscoveryRequest) -> CliProviderDiscovery:
         )
     if not command:
         diagnostics.append(
-            "Ollama client not found. Install the Ollama CLI in the OS running Crewplane, then rerun onboarding."
+            "ollama-agent not found. Install crewplane-ollama in Crewplane's Python environment, then rerun onboarding."
         )
     if running_in_wsl(request):
-        if request.executable_lookup("ollama.exe"):
-            diagnostics.append(
-                "Windows Ollama installation detected. Use a Linux Ollama client in WSL to connect to its server; Windows executables are not launched from WSL."
-            )
         diagnostics.append(
             "WSL checks loopback and the default-route Windows host unless OLLAMA_HOST is set. For Windows NAT access, configure Ollama's listen address and Windows firewall on the host; Crewplane does not change them."
         )

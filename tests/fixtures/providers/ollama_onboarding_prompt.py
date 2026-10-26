@@ -29,7 +29,7 @@ def main():
             input_is_terminal=True,
             output_is_terminal=True,
             read_input=read_input,
-            which_fn={"ollama": executable}.get,
+            which_fn={"ollama-agent": executable}.get,
         )
 
     async def query(task, project_root):

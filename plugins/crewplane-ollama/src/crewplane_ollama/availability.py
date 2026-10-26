@@ -14,14 +14,11 @@ from crewplane.adapters.invokers.cli_invoker import (
 from crewplane.architecture.contracts import ChildProcessEnvironment, CommandResult
 
 from .command import (
-    build_command,
     cleanup_temporary_captures,
     resolve_request_executable,
     validate_request,
 )
-
-PROBE_TIMEOUT_SECONDS = 60.0
-DIAGNOSTIC_PROMPT = "Reply with OK only."
+from .settings import load_settings
 
 
 async def check_availability(request: CliInvocationRequest) -> None:
@@ -34,23 +31,17 @@ async def check_availability(request: CliInvocationRequest) -> None:
             f"Ollama provider '{request.config.provider_kind}', model {request.model!r}, executable resolution failed: {str(exc)[:1000]}"
         ) from exc
     assert resolved.model is not None
-    phase = "model lookup"
-    timeout_seconds = request.config.invocation_timeout_seconds
-    if timeout_seconds is None:
-        timeout_seconds = PROBE_TIMEOUT_SECONDS
+    settings = load_settings(request.working_directory or Path.cwd())
+    timeout_seconds = settings.readiness_timeout_seconds
     deadline = asyncio.timeout(timeout_seconds)
     try:
         async with deadline:
             await _probe_command(
                 resolved,
-                CliCommand([resolved.config.cli_cmd[0], "show", resolved.model], None),
-                require_answer=False,
-            )
-            phase = "inference"
-            await _probe_command(
-                resolved,
-                build_command(resolved, DIAGNOSTIC_PROMPT),
-                require_answer=True,
+                CliCommand(
+                    [resolved.config.cli_cmd[0], "--check", "--model", resolved.model],
+                    None,
+                ),
             )
     except (RuntimeError, TimeoutError) as exc:
         if unconfirmed_process_cleanup(exc) is not None:
@@ -58,18 +49,16 @@ async def check_availability(request: CliInvocationRequest) -> None:
         if isinstance(exc, TimeoutError) and not deadline.expired():
             raise
         detail = (
-            f"deadline exceeded ({timeout_seconds:g}s)"
+            f"deadline exceeded (readiness_timeout_seconds={timeout_seconds:g}s)"
             if isinstance(exc, TimeoutError)
             else str(exc)
         )
         raise ValueError(
-            f"Ollama provider '{request.config.provider_kind}', model {request.model!r}, {phase} failed: {detail[:1000]}"
+            f"Ollama provider '{request.config.provider_kind}', model {request.model!r}, readiness failed: {detail[:1000]}"
         ) from exc
 
 
-async def _probe_command(
-    request: CliInvocationRequest, command: CliCommand, require_answer: bool
-) -> None:
+async def _probe_command(request: CliInvocationRequest, command: CliCommand) -> None:
     result = await run_command_once(
         cmd=command.cmd,
         stdin_data=command.stdin_data,
@@ -89,11 +78,7 @@ async def _probe_command(
             raise RuntimeError(
                 f"exit {result.returncode}: {_diagnostic_detail(result)}"
             )
-        if (
-            require_answer
-            and extract_strict_stdout(result, None).output_extraction_status
-            != "success"
-        ):
+        if extract_strict_stdout(result, None).output_extraction_status != "success":
             raise RuntimeError(
                 f"no nonblank stdout answer: {_diagnostic_detail(result)}"
             )

@@ -23,7 +23,7 @@ uses the generated mock config and produces a report and findings.
 - [Test generation](../../src/crewplane/example_templates/example-templates/test-generation-example.task.md)
 - [Refactoring](../../src/crewplane/example_templates/example-templates/refactoring-example.task.md)
 - [Design review](../../src/crewplane/example_templates/example-templates/design-review-example.task.md)
-- [Local text generation](../../src/crewplane/example_templates/example-templates/text-generation-example.task.md) uses the [Ollama `local` profile](../getting-started/provider-setup.md#local-ollama-text-generation) and injects file and upstream answer contents.
+- [Local text generation](../../src/crewplane/example_templates/example-templates/text-generation-example.task.md) uses the [Ollama `local` profile](../getting-started/provider-setup.md#local-ollama-tool-enabled-execution) and injects file and upstream answer contents.
 
 Enable the profiles named by your chosen workflow using
 [Provider setup](../getting-started/provider-setup.md#turn-mock-mode-onoff).

@@ -17,10 +17,12 @@ from crewplane.adapters.invokers.cli_invoker import (
     CliDiscoveredEndpoint,
     CliDiscoveredModels,
     CliDiscoveryRequest,
+    CliInvocationRequest,
+    CliProviderCapability,
     CliProviderDiscovery,
-    CliProviderOnboarding,
     unconfirmed_process_cleanup,
 )
+from crewplane.adapters.invokers.cli_invoker.command_strategy import command_strategy
 from crewplane.adapters.invokers.cli_invoker.provider_registrations import (
     canonicalize_provider_options,
     verify_provider_options,
@@ -29,8 +31,6 @@ from crewplane.core.config import AgentConfig
 
 from . import messages
 from .plugin_profile import ollama_provider_options
-
-_LOCAL_AGENT_INVOCATION_TIMEOUT_SECONDS = 900
 
 
 class LocalSetupFailure(StrEnum):
@@ -50,8 +50,9 @@ def prepare_local_agent(
 
     Callbacks run sequentially in separate event loops, each closed before
     diagnostics and prompts. Existing agents skip model discovery and are
-    copied with only the executable and environment updated. Command arguments
-    and other settings are preserved; endpoint environment values take precedence.
+    copied with only the complete command and environment updated. Incompatible
+    legacy profiles are rejected; all other settings are preserved. Endpoint
+    environment values take precedence.
 
     ValueError and OSError produce a diagnostic and UNAVAILABLE unless they
     carry unconfirmed cleanup evidence, in which case they propagate. All other
@@ -61,21 +62,33 @@ def prepare_local_agent(
         A prepared agent, CANCELLED for a cancelled selection, or UNAVAILABLE
         for missing discovery results or a reported ValueError/OSError.
     """
-    console.print("Inspecting Ollama clients and servers (read-only checks)...")
+    console.print("Inspecting the Ollama agent and servers (read-only checks)...")
     try:
-        onboarding = _load_ollama_onboarding()
+        capability = _load_ollama_capability()
+        if existing is not None:
+            _validate_agent(capability, existing, request)
+        onboarding = capability.onboarding
+        assert onboarding is not None
         discovery = run_discovery_callback(partial(onboarding.discover, request))
         endpoint = _select_endpoint(discovery, console, prompt)
         if isinstance(endpoint, LocalSetupFailure):
             return endpoint
+        result: AgentConfig | LocalSetupFailure
         if existing is not None:
-            return _refresh_local_agent(existing, discovery.command[0], endpoint)
-        available = run_discovery_callback(
-            partial(onboarding.list_models, request, endpoint)
-        )
-        return _create_local_agent(
-            discovery.command, endpoint, available, console, prompt
-        )
+            result = _refresh_local_agent(existing, discovery.command, endpoint)
+        else:
+            available = run_discovery_callback(
+                partial(onboarding.list_models, request, endpoint)
+            )
+            result = _create_local_agent(
+                discovery.command, endpoint, available, console, prompt
+            )
+        if isinstance(result, AgentConfig):
+            _validate_agent(capability, result, request)
+            messages.print_ollama_command_warning(
+                console, endpoint.environment["OLLAMA_HOST"]
+            )
+        return result
     except (ValueError, OSError) as exc:
         if unconfirmed_process_cleanup(exc) is not None:
             raise
@@ -83,16 +96,33 @@ def prepare_local_agent(
         return LocalSetupFailure.UNAVAILABLE
 
 
-def _load_ollama_onboarding() -> CliProviderOnboarding:
+def _load_ollama_capability() -> CliProviderCapability:
     providers = verify_provider_options(
         canonicalize_provider_options(ollama_provider_options())
     )
-    onboarding = providers["ollama"].onboarding
-    if onboarding is None:
+    capability = providers["ollama"]
+    if capability.onboarding is None:
         raise ValueError(
             "Installed crewplane-ollama lacks onboarding support; upgrade it in Crewplane's Python environment."
         )
-    return onboarding
+    return capability
+
+
+def _validate_agent(
+    capability: CliProviderCapability, agent: AgentConfig, request: CliDiscoveryRequest
+) -> None:
+    # Connection editing does not load workflows, which may supply the effective model.
+    capability.validate_request(
+        CliInvocationRequest(
+            agent,
+            agent.default_model
+            if agent.default_model is not None
+            else "workflow-model",
+            command_strategy=command_strategy(),
+            working_directory=request.project_root,
+            environment=request.environment,
+        )
+    )
 
 
 def _select_endpoint(
@@ -102,7 +132,7 @@ def _select_endpoint(
         messages.print_provider_diagnostic(console, "local", diagnostic)
     if not discovery.command or not discovery.endpoints:
         return LocalSetupFailure.UNAVAILABLE
-    console.print(f"Ollama client: {discovery.command[0]}", markup=False)
+    console.print(f"Ollama agent: {discovery.command[0]}", markup=False)
     index = select_item(
         "Ollama server",
         tuple(endpoint.label for endpoint in discovery.endpoints),
@@ -117,11 +147,11 @@ def _select_endpoint(
 
 
 def _refresh_local_agent(
-    existing: AgentConfig, executable: str, endpoint: CliDiscoveredEndpoint
+    existing: AgentConfig, command: tuple[str, ...], endpoint: CliDiscoveredEndpoint
 ) -> AgentConfig:
     return existing.model_copy(
         update={
-            "cli_cmd": [executable, *existing.cli_cmd[1:]],
+            "cli_cmd": list(command),
             "environment": {**existing.environment, **endpoint.environment},
         }
     )
@@ -138,7 +168,9 @@ def _create_local_agent(
         messages.print_provider_diagnostic(console, "local", diagnostic)
     if not available.models:
         return LocalSetupFailure.UNAVAILABLE
-    index = select_item("installed local text model", available.models, console, prompt)
+    index = select_item(
+        "installed local tool-capable model", available.models, console, prompt
+    )
     if index is None:
         return LocalSetupFailure.CANCELLED
     return AgentConfig(
@@ -146,7 +178,8 @@ def _create_local_agent(
         provider_kind="ollama",
         default_model=available.models[index],
         environment=dict(endpoint.environment),
-        invocation_timeout_seconds=_LOCAL_AGENT_INVOCATION_TIMEOUT_SECONDS,
+        invocation_timeout_seconds=None,
+        invocation_idle_timeout_seconds=None,
     )
 
 

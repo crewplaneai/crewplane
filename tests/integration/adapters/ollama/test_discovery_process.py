@@ -23,6 +23,20 @@ from tests.helpers.cli_provider import OLLAMA_PACKAGE, wait_for_receipt
 from tests.helpers.platforms import requires_posix
 
 
+async def read_request(reader):
+    header = await reader.readuntil(b"\r\n\r\n")
+    length = next(
+        (
+            int(line.split(b":", 1)[1])
+            for line in header.split(b"\r\n")
+            if line.lower().startswith(b"content-length:")
+        ),
+        0,
+    )
+    body = await reader.readexactly(length)
+    return header, body
+
+
 @pytest.fixture
 def discovery_process(ollama_package, tmp_path, monkeypatch):
     del ollama_package
@@ -52,7 +66,7 @@ def test_discovery_worker_ignores_project_modules(
 
         async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
             try:
-                header = await reader.readuntil(b"\r\n\r\n")
+                header, _ = await read_request(reader)
                 requests.append(header.split(b" ")[1])
                 body = b'{"version":"test"}'
                 writer.write(
@@ -103,7 +117,7 @@ def test_stalled_dns_worker_is_reaped_before_returning(
     monkeypatch.setattr(module, "run_command_once", instrumented_command)
     endpoint = "http://slow-resolver.invalid:11434"
     request = CliDiscoveryRequest(
-        tmp_path, {"OLLAMA_HOST": endpoint}, {}.get, 60 if cancel else 3
+        tmp_path, {"OLLAMA_HOST": endpoint}, {}.get, 60 if cancel else 10
     )
 
     async def run():
@@ -125,7 +139,7 @@ def test_stalled_dns_worker_is_reaped_before_returning(
             else:
                 result = await task
                 diagnostic = " ".join(result.diagnostics)
-                assert "timed out after 3s" in diagnostic
+                assert "timed out after 10s" in diagnostic
                 assert "--discovery-timeout" in diagnostic
                 assert "No installed" not in diagnostic
             with pytest.raises(ProcessLookupError):
@@ -136,7 +150,7 @@ def test_stalled_dns_worker_is_reaped_before_returning(
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    asyncio.run(asyncio.wait_for(run(), 12))
+    asyncio.run(asyncio.wait_for(run(), 20))
 
 
 def test_real_worker_handles_slow_http_with_requested_budget(
@@ -152,7 +166,7 @@ def test_real_worker_handles_slow_http_with_requested_budget(
             connection = asyncio.current_task()
             connections.add(connection)
             try:
-                header = await reader.readuntil(b"\r\n\r\n")
+                header, _ = await read_request(reader)
                 path = header.split(b" ")[1].decode()
                 paths.append(path)
                 if path == "/api/version":
@@ -162,7 +176,7 @@ def test_real_worker_handles_slow_http_with_requested_budget(
                 elif path == "/api/tags":
                     data = {"models": [{"name": "local-text"}]}
                 else:
-                    data = {"capabilities": ["completion"]}
+                    data = {"capabilities": ["completion", "tools"]}
                 body = json.dumps(data).encode()
                 writer.write(
                     f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
@@ -185,7 +199,7 @@ def test_real_worker_handles_slow_http_with_requested_budget(
                 result = await module.discover(request)
                 assert [item.label for item in result.endpoints] == [endpoint]
                 models = await module.list_models(request, result.endpoints[0])
-                assert models.models == ("local-text",)
+                assert models.models == ("local-text",), models.diagnostics
                 assert models.diagnostics == ()
         finally:
             for connection in connections:
@@ -356,17 +370,12 @@ def test_deadline_preserves_completed_discovery_results(
             connection = asyncio.current_task()
             connections.add(connection)
             try:
-                header = await reader.readuntil(b"\r\n\r\n")
+                header, request_body = await read_request(reader)
                 path = header.split(b" ")[1]
                 if path == b"/api/show":
-                    length = next(
-                        int(line.split(b":")[1])
-                        for line in header.lower().split(b"\r\n")
-                        if line.startswith(b"content-length:")
-                    )
-                    payload = json.loads(await reader.readexactly(length))
+                    payload = json.loads(request_body)
                     should_stall = payload["model"] == "b"
-                    data = {"capabilities": ["completion"]}
+                    data = {"capabilities": ["completion", "tools"]}
                 else:
                     should_stall = (
                         operation == "endpoints" and b"Host: 127.0.0.1" in header
@@ -402,7 +411,7 @@ def test_deadline_preserves_completed_discovery_results(
                     return candidates
 
                 monkeypatch.setattr(module, "endpoint_candidates", endpoint_candidates)
-                request = CliDiscoveryRequest(tmp_path, {}, {}.get, 3)
+                request = CliDiscoveryRequest(tmp_path, {}, {}.get, 10)
                 if operation == "endpoints":
                     task = asyncio.create_task(module.discover(request))
                 else:
@@ -412,7 +421,7 @@ def test_deadline_preserves_completed_discovery_results(
                             CliDiscoveredEndpoint(endpoint, {"OLLAMA_HOST": endpoint}),
                         )
                     )
-                await asyncio.wait_for(stalled.wait(), 5)
+                await asyncio.wait_for(stalled.wait(), 10)
                 result = await task
                 assert "timed out" in " ".join(result.diagnostics)
                 if operation == "endpoints":
@@ -427,5 +436,5 @@ def test_deadline_preserves_completed_discovery_results(
                 connection.cancel()
             await asyncio.gather(*connections, return_exceptions=True)
 
-    asyncio.run(asyncio.wait_for(run(), 12))
+    asyncio.run(asyncio.wait_for(run(), 20))
     assert not list(captures.iterdir())

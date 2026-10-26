@@ -79,8 +79,9 @@ object is not a valid capability with a matching `provider_kind`. Changing a
 registration or installed package version can prevent reuse of saved results,
 even when the workflow does not use that plugin.
 
-See [Ollama setup](../getting-started/provider-setup.md#local-ollama-text-generation)
-for a complete installation and configuration example.
+See the [Ollama plugin setup](../../plugins/crewplane-ollama/docs/setup.md)
+for a complete configuration example and the [plugin reference](../../plugins/crewplane-ollama/docs/reference.md)
+for its execution contract.
 
 ### Authoring a CLI capability
 
