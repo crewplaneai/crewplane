@@ -22,12 +22,15 @@ from tests.helpers.cli_provider import command_receipts, wait_for_receipt
 from tests.helpers.platforms import requires_posix
 
 
-def request_for(ollama, root, timeout=60):
+def request_for(ollama, root, readiness_timeout=None):
+    if readiness_timeout is not None:
+        settings_path = root / ".crewplane" / "ollama.yml"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(f"readiness_timeout_seconds: {readiness_timeout}\n")
     return CliInvocationRequest(
         AgentConfig(
             cli_cmd=[str(ollama.executable)],
             provider_kind="ollama",
-            invocation_timeout_seconds=timeout,
         ),
         "effective-model",
         command_strategy=command_strategy(),

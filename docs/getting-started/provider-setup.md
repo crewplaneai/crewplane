@@ -204,8 +204,8 @@ Onboarding saves the executable, model, and server connection.
 > template restrictions are not sandboxes.
 
 For manual setup, use `cli_cmd: [ollama-agent]`, `provider_kind: ollama`,
-`prompt_transport: stdin`, empty `extra_args`, and a finite positive invocation
-timeout. The [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md#manual-configuration)
+`prompt_transport: stdin`, and empty `extra_args`.
+The [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md#manual-configuration)
 provides the complete profile and required registration. Use `providers: [local]`
 on workflow nodes; a workflow `model` overrides the profile's default.
 

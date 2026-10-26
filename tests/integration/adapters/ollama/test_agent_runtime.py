@@ -25,7 +25,10 @@ pytestmark = pytest.mark.usefixtures("ollama_package")
 
 @pytest.mark.race
 @pytest.mark.parametrize("stop", ["cancel", "timeout"])
-def test_real_agent_http_wait_cancellation_has_no_published_output(tmp_path, stop):
+@pytest.mark.parametrize("invocation_timeout", [None, 30])
+def test_real_agent_http_wait_cancellation_has_no_published_output(
+    tmp_path, stop, invocation_timeout
+):
     started, release = Event(), Event()
 
     def handler(path, payload):
@@ -38,6 +41,7 @@ def test_real_agent_http_wait_cancellation_has_no_published_output(tmp_path, sto
 
     with ollama_server(handler) as endpoint:
         agent, _, invoker = configured_agent(tmp_path, endpoint)
+        agent.invocation_timeout_seconds = invocation_timeout
         output = tmp_path / "answer.md"
 
         async def run():
@@ -61,6 +65,28 @@ def test_real_agent_http_wait_cancellation_has_no_published_output(tmp_path, sto
                 await asyncio.gather(task, return_exceptions=True)
 
         asyncio.run(run())
+
+
+@pytest.mark.parametrize("invocation_timeout", [None, 21600])
+def test_real_agent_completes_with_independent_timeouts(tmp_path, invocation_timeout):
+    script = ScriptedOllama([final_response("Completed local task.")])
+    with ollama_server(script) as endpoint:
+        agent, _, invoker = configured_agent(tmp_path, endpoint)
+        agent.invocation_timeout_seconds = invocation_timeout
+        settings_path = tmp_path / ".crewplane" / "ollama.yml"
+        settings_path.parent.mkdir(exist_ok=True)
+        settings_path.write_text("readiness_timeout_seconds: 0.001\n")
+        output = tmp_path / "answer.md"
+
+        async def run():
+            await asyncio.wait_for(
+                invoker.invoke(agent, "test-model", "local task", output, tmp_path),
+                10,
+            )
+
+        asyncio.run(run())
+    assert output.read_text() == "Completed local task."
+    assert len(script.requests) == 1
 
 
 def test_project_root_retry_retains_edits_but_not_conversation(tmp_path):

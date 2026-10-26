@@ -18,6 +18,7 @@ from .command import (
     resolve_request_executable,
     validate_request,
 )
+from .settings import load_settings
 
 
 async def check_availability(request: CliInvocationRequest) -> None:
@@ -30,8 +31,8 @@ async def check_availability(request: CliInvocationRequest) -> None:
             f"Ollama provider '{request.config.provider_kind}', model {request.model!r}, executable resolution failed: {str(exc)[:1000]}"
         ) from exc
     assert resolved.model is not None
-    timeout_seconds = request.config.invocation_timeout_seconds
-    assert timeout_seconds is not None
+    settings = load_settings(request.working_directory or Path.cwd())
+    timeout_seconds = settings.readiness_timeout_seconds
     deadline = asyncio.timeout(timeout_seconds)
     try:
         async with deadline:
@@ -48,7 +49,7 @@ async def check_availability(request: CliInvocationRequest) -> None:
         if isinstance(exc, TimeoutError) and not deadline.expired():
             raise
         detail = (
-            f"deadline exceeded ({timeout_seconds:g}s)"
+            f"deadline exceeded (readiness_timeout_seconds={timeout_seconds:g}s)"
             if isinstance(exc, TimeoutError)
             else str(exc)
         )

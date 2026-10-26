@@ -584,7 +584,7 @@ def test_new_profile_discloses_host_authority_and_endpoint_before_write(
     )
     assert len(writes) == 2
     agent = load_config(tmp_path / ".crewplane/config.yml").agents["local"]
-    assert agent.invocation_timeout_seconds == 900
+    assert agent.invocation_timeout_seconds is None
     assert agent.invocation_idle_timeout_seconds is None
     assert agent.extra_args == []
     assert agent.max_retries == 0

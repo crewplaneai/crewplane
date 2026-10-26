@@ -61,7 +61,7 @@ agents:
     environment:
       OLLAMA_HOST: "http://127.0.0.1:11434"
     extra_args: []
-    invocation_timeout_seconds: 900
+    invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: null
     max_retries: 0
 settings:
@@ -81,10 +81,30 @@ contain this commented profile and registration but stay mock-only until you
 enable a provider. `crewplane init` preserves existing files.
 
 Use `providers: [local]` on workflow nodes. A workflow `model` overrides the agent
-default. Keep the command, prompt, and timeout settings shown above; omit
-`prompt_transport_arg` and workflow `reasoning`. Increase the invocation timeout
-for slower hardware or model loading. Keep `max_retries: 0` unless repeating
-command effects is acceptable; see the [retry and cancellation behavior](reference.md#execution-lifecycle).
+default. Keep the command and prompt settings shown above; omit
+`prompt_transport_arg` and workflow `reasoning`. Leave `invocation_timeout_seconds`
+as `null` for unlimited runtime; see [agent configuration](../../../docs/reference/configuration.md#agentsname)
+for execution timeout options. Keep `max_retries: 0` unless repeating command
+effects is acceptable; see the [retry and cancellation behavior](reference.md#execution-lifecycle).
+
+### Readiness timeout
+
+Configure the plugin's readiness deadline in `.crewplane/ollama.yml` at the
+project root:
+
+```yaml
+readiness_timeout_seconds: 900
+```
+
+This file is optional. The plugin defaults to 900 seconds when the file or key
+is omitted. The value must be finite and greater than zero; `null`, unknown keys,
+and malformed settings are rejected before a probe starts.
+
+This setting applies to Ollama readiness checks during validation and normal-run
+preflight. It is independent of task execution and does not invalidate completed
+results. Existing profiles that increased `invocation_timeout_seconds` to extend
+readiness checks must set this plugin option instead. Keep it out of
+`.crewplane/config.yml`; it is not a shared agent setting.
 
 ### Upgrade from plugin 0.1
 
@@ -94,9 +114,8 @@ reviewing the privileges above, update the existing profile:
 
 - Replace `cli_cmd` with the single `ollama-agent` executable or its
   absolute path, and clear `extra_args` to `[]`.
-- Use `prompt_transport: stdin`, remove `prompt_transport_arg`, set a finite
-  positive `invocation_timeout_seconds`, and set `invocation_idle_timeout_seconds`
-  to `null`.
+- Use `prompt_transport: stdin`, remove `prompt_transport_arg`, and set
+  `invocation_idle_timeout_seconds` to `null`.
 - Choose an installed local tool-capable model and save its server explicitly
   in `environment.OLLAMA_HOST`. Keep the plugin registration shown above and
   remove any workflow `reasoning` setting for this provider.

@@ -8,6 +8,8 @@ All notable user-facing changes are recorded here.
 
 - **Breaking:** The included Ollama plugin now supports command execution; existing
   profiles require [migration to `ollama-agent`](plugins/crewplane-ollama/docs/setup.md#upgrade-from-plugin-01).
+- Ollama readiness checks have a separate timeout, and task execution can run
+  without a time limit.
 
 ### Fixed
 

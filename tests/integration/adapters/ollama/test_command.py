@@ -161,9 +161,7 @@ def test_runtime_transport_output_and_retries(
     assert not list(ollama.receipts.glob("check-*"))
 
 
-@pytest.mark.parametrize(
-    "timeout", [None, 0, -1, float("inf"), float("-inf"), float("nan")]
-)
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("-inf"), float("nan")])
 def test_invalid_invocation_deadlines_are_rejected_without_probe(ollama, timeout):
     request = request_for(ollama)
     request = replace(
@@ -174,6 +172,23 @@ def test_invalid_invocation_deadlines_are_rejected_without_probe(ollama, timeout
     )
     with pytest.raises(ValueError, match="finite positive invocation_timeout_seconds"):
         ollama.capability.validate_request(request)
+    assert not list(ollama.receipts.iterdir())
+
+
+@pytest.mark.parametrize(
+    "timeout_fields",
+    [{}, {"invocation_timeout_seconds": None}, {"invocation_timeout_seconds": 21600}],
+)
+def test_optional_or_multi_hour_invocation_deadline_is_valid(ollama, timeout_fields):
+    request = replace(
+        request_for(ollama),
+        config=AgentConfig(
+            cli_cmd=[str(ollama.executable)],
+            provider_kind="ollama",
+            **timeout_fields,
+        ),
+    )
+    ollama.capability.validate_request(request)
     assert not list(ollama.receipts.iterdir())
 
 

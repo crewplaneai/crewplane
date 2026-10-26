@@ -49,9 +49,10 @@ def validate_request(request: CliInvocationRequest) -> None:
             + guidance
         )
     timeout = config.invocation_timeout_seconds
-    if timeout is None or not math.isfinite(timeout) or timeout <= 0:
+    if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
         raise ValueError(
-            "Ollama requires a finite positive invocation_timeout_seconds. " + guidance
+            "Ollama requires a finite positive invocation_timeout_seconds or null. "
+            + guidance
         )
 
 

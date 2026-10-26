@@ -32,8 +32,6 @@ from crewplane.core.config import AgentConfig
 from . import messages
 from .plugin_profile import ollama_provider_options
 
-_LOCAL_AGENT_INVOCATION_TIMEOUT_SECONDS = 900
-
 
 class LocalSetupFailure(StrEnum):
     """Non-success results: unavailable setup or a selection cancelled with 0."""
@@ -180,7 +178,7 @@ def _create_local_agent(
         provider_kind="ollama",
         default_model=available.models[index],
         environment=dict(endpoint.environment),
-        invocation_timeout_seconds=_LOCAL_AGENT_INVOCATION_TIMEOUT_SECONDS,
+        invocation_timeout_seconds=None,
         invocation_idle_timeout_seconds=None,
     )
 

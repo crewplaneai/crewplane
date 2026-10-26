@@ -13,8 +13,8 @@ ollama-agent --check --model MODEL
 Crewplane manages the flags and sends the UTF-8 prompt on stdin. `cli_cmd` must
 contain one executable, `extra_args` must be empty, and the model must be nonblank
 and not start with `-`. Omit `prompt_transport_arg` and workflow `reasoning`.
-A finite positive `invocation_timeout_seconds` is required. Output-idle timeout
-is disabled because non-streamed inference can remain quiet until completion.
+Output-idle timeout is disabled because non-streamed inference can remain quiet
+until completion.
 
 Only a complete, nonblank final answer goes to stdout. Command and protocol
 diagnostics go to stderr; thinking and tool results are not emitted as answers.
@@ -39,6 +39,10 @@ Execution rechecks eligibility before sending the repository prompt. `--check`
 verifies eligibility and requests a short reply without tools; tool calls or an
 abnormal or blank reply fail the check. See [validation](../../../docs/reference/commands.md#crewplane-validate)
 for when Crewplane performs provider checks.
+
+Crewplane bounds the check using the plugin's
+[`readiness_timeout_seconds`](setup.md#readiness-timeout) setting.
+The task execution timeout does not affect this check.
 
 ## Command tool
 

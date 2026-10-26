@@ -122,6 +122,34 @@ def test_existing_project_saves_wsl_connection_without_changing_workflows(
     assert "Ollama connection saved" in stream.getvalue()
 
 
+def test_connection_preserves_independent_timeouts(
+    ollama, configured_project, tmp_path
+):
+    config_path, workflow, stream, console = configured_project
+    config = load_config(config_path)
+    config.agents["local"].invocation_timeout_seconds = None
+    settings_path = tmp_path / ".crewplane" / "ollama.yml"
+    settings_path.write_text("readiness_timeout_seconds: 120\n")
+    original_settings = settings_path.read_bytes()
+    config_path.write_text(
+        yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+    )
+    original_workflow = workflow.read_bytes()
+
+    configure_connection(
+        tmp_path,
+        console,
+        {"ollama-agent": str(ollama.executable)},
+        ["y", "1", "y"],
+    )
+
+    assert "Ollama connection saved" in stream.getvalue()
+    saved_agent = load_config(config_path).agents["local"]
+    assert saved_agent.invocation_timeout_seconds is None
+    assert settings_path.read_bytes() == original_settings
+    assert workflow.read_bytes() == original_workflow
+
+
 @pytest.mark.parametrize("command_kind", ["absolute", "relative", "agent-path"])
 def test_connection_uses_configured_executable_outside_terminal_path(
     ollama, configured_project, tmp_path, monkeypatch, command_kind
@@ -388,7 +416,6 @@ def test_connection_setup_does_not_replace_another_local_provider(
     [
         {"cli_cmd": ["ollama", "run", "--keepalive", "5m"]},
         {"extra_args": ["--verbose"]},
-        {"invocation_timeout_seconds": None},
         {"prompt_transport": "argv", "prompt_transport_arg": "--prompt"},
         {"prompt_transport_arg": "--prompt"},
     ],

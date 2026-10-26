@@ -230,6 +230,8 @@ def test_blackboard_handoff_dedupe_force_and_identity_changes(ollama, tmp_path):
     assert list(
         (tmp_path / ".crewplane/execution-results").glob("*/downstream-result.md")
     )
+    settings_path = tmp_path / ".crewplane" / "ollama.yml"
+    settings_path.write_text("readiness_timeout_seconds: 120\n")
     asyncio.run(run(config, source, tmp_path))
     assert len(execution_receipts(ollama)) == 2
     assert len(manifests(tmp_path)) == 1

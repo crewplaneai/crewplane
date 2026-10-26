@@ -295,8 +295,7 @@ records artifacts; it does not sandbox them.
 The generated config includes a commented `local` agent and an Ollama plugin
 registration. The included plugin uses `cli_cmd: [ollama-agent]`,
 `provider_kind: ollama`, `prompt_transport: stdin`, and `extra_args: []`. It requires
-a model and a finite positive `invocation_timeout_seconds`; output-idle timeout
-is disabled. Follow the [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md)
+a model. Follow the [plugin setup guide](../../plugins/crewplane-ollama/docs/setup.md)
 for the complete configuration and migration from older `ollama run` profiles.
 
 ### `mock` invoker

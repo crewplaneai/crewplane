@@ -131,7 +131,7 @@ def test_local_setup_preserves_selection_order_and_callback_lifetimes(
             provider_kind="ollama",
             default_model="second-model",
             environment=dict(endpoints[1].environment),
-            invocation_timeout_seconds=900,
+            invocation_timeout_seconds=None,
             invocation_idle_timeout_seconds=None,
         )
         assert len(loops) == 2
