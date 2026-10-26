@@ -1,5 +1,3 @@
-STATEMENT_COVERAGE_FLOOR ?= 96
-BRANCH_COVERAGE_FLOOR ?= 90
 PYTHON ?= python
 PYPI_REPOSITORY ?= pypi
 TWINE_UPLOAD_ARGS ?=
@@ -14,7 +12,7 @@ ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)
 $(error failed to derive package name from pyproject.toml)
 endif
 
-TEST_PROFILE ?= local
+TEST_PROFILE ?= $(shell $(PYTHON) scripts/validation_policy.py --get runner.default_profile)
 TEST_ARGS ?=
 COVERAGE_REPORT ?=
 TEST_EXTRAS = --extra dev $(if $(filter pr-313 nightly-shuffle,$(TEST_PROFILE)),--extra stress,)
@@ -27,6 +25,8 @@ PLUGIN_SOURCES = $(wildcard plugins/*/src)
 OLLAMA_PACKAGE = plugins/crewplane-ollama
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
+RUN_PACKAGE = $(RUN_PYTHON) scripts/run_package_checks.py -- $(RUN_RELEASE)
+RUN_TESTS = $(RUN_PYTHON) scripts/run_tests.py --profile $(TEST_PROFILE) $(if $(STATEMENT_COVERAGE_FLOOR),--statement-floor $(STATEMENT_COVERAGE_FLOOR)) $(if $(BRANCH_COVERAGE_FLOOR),--branch-floor $(BRANCH_COVERAGE_FLOOR))
 
 .PHONY: help setup uninstall test coverage-check typecheck lint format format-check check actionlint \
 	dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
@@ -94,11 +94,11 @@ uninstall:
 	$(UNINSTALL_CMD)
 
 test:
-	$(RUN_PYTHON) scripts/run_tests.py --profile $(TEST_PROFILE) --statement-floor $(STATEMENT_COVERAGE_FLOOR) --branch-floor $(BRANCH_COVERAGE_FLOOR) $(TEST_ARGS)
+	$(RUN_TESTS) $(TEST_ARGS)
 
 coverage-check:
 	@test -n "$(COVERAGE_REPORT)" || (printf '%s\n' 'Set COVERAGE_REPORT to a test-results/<invocation>/coverage.json file.'; exit 1)
-	$(RUN_PYTHON) scripts/check_coverage.py "$(COVERAGE_REPORT)" --statements $(STATEMENT_COVERAGE_FLOOR) --branches $(BRANCH_COVERAGE_FLOOR)
+	$(RUN_PYTHON) scripts/check_coverage.py "$(COVERAGE_REPORT)" $(if $(STATEMENT_COVERAGE_FLOOR),--statements $(STATEMENT_COVERAGE_FLOOR)) $(if $(BRANCH_COVERAGE_FLOOR),--branches $(BRANCH_COVERAGE_FLOOR))
 
 # Keep the full production package and repository typecheck fixtures under
 # strict mypy coverage.
@@ -115,12 +115,12 @@ format:
 format-check:
 	$(RUN_RUFF) format --check src tests scripts $(PLUGIN_SOURCES)
 
-check: lint format-check typecheck uv-bootstrap-check test dots-host-check
+check: lint format-check typecheck uv-bootstrap-check
+	$(RUN_TESTS) --suite all $(TEST_ARGS)
 
 .PHONY: dots-host-check
 dots-host-check:
-	uv pip install --no-deps -e plugins/crewplane-dots-host
-	$(RUN_PYTHON) -m pytest plugins/crewplane-dots-host/tests -q
+	$(RUN_TESTS) --suite dots $(TEST_ARGS)
 
 actionlint:
 	scripts/actionlint.sh
@@ -135,56 +135,53 @@ uv-bootstrap-update:
 	$(RUN_PYTHON) scripts/update_uv_bootstrap.py update $(UV_BOOTSTRAP_VERSION)
 
 package-build:
-	$(RUN_RELEASE) package-build
+	$(RUN_PACKAGE) package-build
 
 ollama-package-build:
 	rm -rf $(OLLAMA_PACKAGE)/dist
-	$(RUN_PYTHON) -m build --outdir $(OLLAMA_PACKAGE)/dist $(OLLAMA_PACKAGE)
+	$(RUN_PYTHON) scripts/run_package_checks.py -- $(RUN_PYTHON) -m build --outdir $(OLLAMA_PACKAGE)/dist $(OLLAMA_PACKAGE)
 
-ollama-package-check: package-build
-	$(RUN_PYTHON) -m twine check dist/*
-	$(RUN_PYTHON) tests/helpers/check_cli_provider_packages.py \
-		--crewplane-wheel dist/crewplane-*.whl --ollama-wheel dist/crewplane_ollama-*.whl \
-		--crewplane-sdist dist/crewplane-*.tar.gz --ollama-sdist dist/crewplane_ollama-*.tar.gz
+ollama-package-check:
+	$(RUN_PYTHON) scripts/run_package_checks.py --profile plugins
 
 package-check:
-	$(RUN_RELEASE) package-check
+	$(RUN_PACKAGE) package-check
 
 package-wheelhouse:
-	$(RUN_RELEASE) package-wheelhouse
+	$(RUN_PACKAGE) package-wheelhouse
 
 wheel-typecheck:
-	$(RUN_PYTHON) scripts/check_wheel_consumer_types.py $$(find dist -maxdepth 1 -type f -name 'crewplane-*.whl' -print -quit)
+	$(RUN_PYTHON) scripts/run_package_checks.py -- $(RUN_PYTHON) scripts/check_wheel_consumer_types.py $$(find dist -maxdepth 1 -type f -name 'crewplane-*.whl' -print -quit)
 
 changelog-check:
 	$(RUN_RELEASE) changelog-check
 
 install-smoke-pip:
-	$(RUN_RELEASE) install-smoke-pip
+	$(RUN_PACKAGE) install-smoke-pip
 
 install-smoke-uv:
-	$(RUN_RELEASE) install-smoke-uv
+	$(RUN_PACKAGE) install-smoke-uv
 
 install-smoke-pipx:
-	$(RUN_RELEASE) install-smoke-pipx
+	$(RUN_PACKAGE) install-smoke-pipx
 
 install-smoke:
-	$(RUN_RELEASE) install-smoke
+	$(RUN_PACKAGE) install-smoke
 
 install-script-smoke:
-	$(RUN_RELEASE) install-script-smoke
+	$(RUN_PACKAGE) install-script-smoke
 
 npm-pack:
-	$(RUN_RELEASE) npm-pack
+	$(RUN_PACKAGE) npm-pack
 
 npm-smoke:
-	$(RUN_RELEASE) npm-smoke
+	$(RUN_PACKAGE) npm-smoke
 
 brew-smoke:
-	$(RUN_RELEASE) brew-smoke
+	$(RUN_PACKAGE) brew-smoke
 
 install-check:
-	$(RUN_RELEASE) install-check
+	$(RUN_PACKAGE) install-check
 
 release-prepare:
 	$(RUN_RELEASE) prepare

@@ -15,13 +15,15 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 
 if __package__:
-    from .test_process import display_text, launch_command, run_logged
+    from .test_process import Deadline, display_text, launch_command, run_logged
+    from .validation_policy import load_policy
 else:
-    from test_process import display_text, launch_command, run_logged
+    from test_process import Deadline, display_text, launch_command, run_logged
+    from validation_policy import load_policy
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = (
@@ -34,32 +36,8 @@ DEPENDENCIES = (
 )
 
 
-@dataclass(frozen=True)
-class Profile:
-    workers: int = 0
-    coverage: bool = False
-    shuffle_seed: int | None = None
-    required_git: bool = True
-    marker_expression: str = ""
-
-
-# Parallel defaults are enabled only where acceptance evidence is available.
-PROFILES = {
-    "local": Profile(
-        workers=2
-        if sys.platform == "linux" and sys.version_info[:2] in {(3, 13), (3, 14)}
-        else 0,
-        coverage=True,
-        required_git=False,
-    ),
-    "pr-313": Profile(coverage=True, shuffle_seed=1729),
-    "pr-314": Profile(coverage=True),
-    "testpypi": Profile(coverage=True),
-    "windows": Profile(),
-    "nightly": Profile(),
-    "nightly-shuffle": Profile(),
-    "race": Profile(marker_expression="race"),
-}
+POLICY = load_policy()
+PROFILES = POLICY.profiles
 
 
 def nonnegative(value: str) -> int:
@@ -92,15 +70,34 @@ def hash_seed(value: str | None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=PROFILES, default="local")
+    parser.add_argument(
+        "--profile", choices=PROFILES, default=POLICY.runner.default_profile
+    )
+    parser.add_argument("--suite", choices=("core", "dots", "all"), default="core")
     parser.add_argument("--workers", type=nonnegative)
     parser.add_argument("--shuffle-seed", type=nonnegative)
     parser.add_argument("--hash-seed", type=hash_seed)
     parser.add_argument("--coverage", choices=("on", "off"))
-    parser.add_argument("--timeout", type=positive_seconds)
-    parser.add_argument("--shutdown-timeout", type=positive_seconds, default=5)
-    parser.add_argument("--statement-floor", type=float, default=96)
-    parser.add_argument("--branch-floor", type=float, default=90)
+    parser.add_argument(
+        "--timeout", type=positive_seconds, help="Optional pytest-only cap in seconds"
+    )
+    parser.add_argument(
+        "--total-timeout",
+        type=positive_seconds,
+        help="Total phase budget, including metadata, reports, and selected plugins",
+    )
+    parser.add_argument(
+        "--shutdown-timeout",
+        type=positive_seconds,
+        default=POLICY.timeouts.shutdown_seconds,
+        help=f"Grace before forced termination; final reaping allows at least {POLICY.timeouts.reap_seconds:g} seconds",
+    )
+    parser.add_argument(
+        "--statement-floor", type=float, default=POLICY.coverage.statement_floor
+    )
+    parser.add_argument(
+        "--branch-floor", type=float, default=POLICY.coverage.branch_floor
+    )
     parser.add_argument("-k", default="")
     parser.add_argument(
         "-m", dest="marker_expression", help="Select tests by pytest marker expression"
@@ -108,14 +105,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("selection", nargs="*")
     args = parser.parse_args(argv)
     profile = PROFILES[args.profile]
-    args.workers = profile.workers if args.workers is None else args.workers
+    platform_policy = POLICY.platform()
+    default_workers = profile.workers
+    if (
+        profile.platform_workers
+        and f"{sys.version_info.major}.{sys.version_info.minor}"
+        in platform_policy.local_parallel_python
+    ):
+        default_workers = platform_policy.local_workers
+    args.workers = default_workers if args.workers is None else args.workers
+    if args.total_timeout is None:
+        args.total_timeout = (
+            POLICY.timeouts.race_iteration_seconds
+            if args.profile == "race"
+            else POLICY.timeouts.plugin_seconds
+            if args.suite == "dots"
+            else platform_policy.test_seconds
+        )
     args.coverage = profile.coverage if args.coverage is None else args.coverage == "on"
     if args.marker_expression is None:
         args.marker_expression = profile.marker_expression
     try:
         if args.shuffle_seed is None:
             args.shuffle_seed = profile.shuffle_seed
-            if args.profile == "nightly-shuffle":
+            if profile.random_shuffle:
                 args.shuffle_seed = (
                     nonnegative(os.environ["CREWPLANE_RANDOM_SEED"])
                     if "CREWPLANE_RANDOM_SEED" in os.environ
@@ -142,7 +155,7 @@ def pytest_command(
         "-c",
         str(root / "pyproject.toml"),
         f"--junitxml={diagnostics / 'junit.xml'}",
-        "--durations=20",
+        f"--durations={POLICY.runner.duration_count}",
     ]
     if args.workers:
         command += [
@@ -150,8 +163,8 @@ def pytest_command(
             "xdist.plugin",
             "-n",
             str(args.workers),
-            "--dist=load",
-            "--max-worker-restart=0",
+            f"--dist={POLICY.runner.worker_distribution}",
+            f"--max-worker-restart={POLICY.runner.max_worker_restart}",
         ]
     if args.shuffle_seed is not None:
         command += ["-p", "randomly", f"--randomly-seed={args.shuffle_seed}"]
@@ -192,7 +205,9 @@ def environment_for(args: argparse.Namespace, diagnostics: Path) -> dict[str, st
     return environment
 
 
-def command_output(command: list[str], root: Path) -> str | None:
+def command_output(
+    command: list[str], root: Path, deadline: Deadline | None = None
+) -> str | None:
     try:
         result = subprocess.run(
             command,
@@ -201,7 +216,9 @@ def command_output(command: list[str], root: Path) -> str | None:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=10,
+            timeout=deadline.remaining(POLICY.timeouts.metadata_seconds)
+            if deadline
+            else POLICY.timeouts.metadata_seconds,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -241,7 +258,14 @@ def reproduction_command(
         command += ["--shuffle-seed", str(args.shuffle_seed)]
     if args.timeout is not None:
         command += ["--timeout", str(args.timeout)]
-    command += ["--shutdown-timeout", str(args.shutdown_timeout)]
+    command += [
+        "--shutdown-timeout",
+        str(args.shutdown_timeout),
+        "--total-timeout",
+        str(args.total_timeout),
+        "--suite",
+        args.suite,
+    ]
     if args.k:
         command += ["-k", args.k]
     command += ["-m", args.marker_expression, "--", *args.selection]
@@ -257,11 +281,16 @@ def reproduction_command(
 
 
 def metadata(
-    args: argparse.Namespace, command: list[str], environment: dict[str, str]
+    args: argparse.Namespace,
+    command: list[str],
+    environment: dict[str, str],
+    deadline: Deadline | None = None,
 ) -> dict[str, object]:
     return {
-        "source_commit": command_output(["git", "rev-parse", "HEAD"], ROOT),
-        "source_dirty": command_output(["git", "status", "--porcelain"], ROOT),
+        "source_commit": command_output(["git", "rev-parse", "HEAD"], ROOT, deadline),
+        "source_dirty": command_output(
+            ["git", "status", "--porcelain"], ROOT, deadline
+        ),
         "command": launch_command(command),
         "pytest_command": command,
         "cwd": str(ROOT),
@@ -281,11 +310,15 @@ def metadata(
         },
         "lock_sha256": hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest(),
         "dependencies": dependency_versions(),
-        "git": command_output(["git", "--version"], ROOT),
+        "git": command_output(["git", "--version"], ROOT, deadline),
         "locale": locale.setlocale(locale.LC_ALL),
         "timezone": os.environ.get("TZ"),
         "local_timezone": time.tzname,
         "profile": args.profile,
+        "suite": args.suite,
+        "total_timeout": args.total_timeout,
+        "statement_floor": args.statement_floor,
+        "branch_floor": args.branch_floor,
         "selection": args.selection,
         "keyword": args.k,
         "marker_expression": args.marker_expression,
@@ -299,7 +332,10 @@ def metadata(
 
 
 def report_coverage(
-    args: argparse.Namespace, diagnostics: Path, environment: dict[str, str]
+    args: argparse.Namespace,
+    diagnostics: Path,
+    environment: dict[str, str],
+    deadline: Deadline | None = None,
 ) -> list[dict[str, object]]:
     if not (diagnostics / ".coverage").is_file():
         return [
@@ -334,7 +370,9 @@ def report_coverage(
             ROOT,
             environment,
             diagnostics / f"coverage-{index}.log",
-            timeout=120,
+            timeout=deadline.remaining(POLICY.timeouts.coverage_report_seconds)
+            if deadline
+            else POLICY.timeouts.coverage_report_seconds,
             shutdown_timeout=args.shutdown_timeout,
         )
         outcomes.append({"command": command, **asdict(result)})
@@ -353,7 +391,9 @@ def report_coverage(
             ROOT,
             environment,
             diagnostics / "coverage-gate.log",
-            timeout=30,
+            timeout=deadline.remaining(POLICY.timeouts.coverage_gate_seconds)
+            if deadline
+            else POLICY.timeouts.coverage_gate_seconds,
             shutdown_timeout=args.shutdown_timeout,
         )
         outcomes.append({"command": command, **asdict(result)})
@@ -368,34 +408,100 @@ def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def dots_arguments(args: argparse.Namespace) -> argparse.Namespace:
+    plugin_args = argparse.Namespace(**vars(args))
+    plugin_args.coverage = False
+    plugin_args.workers = 0
+    plugin_args.shuffle_seed = None
+    plugin_args.marker_expression = ""
+    plugin_args.k = ""
+    plugin_args.selection = ["plugins/crewplane-dots-host/tests"]
+    return plugin_args
+
+
+def run_dots(
+    args: argparse.Namespace, diagnostics: Path, deadline: Deadline
+) -> list[dict[str, object]]:
+    diagnostics.mkdir()
+    plugin_args = dots_arguments(args)
+    environment = environment_for(plugin_args, diagnostics)
+    plugin_deadline = Deadline.after(deadline.remaining(POLICY.timeouts.plugin_seconds))
+    commands = [
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "--no-deps",
+            "-e",
+            "plugins/crewplane-dots-host",
+        ],
+        pytest_command(plugin_args, diagnostics),
+    ]
+    outcomes = []
+    for name, command in zip(("install", "pytest"), commands, strict=True):
+        result = run_logged(
+            command,
+            ROOT,
+            environment,
+            diagnostics / f"{name}.log",
+            plugin_deadline.remaining(args.timeout if name == "pytest" else None),
+            args.shutdown_timeout,
+        )
+        outcomes.append({"command": command, **asdict(result)})
+        if result.returncode:
+            break
+    return outcomes
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    deadline = Deadline.after(args.total_timeout)
     results = ROOT / "test-results"
     results.mkdir(exist_ok=True)
     diagnostics = Path(tempfile.mkdtemp(prefix=f"{args.profile}-", dir=results))
     outcome: dict[str, object] = {}
     exit_code = 1
     try:
-        command = pytest_command(args, diagnostics)
-        environment = environment_for(args, diagnostics)
-        details = metadata(args, command, environment)
+        execution_args = dots_arguments(args) if args.suite == "dots" else args
+        command = pytest_command(
+            execution_args,
+            diagnostics / "dots" if args.suite == "dots" else diagnostics,
+        )
+        environment = environment_for(execution_args, diagnostics)
+        details = metadata(execution_args, command, environment, deadline)
+        details["reproduce"] = reproduction_command(args)
         write_json(diagnostics / "metadata.json", details)
         display_text(f"Diagnostics: {diagnostics}\nReproduce: {details['reproduce']}\n")
-        tests = run_logged(
-            command,
-            ROOT,
-            environment,
-            diagnostics / "pytest.log",
-            args.timeout,
-            args.shutdown_timeout,
-        )
-        outcome["pytest"] = asdict(tests)
-        exit_code = tests.returncode
-        if args.coverage:
-            reports = report_coverage(args, diagnostics, environment)
-            outcome["coverage"] = reports
-            if any(report["returncode"] != 0 for report in reports):
-                exit_code = exit_code or 1
+        exit_code = 0
+        if args.suite in ("core", "all"):
+            tests = run_logged(
+                command,
+                ROOT,
+                environment,
+                diagnostics / "pytest.log",
+                deadline.remaining(args.timeout),
+                args.shutdown_timeout,
+            )
+            outcome["pytest"] = asdict(tests)
+            exit_code = tests.returncode
+            if args.coverage and not tests.interrupted:
+                reports = report_coverage(args, diagnostics, environment, deadline)
+                outcome["coverage"] = reports
+                if any(report["returncode"] != 0 for report in reports):
+                    exit_code = exit_code or 1
+        if exit_code == 0 and args.suite in ("dots", "all"):
+            plugins = run_dots(args, diagnostics / "dots", deadline)
+            outcome["dots"] = plugins
+            exit_code = next(
+                (
+                    int(result["returncode"])
+                    for result in plugins
+                    if result["returncode"]
+                ),
+                0,
+            )
     except (
         OSError,
         RuntimeError,

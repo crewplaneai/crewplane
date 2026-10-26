@@ -19,14 +19,18 @@ def runner_project(root: Path) -> Path:
     scripts.mkdir()
     for filename in (
         "run_tests.py",
+        "validation_policy.py",
         "test_process.py",
         "test_process_gate.py",
         "check_coverage.py",
     ):
         shutil.copyfile(ROOT / "scripts" / filename, scripts / filename)
     (root / "uv.lock").write_text("test-owned lockfile\n", encoding="utf-8")
+    policy = (
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("[tool.ruff]", 1)[0]
+    )
     (root / "pyproject.toml").write_text(
-        '[tool.pytest.ini_options]\ntestpaths = ["."]\n'
+        policy + '[tool.pytest.ini_options]\ntestpaths = ["."]\n'
         'strict_markers = true\nmarkers = ["race: controlled concurrency regression"]\n'
         'addopts = ["--disable-plugin-autoload", "--import-mode=importlib"]\n'
         '[tool.coverage.run]\npatch = ["subprocess"]\n',

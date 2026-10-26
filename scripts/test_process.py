@@ -13,6 +13,13 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+if __package__:
+    from .validation_policy import load_policy
+else:
+    from validation_policy import load_policy
+
+LIMITS = load_policy().timeouts
+
 PR_SET_CHILD_SUBREAPER = 36
 PR_GET_CHILD_SUBREAPER = 37
 
@@ -24,6 +31,21 @@ class ProcessOutcome:
     interrupted: bool = False
     timed_out: bool = False
     forced: bool = False
+
+
+@dataclass(frozen=True)
+class Deadline:
+    expires: float
+
+    @classmethod
+    def after(cls, seconds: float) -> Deadline:
+        return cls(time.monotonic() + seconds)
+
+    def remaining(self, limit: float | None = None) -> float:
+        remaining = self.expires - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Validation phase deadline expired")
+        return remaining if limit is None else min(remaining, limit)
 
 
 def launch_command(command: list[str]) -> list[str]:
@@ -89,7 +111,7 @@ def posix_processes() -> dict[int, PosixProcessIdentity]:
         ["ps", "-axo", "pid=,ppid=,lstart="],
         text=True,
         env={**os.environ, "LC_ALL": "C"},
-        timeout=1,
+        timeout=LIMITS.process_snapshot_seconds,
     )
     processes = {}
     for line in output.splitlines():
@@ -236,9 +258,12 @@ def run_logged(
     environment: dict[str, str],
     log: Path,
     timeout: float | None = None,
-    shutdown_timeout: float = 5,
+    shutdown_timeout: float = LIMITS.shutdown_seconds,
 ) -> ProcessOutcome:
     started = time.monotonic()
+    if timeout is not None and timeout <= 0:
+        raise TimeoutError("Validation phase deadline expired before command launch")
+    reap_timeout = max(shutdown_timeout, LIMITS.reap_seconds)
     forced = False
     timed_out = False
     with (
@@ -276,19 +301,19 @@ def run_logged(
                 if deadline is not None and (now >= deadline or len(requested) > 1):
                     owned.kill()
                     forced = True
-                    process.wait(timeout=shutdown_timeout)
+                    process.wait(timeout=reap_timeout)
                     break
                 time.sleep(0.05)
-            returncode = process.wait(timeout=shutdown_timeout)
+            returncode = process.wait(timeout=reap_timeout)
             if owned.has_children():
                 forced = True
             _display_output(reader)
         finally:
             if owned is not None:
-                owned.close(shutdown_timeout)
+                owned.close(reap_timeout)
             else:
                 process.kill()
-                process.wait(timeout=shutdown_timeout)
+                process.wait(timeout=reap_timeout)
                 if process.stdin is not None:
                     process.stdin.close()
             receipt.unlink(missing_ok=True)

@@ -130,23 +130,26 @@ def test_release_workflow_publishes_verified_artifact_bundle() -> None:
 def test_production_release_workflow_does_not_rebuild_or_publish_to_registries() -> (
     None
 ):
-    workflow = load_workflow("release.yml")
-    assert workflow["permissions"] == {"contents": "read"}
-    for job in workflow["jobs"].values():
-        assert "id-token" not in job.get("permissions", {})
-        for step in job["steps"]:
-            assert not step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")
-            command = step.get("run", "")
-            for forbidden in (
-                "uv build",
-                "twine upload",
-                "npm publish",
-                "release.py publish-pypi",
-                "release.py publish-npm",
-                "recover-release-artifacts",
-                "verify-backfill",
-            ):
-                assert forbidden not in command
+    for workflow_name in ("release.yml", "validation-policy.yml"):
+        workflow = load_workflow(workflow_name)
+        assert workflow["permissions"] == {"contents": "read"}
+        for job in workflow["jobs"].values():
+            assert "id-token" not in job.get("permissions", {})
+            for step in job.get("steps", []):
+                assert not step.get("uses", "").startswith(
+                    "pypa/gh-action-pypi-publish@"
+                )
+                command = step.get("run", "")
+                for forbidden in (
+                    "uv build",
+                    "twine upload",
+                    "npm publish",
+                    "release.py publish-pypi",
+                    "release.py publish-npm",
+                    "recover-release-artifacts",
+                    "verify-backfill",
+                ):
+                    assert forbidden not in command
 
 
 def test_homebrew_formula_is_published_only_for_eligible_releases() -> None:

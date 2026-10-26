@@ -109,6 +109,17 @@ The live UI must degrade cleanly:
 
 ## Validation Expectations
 
+Use the root [pyproject.toml](pyproject.toml) as the single source of truth for
+shared test configuration. Keep pytest and coverage settings in their native
+tables, and shared validation defaults (profiles, coverage floors, timeouts,
+worker settings, and repetition counts) under `[tool.crewplane.validation]`.
+Make targets, scripts, and CI must consume that policy rather than repeat
+defaults. Add concise comments explaining units, scope, and the reason for
+different budgets. Keep explicit per-run overrides and scenario-specific test
+inputs separate from shared defaults. Derive related CI job limits from phase
+budgets plus setup/cleanup allowances; the policy-loading job alone needs an
+independent bootstrap limit before it can read the file.
+
 When setup is needed, run `make setup` from the repository root.
 
 For code changes, run focused tests during development and `make check` before

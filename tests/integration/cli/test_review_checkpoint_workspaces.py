@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 from threading import Event
+from unittest.mock import Mock
 
 import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from crewplane.artifacts import OutputManager
+from crewplane.artifacts import OutputManager, directory_manager
 from crewplane.cli.app import app
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from tests.helpers import isolated_git as isolated_git_support
@@ -105,6 +107,10 @@ def test_managed_checkpoint_survives_physical_cleanup_and_preserves_lineage(
     boundary: tuple[int, int, str],
     reviewer_failure: bool,
 ) -> None:
+    # Exercise a backwards wall-clock adjustment between the two runs.
+    run_clock = Mock()
+    run_clock.now.side_effect = [datetime(2026, 1, 2), datetime(2026, 1, 1)]
+    monkeypatch.setattr(directory_manager, "datetime", run_clock)
     project = workspace_project(tmp_path, isolated_git)
     fixtures = tmp_path / "fixtures"
     config = workspace_config(tmp_path / "cache", fixtures)
@@ -188,7 +194,7 @@ def test_managed_checkpoint_survives_physical_cleanup_and_preserves_lineage(
         for item in marker.workspaces
     )
     asyncio.run(run_workspace_workflow(workflow, config, Console(file=io.StringIO())))
-    fresh = run_dirs(project)[-1]
+    (fresh,) = set(run_dirs(project)) - {source}
     manifest = json.loads((fresh / "manifests/run.json").read_bytes())
     assert manifest["status"] == "succeeded"
     assert manifest["resumed_nodes"] == []

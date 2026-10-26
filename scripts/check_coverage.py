@@ -64,8 +64,18 @@ def read_metric(
 def main(arguments: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path)
-    parser.add_argument("--statements", type=coverage_floor, required=True)
-    parser.add_argument("--branches", type=coverage_floor, required=True)
+    if __package__:
+        from .validation_policy import load_policy
+    else:
+        from validation_policy import load_policy
+
+    defaults = load_policy().coverage
+    parser.add_argument(
+        "--statements", type=coverage_floor, default=str(defaults.statement_floor)
+    )
+    parser.add_argument(
+        "--branches", type=coverage_floor, default=str(defaults.branch_floor)
+    )
     args = parser.parse_args(arguments)
     try:
         metrics = read_metrics(args.report)

@@ -4,9 +4,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import venv
 from pathlib import Path
 
+if __package__:
+    from .validation_policy import load_policy
+else:
+    from validation_policy import load_policy
+
+LIMITS = load_policy().timeouts
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONSUMERS = (
     REPOSITORY_ROOT / "tests" / "typecheck" / "public_artifacts_consumer.py",
@@ -28,7 +33,11 @@ def check_wheel(wheel: Path) -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         environment = root / "venv"
-        venv.EnvBuilder(with_pip=True).create(environment)
+        subprocess.run(
+            [sys.executable, "-m", "venv", str(environment)],
+            check=True,
+            timeout=LIMITS.wheel_command_seconds,
+        )
         python = _venv_python(environment)
         subprocess.run(
             [
@@ -42,6 +51,7 @@ def check_wheel(wheel: Path) -> None:
                 str(resolved_wheel),
             ],
             check=True,
+            timeout=LIMITS.wheel_command_seconds,
         )
         consumers = [root / consumer.name for consumer in CONSUMERS]
         for source, destination in zip(CONSUMERS, consumers, strict=True):
@@ -58,6 +68,7 @@ def check_wheel(wheel: Path) -> None:
             ],
             cwd=root,
             check=True,
+            timeout=LIMITS.wheel_command_seconds,
         )
 
 

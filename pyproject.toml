@@ -74,6 +74,105 @@ crewplane-ollama = { path = "plugins/crewplane-ollama", editable = true }
 [tool.crewplane.release]
 plugins = ["plugins/crewplane-ollama"]
 
+# Shared validation policy is read by scripts/validation_policy.py. Make and CI
+# must consume it rather than copy defaults. Durations below are in seconds;
+# GitHub job limits are derived in whole minutes, rounded up.
+[tool.crewplane.validation.coverage]
+statement_floor = 96
+branch_floor = 90
+
+[tool.crewplane.validation.timeouts]
+# These caps share the test phase deadline; reporting cannot restart the clock.
+metadata_seconds = 10
+coverage_report_seconds = 120
+coverage_gate_seconds = 30
+plugin_seconds = 300
+# Graceful termination and final reaping serve different purposes. A small
+# command-line shutdown override must not reduce the final reaping allowance.
+shutdown_seconds = 5
+reap_seconds = 5
+process_snapshot_seconds = 1
+# One budget covers all package commands, including builds and installed smokes.
+package_seconds = 900
+package_overhead_seconds = 300
+wheel_command_seconds = 300
+installed_command_seconds = 180
+# Windows wheel acceptance shares the native test job's ten-minute allowance.
+native_package_seconds = 300
+race_iteration_seconds = 90
+race_overhead_seconds = 150
+
+[tool.crewplane.validation.runner]
+default_profile = "local"
+duration_count = 20
+race_iterations = 5
+# Worker restarts would hide crashes; retain the standard load scheduler.
+worker_distribution = "load"
+max_worker_restart = 0
+
+[tool.crewplane.validation.fuzz]
+total_seconds = 30
+input_seconds = 5
+overhead_seconds = 150
+max_length = 4096
+rss_limit_mb = 2048
+
+# Phase limits include metadata, core tests, coverage reports, and selected
+# plugin tests. Job allowances cover dependency setup, cleanup, and uploads;
+# Linux also runs the short fuzz check, Windows runs installed-wheel acceptance.
+[tool.crewplane.validation.platforms.linux]
+test_seconds = 1500
+job_overhead_seconds = 300
+local_workers = 2
+local_parallel_python = ["3.13", "3.14"]
+
+[tool.crewplane.validation.platforms.darwin]
+test_seconds = 2100
+job_overhead_seconds = 600
+local_workers = 0
+local_parallel_python = []
+
+[tool.crewplane.validation.platforms.win32]
+test_seconds = 2100
+job_overhead_seconds = 600
+local_workers = 0
+local_parallel_python = []
+
+# Profiles inherit these defaults. Parallel execution is enabled locally only
+# on platforms and Python versions with acceptance evidence listed above.
+[tool.crewplane.validation.profile_defaults]
+workers = 0
+coverage = false
+required_git = true
+marker_expression = ""
+random_shuffle = false
+platform_workers = false
+
+[tool.crewplane.validation.profiles.local]
+coverage = true
+required_git = false
+platform_workers = true
+
+[tool.crewplane.validation.profiles.pr-313]
+coverage = true
+shuffle_seed = 1729
+
+[tool.crewplane.validation.profiles.pr-314]
+coverage = true
+
+[tool.crewplane.validation.profiles.testpypi]
+coverage = true
+
+[tool.crewplane.validation.profiles.windows]
+
+[tool.crewplane.validation.profiles.nightly]
+
+[tool.crewplane.validation.profiles.nightly-shuffle]
+random_shuffle = true
+
+[tool.crewplane.validation.profiles.race]
+marker_expression = "race"
+
 [tool.ruff]
 target-version = "py313"
 

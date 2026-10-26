@@ -227,8 +227,8 @@ def test_make_test_runs_full_suite_and_separate_coverage_gates(
     assert command[command.index("--profile") + 1] == "local"
     assert "-k" not in command
     assert not any(token.startswith("tests/") for token in command)
-    assert int(command[command.index("--statement-floor") + 1]) == 96
-    assert int(command[command.index("--branch-floor") + 1]) == 90
+    assert "--statement-floor" not in command
+    assert "--branch-floor" not in command
     makefile = read_text("Makefile")
     assert "HAVE_UV" not in makefile
     assert "pip install -e" not in makefile

@@ -10,11 +10,18 @@ import tempfile
 import venv
 from pathlib import Path
 
+if __package__:
+    from .installed_package_assertions import COMMAND_TIMEOUT_SECONDS
+else:
+    from installed_package_assertions import COMMAND_TIMEOUT_SECONDS
+
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def run(command: list[str], cwd: Path, environment: dict[str, str]) -> None:
-    subprocess.run(command, cwd=cwd, env=environment, check=True, timeout=180)
+    subprocess.run(
+        command, cwd=cwd, env=environment, check=True, timeout=COMMAND_TIMEOUT_SECONDS
+    )
 
 
 def check_incompatible_core(
@@ -51,7 +58,7 @@ def check_incompatible_core(
         env=environment,
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=COMMAND_TIMEOUT_SECONDS,
     )
     assert result.returncode != 0, "Ollama accepted incompatible Crewplane 0.3.7"
     detail = result.stdout + result.stderr
