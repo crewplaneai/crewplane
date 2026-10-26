@@ -66,13 +66,26 @@ Local, CI, nightly, and release validation share test execution and package
 acceptance checks; use the profiles and package commands below to reproduce the
 relevant checks locally.
 
-By default, `make test` and `make check` run the full suite with minimum coverage
-of 96% statements and 90% branches. Use `--coverage off` for
-[focused test runs](#testing-expectations).
+By default, `make test` and `make check` enforce the separate statement and branch
+coverage floors in [pyproject.toml](pyproject.toml). Use `--coverage off` for
+[focused test runs](#testing-expectations). See the
+[validation policy guidance](AGENTS.md#validation-expectations) when changing
+shared defaults or CI budgets.
 
 The optional Dots host plugin has a separate suite: `make dots-host-check`
-installs it and runs its tests. This target is included in `make check`, Linux
-pull-request CI, and Linux/macOS nightly CI.
+installs it and runs its tests. This suite also runs in `make check`, Linux
+pull-request CI, and Linux/macOS nightly CI. `make test` runs only core tests.
+
+Use `--total-timeout` to override the overall test time limit or `--timeout` to
+limit pytest only; both accept seconds. For temporary coverage overrides, use
+`--statement-floor` and `--branch-floor`, or the Make variables
+`STATEMENT_COVERAGE_FLOOR` and `BRANCH_COVERAGE_FLOOR`.
+
+Inspect validation defaults and CI time limits:
+
+```bash
+python scripts/validation_policy.py
+```
 
 Git fixtures require Git 2.34.1 or newer. Dependent tests skip locally if it is
 unavailable; CI profiles fail. Set `CREWPLANE_REQUIRED_GIT=1` to require it locally.
@@ -82,9 +95,10 @@ with `make test TEST_ARGS='--workers 0'`. Use `make test TEST_ARGS=--help` for a
 profiles and options.
 
 Each run prints its `test-results/<profile>-<id>/` directory and a reproduction
-command, also saved in `metadata.json`. Check `pytest.log` for failures and reproduce
-with the same Python version, locked dependencies, and platform. To recheck coverage,
-use the `make coverage-check` command above with that run's directory name.
+command, also saved in `metadata.json`. Check `pytest.log` (or `dots/pytest.log`
+for the plugin suite) for failures. Reproduce with the same Python version,
+locked dependencies, and platform. To recheck coverage, use the
+`make coverage-check` command above with that run's directory name.
 
 For packaging changes, build and validate the development artifacts:
 
@@ -94,6 +108,11 @@ uv run --locked --extra dev twine check dist/*
 make wheel-typecheck
 make install-smoke
 ```
+
+To reproduce CI package checks, run
+`uv run --locked --extra dev python scripts/run_package_checks.py --profile ci`.
+Use `--profile testpypi` or `--profile windows` for those jobs. Logs and results
+are saved in `test-results/package-<id>/`.
 
 Use `make package-check` after [release preparation](#1-prepare-and-validate),
 when the Homebrew formula checksum has been regenerated for the source archive.
@@ -374,8 +393,8 @@ constraints live in [AGENTS.md](AGENTS.md#change-guidance).
 - Mark individual tests with `@pytest.mark.race` when they exercise a specific
   concurrency or cancellation interleaving and assert the affected invariant.
   Use controlled synchronization and bounded cleanup. Run them with
-  `make test TEST_PROFILE=race`; nightly CI repeats this selection five times on
-  Linux and native Windows with Python 3.13.
+  `make test TEST_PROFILE=race`; nightly CI repeats this selection on Linux and
+  native Windows with Python 3.13.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
 - Production code and typing fixtures must pass strict mypy via `make typecheck`;
   CI also validates the built wheel's public typing.

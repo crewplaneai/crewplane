@@ -13,6 +13,13 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+if __package__:
+    from .validation_policy import load_policy
+else:
+    from validation_policy import load_policy
+
+LIMITS = load_policy().timeouts
+
 PR_SET_CHILD_SUBREAPER = 36
 PR_GET_CHILD_SUBREAPER = 37
 
@@ -24,6 +31,21 @@ class ProcessOutcome:
     interrupted: bool = False
     timed_out: bool = False
     forced: bool = False
+
+
+@dataclass(frozen=True)
+class Deadline:
+    expires: float
+
+    @classmethod
+    def after(cls, seconds: float) -> Deadline:
+        return cls(time.monotonic() + seconds)
+
+    def remaining(self, limit: float | None = None) -> float:
+        remaining = self.expires - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Validation phase deadline expired")
+        return remaining if limit is None else min(remaining, limit)
 
 
 def launch_command(command: list[str]) -> list[str]:
@@ -89,7 +111,7 @@ def posix_processes() -> dict[int, PosixProcessIdentity]:
         ["ps", "-axo", "pid=,ppid=,lstart="],
         text=True,
         env={**os.environ, "LC_ALL": "C"},
-        timeout=1,
+        timeout=LIMITS.process_snapshot_seconds,
     )
     processes = {}
     for line in output.splitlines():
@@ -236,10 +258,12 @@ def run_logged(
     environment: dict[str, str],
     log: Path,
     timeout: float | None = None,
-    shutdown_timeout: float = 5,
+    shutdown_timeout: float = LIMITS.shutdown_seconds,
 ) -> ProcessOutcome:
     started = time.monotonic()
-    reap_timeout = max(shutdown_timeout, 5.0)
+    if timeout is not None and timeout <= 0:
+        raise TimeoutError("Validation phase deadline expired before command launch")
+    reap_timeout = max(shutdown_timeout, LIMITS.reap_seconds)
     forced = False
     timed_out = False
     with (

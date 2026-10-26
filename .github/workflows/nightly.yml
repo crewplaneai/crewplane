@@ -13,10 +13,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  policy:
+    uses: ./.github/workflows/validation-policy.yml
+
   cross-platform:
     name: ${{ matrix.os }} py${{ matrix.python-version }}
+    needs: policy
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 25 || 45 }}
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes[matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'win32'] }}
     strategy:
       fail-fast: false
       matrix:
@@ -43,26 +47,14 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
 
       - name: Run tests
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly
-
-      - name: Run Dots host plugin tests
-        if: ${{ runner.os != 'Windows' }}
-        run: make dots-host-check
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly --suite ${{ runner.os == 'Windows' && 'core' || 'all' }}
 
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
 
-      - name: Build Windows wheel
+      - name: Build and smoke-test installed Windows wheels
         if: ${{ runner.os == 'Windows' }}
-        run: uv run --locked --extra dev python scripts/release.py package-build
-
-      - name: Smoke-test installed Windows wheels
-        shell: pwsh
-        if: ${{ runner.os == 'Windows' }}
-        run: |
-          uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer uv
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_package_checks.py --profile windows
 
       - name: Upload test diagnostics
         if: ${{ always() }}
@@ -76,8 +68,9 @@ jobs:
 
   shuffled-suite:
     name: shuffled suite (ubuntu py3.13)
+    needs: policy
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.linux }}
     env:
       CREWPLANE_RANDOM_SEED: ${{ github.run_id }}
       TZ: UTC
@@ -116,14 +109,15 @@ jobs:
 
   focused-race-loop:
     name: focused race loop (${{ matrix.os }} py3.13)
+    needs: policy
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.race }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     env:
-      FOCUSED_RACE_ITERATIONS: "5"
+      FOCUSED_RACE_ITERATIONS: ${{ fromJSON(needs.policy.outputs.policy).runner.race_iterations }}
       TZ: UTC
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -16,10 +16,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  policy:
+    uses: ./.github/workflows/validation-policy.yml
+
   build:
     name: build
+    needs: policy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.testpypi }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -41,14 +45,8 @@ jobs:
       - name: Run full suite with coverage
         run: uv run --locked --extra dev python scripts/run_tests.py --profile testpypi
 
-      - name: Build package
-        run: make package-build
-
-      - name: Verify wheel metadata
-        run: uv run --locked --extra dev twine check dist/*
-
-      - name: Verify built wheel outside checkout
-        run: uv run --locked --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
+      - name: Build and validate package
+        run: uv run --locked --extra dev python scripts/run_package_checks.py --profile testpypi
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

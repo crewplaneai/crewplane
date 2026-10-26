@@ -17,10 +17,14 @@ concurrency:
   queue: max
 
 jobs:
+  policy:
+    uses: ./.github/workflows/validation-policy.yml
+
   verify:
     name: verify
+    needs: policy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.package }}
     outputs:
       release_commit: ${{ steps.release-source.outputs.release_commit }}
       homebrew_eligible: ${{ steps.release-plan.outputs.homebrew_eligible }}
@@ -67,6 +71,7 @@ jobs:
       - name: Prepare release artifacts
         run: |
           uv run --locked --extra dev \
+            python scripts/run_package_checks.py -- \
             python scripts/release.py release-artifacts
 
       - name: Verify GitHub release inputs

@@ -7,6 +7,7 @@ from textwrap import dedent
 import pytest
 import yaml
 
+from scripts.validation_policy import load_policy
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.processes import run_process
 from tests.unit.packaging.ci_workflow_support import load_workflow, workflow_step_run
@@ -45,24 +46,17 @@ def test_package_guard_requires_successful_checks(
 
 def test_ci_package_smoke_and_typechecks_precede_artifact_upload() -> None:
     steps = load_workflow("ci.yml")["jobs"]["package"]["steps"]
-    smoke = next(
-        i for i, step in enumerate(steps) if step.get("run") == "make install-smoke-pip"
-    )
-    typing = next(
-        i for i, step in enumerate(steps) if step.get("run") == "make wheel-typecheck"
-    )
-    inspection = next(
+    acceptance = next(
         i
         for i, step in enumerate(steps)
-        if 'for wheel in dist/*.whl; do python -m zipfile --test "$wheel"; done'
-        in step.get("run", "")
+        if "scripts/run_package_checks.py --profile ci" in step.get("run", "")
     )
     upload = next(
         i
         for i, step in enumerate(steps)
         if step.get("uses", "").startswith("actions/upload-artifact@")
     )
-    assert smoke < typing < inspection < upload
+    assert acceptance < upload
     assert steps[upload]["with"]["path"] == "dist/*"
     assert steps[upload]["with"]["if-no-files-found"] == "error"
     assert all(step.get("run") != "uv build" for step in steps)
@@ -79,7 +73,7 @@ def test_ci_runs_full_suite_with_coverage_for_supported_python_versions() -> Non
     )
     assert (
         f"{invocation} --extra stress python scripts/run_tests.py --profile "
-        + "${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }}"
+        + "${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }} --suite all"
         in commands
     )
     assert f"{invocation} crewplane --help" in commands
@@ -96,7 +90,7 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
         "uv sync --locked --python ${{ matrix.python-version }} --extra dev" in commands
     )
     assert (
-        "uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly"
+        "uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile nightly --suite ${{ runner.os == 'Windows' && 'core' || 'all' }}"
         in commands
     )
     shuffled = nightly["jobs"]["shuffled-suite"]
@@ -105,7 +99,10 @@ def test_nightly_covers_supported_platforms_and_python_versions() -> None:
         step.get("run", "") for step in shuffled["steps"]
     ]
     focused = nightly["jobs"]["focused-race-loop"]
-    assert focused["env"]["FOCUSED_RACE_ITERATIONS"] == "5"
+    assert (
+        focused["env"]["FOCUSED_RACE_ITERATIONS"]
+        == "${{ fromJSON(needs.policy.outputs.policy).runner.race_iterations }}"
+    )
     assert shuffled["runs-on"] == "ubuntu-latest"
     assert focused["runs-on"] == "${{ matrix.os }}"
     assert set(focused["strategy"]["matrix"]["os"]) == {
@@ -158,6 +155,7 @@ def test_nightly_canaries_run_configured_tests_and_propagate_failures(
             **os.environ,
             **job["env"],
             "CREWPLANE_RANDOM_SEED": "123",
+            "FOCUSED_RACE_ITERATIONS": str(load_policy().runner.race_iterations),
             "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
             "FAKE_UV_LOG": str(log),
             "FAKE_UV_STATUS": str(exit_code),
@@ -172,7 +170,9 @@ def test_nightly_canaries_run_configured_tests_and_propagate_failures(
         assert len(invocations) == 1
     else:
         expected = ["python", "scripts/run_tests.py", "--profile", "race"]
-        assert len(invocations) == (5 if exit_code == 0 else 1)
+        assert len(invocations) == (
+            load_policy().runner.race_iterations if exit_code == 0 else 1
+        )
     for invocation in invocations:
         assert invocation[invocation.index("python") :] == expected
 
@@ -232,6 +232,11 @@ def test_github_workflow_actions_are_pinned_to_commits() -> None:
             if "uses:" not in line:
                 continue
             action = line.split("uses:", 1)[1].split("#", 1)[0].strip()
+            if action.startswith("./"):
+                # Local reusable workflows use the caller\'s commit.
+                assert re.fullmatch(r"\./\.github/workflows/[\w-]+\.ya?ml", action)
+                assert (ROOT / action).is_file()
+                continue
             assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", action), (
                 f"{workflow.relative_to(ROOT)}:{line_number} is not commit-pinned"
             )
@@ -309,11 +314,9 @@ def test_windows_required_jobs_execute_suite_and_both_installed_wheels() -> None
     commands = [step.get("run", "") for step in job["steps"]]
     prefix = "uv run --locked --python ${{ matrix.python-version }} --extra dev"
     assert f"{prefix} python scripts/run_tests.py --profile windows" in commands
-    for installer in ("pip", "uv"):
-        assert (
-            f"{prefix} python tests/helpers/installed_wheel_smoke.py --installer {installer}"
-            in commands
-        )
+    assert (
+        f"{prefix} python scripts/run_package_checks.py --profile windows" in commands
+    )
     assert not job.get("continue-on-error")
     assert all("make " not in command for command in commands)
 
@@ -353,16 +356,15 @@ def test_testpypi_checks_full_suite_and_installed_artifact_before_upload() -> No
         for i, command in enumerate(commands)
         if "scripts/run_tests.py --profile testpypi" in command
     )
-    build = commands.index("make package-build")
     acceptance = next(
         i
         for i, command in enumerate(commands)
-        if "installed_wheel_smoke.py --installer pip" in command
+        if "scripts/run_package_checks.py --profile testpypi" in command
     )
     upload = next(
         i
         for i, step in enumerate(steps)
         if step.get("with", {}).get("path") == "dist/*"
     )
-    assert suite < build < acceptance < upload
+    assert suite < acceptance < upload
     assert workflow["jobs"]["publish-testpypi"]["needs"] == "build"

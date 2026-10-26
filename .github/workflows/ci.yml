@@ -14,6 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  policy:
+    uses: ./.github/workflows/validation-policy.yml
+
   lint:
     name: lint
     runs-on: ubuntu-latest
@@ -55,8 +58,9 @@ jobs:
 
   test:
     name: test (${{ matrix.python-version }})
+    needs: policy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.linux }}
     strategy:
       fail-fast: false
       matrix:
@@ -82,27 +86,24 @@ jobs:
         run: uv sync --locked --python ${{ matrix.python-version }} --extra dev --extra stress
 
       - name: Run tests
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev --extra stress python scripts/run_tests.py --profile ${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }}
-
-      - name: Run Dots host plugin tests
-        run: make dots-host-check
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev --extra stress python scripts/run_tests.py --profile ${{ matrix.python-version == '3.13' && 'pr-313' || 'pr-314' }} --suite all
 
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
 
-      - name: Fuzz YAML parser (30 seconds)
+      - name: Fuzz YAML parser
         id: fuzz_yaml
         if: ${{ matrix.python-version == '3.13' }}
-        timeout-minutes: 3
+        timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.fuzz }}
         run: |
           mkdir -p "$RUNNER_TEMP/fuzz-yaml"
           uv run --locked --python 3.13 --extra dev \
             --with atheris==3.1.0 \
             python fuzz/fuzz_yaml.py \
-            -max_total_time=30 \
-            -timeout=5 \
-            -max_len=4096 \
-            -rss_limit_mb=2048 \
+            -max_total_time=${{ fromJSON(needs.policy.outputs.policy).fuzz.total_seconds }} \
+            -timeout=${{ fromJSON(needs.policy.outputs.policy).fuzz.input_seconds }} \
+            -max_len=${{ fromJSON(needs.policy.outputs.policy).fuzz.max_length }} \
+            -rss_limit_mb=${{ fromJSON(needs.policy.outputs.policy).fuzz.rss_limit_mb }} \
             -artifact_prefix="$RUNNER_TEMP/fuzz-yaml/"
 
       - name: Upload fuzz failure artifacts
@@ -126,8 +127,9 @@ jobs:
 
   windows:
     name: windows (${{ matrix.python-version }})
+    needs: policy
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.win32 }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,14 +157,8 @@ jobs:
       - name: Run native Windows suite
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_tests.py --profile windows
 
-      - name: Build installed-wheel fixtures
-        run: uv run --locked --extra dev python scripts/release.py package-build
-
-      - name: Smoke-test pip installation outside checkout
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer pip
-
-      - name: Smoke-test uv installation outside checkout
-        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python tests/helpers/installed_wheel_smoke.py --installer uv
+      - name: Build and smoke-test installed Windows wheels
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python scripts/run_package_checks.py --profile windows
 
       - name: Upload test diagnostics
         if: ${{ always() }}
@@ -177,8 +173,8 @@ jobs:
   package:
     name: package
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [lint, test, windows]
+    timeout-minutes: ${{ fromJSON(needs.policy.outputs.policy).job_minutes.package }}
+    needs: [policy, lint, test, windows]
     if: ${{ always() }}
     steps:
       - name: Verify required prerequisite jobs
@@ -203,17 +199,8 @@ jobs:
           enable-cache: true
           prune-cache: true
 
-      - name: Build and smoke-test package
-        run: make install-smoke-pip
-
-      - name: Type-check installed wheel consumer
-        run: make wheel-typecheck
-
-      - name: Inspect dist
-        run: |
-          ls -la dist
-          for wheel in dist/*.whl; do python -m zipfile --test "$wheel"; done
-          uv run --locked --extra dev twine check dist/*
+      - name: Build and validate package
+        run: uv run --locked --extra dev python scripts/run_package_checks.py --profile ci
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

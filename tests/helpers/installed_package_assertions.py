@@ -9,9 +9,15 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/packaging"
+# Read policy data without adding checkout imports to installed-package probes.
+with (Path(__file__).resolve().parents[2] / "pyproject.toml").open("rb") as source:
+    COMMAND_TIMEOUT_SECONDS = tomllib.load(source)["tool"]["crewplane"]["validation"][
+        "timeouts"
+    ]["installed_command_seconds"]
 
 
 def run(command: list[str], cwd: Path, env: dict[str, str]) -> str:
@@ -21,7 +27,7 @@ def run(command: list[str], cwd: Path, env: dict[str, str]) -> str:
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        timeout=180,
+        timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
     )
     output = result.stdout.decode("utf-8", errors="replace")
