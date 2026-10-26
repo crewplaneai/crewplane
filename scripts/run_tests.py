@@ -98,7 +98,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--hash-seed", type=hash_seed)
     parser.add_argument("--coverage", choices=("on", "off"))
     parser.add_argument("--timeout", type=positive_seconds)
-    parser.add_argument("--shutdown-timeout", type=positive_seconds, default=5)
+    parser.add_argument(
+        "--shutdown-timeout",
+        type=positive_seconds,
+        default=5,
+        help="Grace before forced termination in seconds; final reaping allows at least 5 seconds",
+    )
     parser.add_argument("--statement-floor", type=float, default=96)
     parser.add_argument("--branch-floor", type=float, default=90)
     parser.add_argument("-k", default="")

@@ -8,6 +8,8 @@ import shlex
 import signal
 import subprocess
 import sys
+from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -90,6 +92,63 @@ def test_forced_shutdown_kills_pytest_group_if_process_inspection_fails(
         owned.kill()
 
     kill_group.assert_called_once_with(100, signal.SIGKILL)
+
+
+@requires_posix
+@pytest.mark.parametrize("interrupted", [False, True], ids=["timeout", "interrupt"])
+def test_short_shutdown_grace_allows_slow_process_reaping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
+) -> None:
+    clock = Mock(return_value=0.0)
+    process = Mock(pid=100, returncode=None)
+    signals: list[int] = []
+
+    def sleep(seconds: float) -> None:
+        clock.return_value += seconds
+
+    def signal_group(pid: int, number: int) -> None:
+        assert pid == process.pid
+        if process.returncode is not None:
+            raise ProcessLookupError
+        signals.append(number)
+
+    def wait_for_exit(timeout: float) -> int:
+        assert signal.SIGKILL in signals
+        if timeout < 1:
+            raise subprocess.TimeoutExpired("pytest", timeout)
+        process.returncode = -signal.SIGKILL
+        return process.returncode
+
+    process.poll = lambda: process.returncode
+    process.wait = wait_for_exit
+    monkeypatch.setattr(test_process.subprocess, "Popen", Mock(return_value=process))
+    monkeypatch.setattr(test_process, "child_subreaper", partial(nullcontext, False))
+    monkeypatch.setattr(
+        test_process,
+        "shutdown_signals",
+        partial(nullcontext, [signal.SIGINT] if interrupted else []),
+    )
+    monkeypatch.setattr(test_process, "posix_processes", dict)
+    monkeypatch.setattr(test_process.os, "killpg", signal_group)
+    monkeypatch.setattr(test_process.time, "monotonic", clock)
+    monkeypatch.setattr(test_process.time, "sleep", sleep)
+    log = tmp_path / "pytest.log"
+
+    outcome = test_process.run_logged(
+        ["pytest"],
+        tmp_path,
+        {},
+        log,
+        timeout=None if interrupted else 0.1,
+        shutdown_timeout=0.3,
+    )
+
+    assert outcome.timed_out is not interrupted
+    assert outcome.interrupted is interrupted
+    assert outcome.forced
+    assert outcome.returncode == -signal.SIGKILL
+    assert signal.SIGINT in signals
+    assert not log.with_suffix(".active-pid").exists()
 
 
 @pytest.mark.parametrize(

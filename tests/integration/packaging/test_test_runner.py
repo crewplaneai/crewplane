@@ -205,6 +205,7 @@ def test_runner_timeout_terminates_ignoring_child_and_reaps_parent(
     assert result.returncode != 0
     (diagnostics,) = (tmp_path / "test-results").iterdir()
     outcome = json.loads((diagnostics / "outcome.json").read_text())
+    assert "error" not in outcome, outcome
     assert outcome["pytest"]["timed_out"] is True
     assert outcome["pytest"]["forced"] is True
     sessions = list(tmp_path.glob("session-*.pid"))
@@ -337,8 +338,9 @@ def test_outer_fixture_timeout_interrupts_responsive_launcher(
         (diagnostics,) = (tmp_path / "test-results").iterdir()
         assert (diagnostics / "metadata.json").is_file()
         assert (diagnostics / "pytest.log").is_file()
-        assert not list(diagnostics.glob("*.active-pid"))
         outcome = json.loads((diagnostics / "outcome.json").read_text())
+        assert "error" not in outcome, outcome
+        assert not list(diagnostics.glob("*.active-pid"))
         assert outcome["pytest"]["interrupted"] is True
         assert outcome["pytest"]["forced"] is True
 

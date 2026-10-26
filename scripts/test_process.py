@@ -239,6 +239,7 @@ def run_logged(
     shutdown_timeout: float = 5,
 ) -> ProcessOutcome:
     started = time.monotonic()
+    reap_timeout = max(shutdown_timeout, 5.0)
     forced = False
     timed_out = False
     with (
@@ -276,19 +277,19 @@ def run_logged(
                 if deadline is not None and (now >= deadline or len(requested) > 1):
                     owned.kill()
                     forced = True
-                    process.wait(timeout=shutdown_timeout)
+                    process.wait(timeout=reap_timeout)
                     break
                 time.sleep(0.05)
-            returncode = process.wait(timeout=shutdown_timeout)
+            returncode = process.wait(timeout=reap_timeout)
             if owned.has_children():
                 forced = True
             _display_output(reader)
         finally:
             if owned is not None:
-                owned.close(shutdown_timeout)
+                owned.close(reap_timeout)
             else:
                 process.kill()
-                process.wait(timeout=shutdown_timeout)
+                process.wait(timeout=reap_timeout)
                 if process.stdin is not None:
                     process.stdin.close()
             receipt.unlink(missing_ok=True)
