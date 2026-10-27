@@ -240,8 +240,8 @@ the newest stable release. Publishing the tested bottles remains a manual
 Update the version in `pyproject.toml` and add its section to `CHANGELOG.md`
 with any notable user-facing changes. When the Ollama plugin changes, also bump
 its version in `plugins/crewplane-ollama/pyproject.toml` and ensure the core
-dependency accepts it. `make setup` installs both packages from this checkout;
-run `uv lock` after changing their requirements or versions.
+dependency accepts it. `make release-prepare` refreshes `uv.lock` from the project
+metadata before preparing the release artifacts.
 
 Review the changelog, then prepare the
 release with npm installed:

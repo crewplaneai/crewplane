@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-10-26
+
 ### Added
 
 - Order imported workflows with `imports[].needs` while keeping their standalone definitions unchanged.

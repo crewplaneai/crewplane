@@ -184,6 +184,7 @@ install-check:
 	$(RUN_PACKAGE) install-check
 
 release-prepare:
+	uv lock
 	$(RUN_RELEASE) prepare
 
 release-check:
