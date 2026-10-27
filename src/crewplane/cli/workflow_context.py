@@ -6,6 +6,7 @@ from typing import Never
 
 import typer
 from rich.console import Console
+from rich.text import Text
 
 from crewplane.core.config import Config, load_config
 from crewplane.core.preflight import (
@@ -141,5 +142,5 @@ def raise_context_loading_failure(
             project_root=paths.project_root if paths is not None else None,
             state_dir=paths.state_dir if paths is not None else None,
         )
-    console.print(f"[red]✗[/] Invalid: {message}")
+    console.print("[red]✗[/] Invalid:", Text(message))
     raise typer.Exit(code=1) from exc
