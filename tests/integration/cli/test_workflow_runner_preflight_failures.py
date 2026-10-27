@@ -284,3 +284,36 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
             assert metadata["workflow_name"] is None
+
+
+@pytest.mark.parametrize("case", ["model", "yaml", "duplicate", "custom"])
+def test_onboarding_reports_safe_configuration_errors(tmp_path, case):
+    from crewplane.cli.onboarding.runner import OnboardingOptions, OnboardingRunner
+    from tests.helpers.config_secrets import CONFIG_FAILURES, assert_no_secret
+
+    state = tmp_path / ".crewplane"
+    state.mkdir()
+    content, location = CONFIG_FAILURES[case]
+    (state / "config.yml").write_bytes(content.encode())
+    stream = io.StringIO()
+
+    def no_prompt():
+        raise AssertionError("Invalid config must not prompt or launch a provider")
+
+    def no_command(name):
+        del name
+        return None
+
+    options = OnboardingOptions(
+        tmp_path,
+        Console(file=stream, width=200),
+        True,
+        True,
+        no_prompt,
+        no_command,
+        Path.write_text,
+    )
+    assert OnboardingRunner(options).load_config_for_onboarding() is None
+    assert_no_secret(stream.getvalue())
+    assert location in stream.getvalue()
+    assert not (state / "execution-stages").exists()

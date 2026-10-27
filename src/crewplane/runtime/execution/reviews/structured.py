@@ -323,12 +323,10 @@ def canonical_review_verdict(result: ParsedReviewResult) -> str:
     has_minor = not is_empty_section(result.minor_issues)
     has_nitpicks = not is_empty_section(result.nitpicks)
 
-    if has_major or has_minor:
+    if result.verdict == VERDICT_CHANGES_REQUESTED or has_major or has_minor:
         return VERDICT_CHANGES_REQUESTED
     if has_nitpicks:
         return VERDICT_NITS_ONLY
-    if result.verdict == VERDICT_CHANGES_REQUESTED:
-        return VERDICT_CHANGES_REQUESTED
     return VERDICT_NO_FINDINGS
 
 

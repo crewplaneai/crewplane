@@ -333,3 +333,39 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     assert not (resumed_review_stage / "logs").exists()
     assert not (resumed_review_stage / "alpha_executor_0_round1.md").exists()
     assert (second_run / "after" / "alpha_executor_0_round1.md").exists()
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed"])
+def test_cli_pre_fix_history_requires_fresh_execution(tmp_path, monkeypatch, status):
+    from tests.helpers.execution_semantics import pre_fix_execution_semantics
+
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / ".crewplane/config.yml"
+    workflow = tmp_path / ".crewplane/workflows/resume.task.md"
+    fixtures = tmp_path / "fixtures"
+    write_mock_config(config, fixtures)
+    _write_workflow(workflow)
+    write_executor_fixture(fixtures, "a", "Old successful prerequisite.\n")
+    if status == "succeeded":
+        write_executor_fixture(fixtures, "b", "Old successful result.\n")
+    with pre_fix_execution_semantics():
+        if status == "failed":
+            with pytest.raises(typer.Exit):
+                cli.run(tasks_file=workflow, config_file=config, no_live=True)
+        else:
+            cli.run(tasks_file=workflow, config_file=config, no_live=True)
+    (previous,) = _run_dirs(tmp_path)
+    assert _manifest(previous)["status"] == status
+    write_executor_fixture(fixtures, "a", "Fresh prerequisite.\n")
+    write_executor_fixture(fixtures, "b", "Fresh result.\n")
+    cli.run(tasks_file=workflow, config_file=config, no_live=True)
+    (current,) = [path for path in _run_dirs(tmp_path) if path != previous]
+    assert (
+        _manifest(current)["workflow_signature"]
+        != _manifest(previous)["workflow_signature"]
+    )
+    assert _manifest(current)["resumed_nodes"] == []
+    assert (current / "a/alpha_executor_0_round1.md").is_file()
+    assert (current / "b/alpha_executor_0_round1.md").is_file()
+    cli.run(tasks_file=workflow, config_file=config, no_live=True)
+    assert len(_run_dirs(tmp_path)) == 2

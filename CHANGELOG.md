@@ -4,6 +4,18 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Finish active runs before upgrading; earlier results and checkpoints cannot be reused, so the first subsequent run executes afresh and may incur provider cost.
+
+### Fixed
+
+- Require explicit review approval and preserve explicit rejection even without listed major or minor findings.
+- Verify bundled input contents before use and preserve their original line endings.
+- Keep sensitive configuration values and user-defined keys out of load-error diagnostics.
+- Improve provider process and output cleanup when collection fails or a run is cancelled.
+- Reject conflicting imported input aliases and oversized generated invocation names before dispatch.
+
 ## [0.3.9] - 2026-10-26
 
 ### Added

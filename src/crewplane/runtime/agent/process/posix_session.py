@@ -9,7 +9,7 @@ from typing import BinaryIO, cast
 from crewplane.architecture.contracts import InvocationDiagnosticSink
 from crewplane.core.platform import supports_posix_process_groups
 
-from . import runner, streams
+from . import runner, stream_tasks
 from .stream_capture import ProcessOutputCapture
 
 
@@ -62,7 +62,7 @@ class PosixProcessSession:
             await runner.reap_failed_process(
                 self.process, self.process_group_id, diagnostics
             )
-            await streams.drain_process_pipes(
+            await stream_tasks.drain_process_pipes(
                 self.process, diagnostics, self.process_group_id
             )
 

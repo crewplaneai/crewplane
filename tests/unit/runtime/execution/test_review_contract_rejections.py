@@ -127,3 +127,93 @@ def test_review_repair_warning_order_and_case_whitespace() -> None:
         "Ignored commentary below the structured review block during review parsing.",
         "Normalized reviewer verdict from NO_FINDINGS to NITS_ONLY based on section content.",
     )
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "approved",
+        "good to go",
+        "lgtm",
+        "looks good",
+        "looks great",
+        "looks solid",
+        "merge ready",
+        "no blockers",
+        "no blocking issues",
+        "ready to merge",
+        "ship it",
+    ],
+)
+@pytest.mark.parametrize("terminal", ["", ".", "!"])
+def test_plain_approval_requires_complete_affirmative_response(phrase, terminal):
+    from crewplane.runtime.execution.consensus import evaluate_review_output
+
+    raw = " \n" + phrase.upper().replace(" ", " \t\n") + terminal + "\n "
+    result = evaluate_review_output(raw)
+    assert result.approved
+    assert result.verdict == "NO_FINDINGS"
+    assert result.evaluation_kind == "plain_language_approval"
+    assert result.warnings == (
+        "Inferred NO_FINDINGS approval from plain-language reviewer output.",
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "not approved",
+        "not LGTM",
+        "cannot approve",
+        "Approved if tests pass.",
+        "LGTM?",
+        '"approved"',
+        "`LGTM`",
+        "**approved**",
+        "> approved",
+        "```\napproved\n```",
+        "LGTM!!",
+        "LGTM, no blocking issues.",
+        "Looks good overall. One optional nitpick: rename the helper.",
+        "I would say approved, but the result is wrong.",
+        "Do not ship it.",
+    ],
+)
+def test_plain_approval_never_infers_from_surrounding_feedback(raw):
+    from crewplane.runtime.execution.consensus import evaluate_review_output
+
+    result = evaluate_review_output(raw)
+    assert not result.approved
+    if result.evaluation_kind == "unstructured_feedback":
+        assert result.unstructured_feedback == raw
+        assert result.unresolved_issue_count == 0
+        assert result.verdict is None
+
+
+@pytest.mark.parametrize("verdict", ["CHANGES_REQUESTED", "NITS_ONLY", "NO_FINDINGS"])
+@pytest.mark.parametrize(
+    "sections",
+    [
+        ("None", "None", "None"),
+        ("None", "None", "- Rename it."),
+        ("- Fix crash.", "None", "None"),
+        ("None", "- Fix error.", "- Rename it."),
+    ],
+)
+def test_structured_rejection_precedes_section_normalization(verdict, sections):
+    from crewplane.runtime.execution.consensus import evaluate_review_output
+
+    raw = render_review_contract(ParsedReviewResult(verdict, *sections))
+    result = evaluate_review_output(raw)
+    expected = (
+        "CHANGES_REQUESTED"
+        if verdict == "CHANGES_REQUESTED" or sections[:2] != ("None", "None")
+        else "NITS_ONLY"
+        if sections[2] != "None"
+        else "NO_FINDINGS"
+    )
+    assert result.original_verdict == verdict
+    assert result.verdict == expected
+    assert result.approved is (expected != "CHANGES_REQUESTED")
+    assert (result.major_issues, result.minor_issues, result.nitpicks) == sections
+    assert bool(result.warnings) is (verdict != expected)

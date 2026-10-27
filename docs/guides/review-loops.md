@@ -190,8 +190,11 @@ None
 VERDICT: CHANGES_REQUESTED | NITS_ONLY | NO_FINDINGS
 ```
 
-`NO_FINDINGS` and `NITS_ONLY` approve the candidate set. `CHANGES_REQUESTED`
-blocks it and sends feedback to the next executor fix attempt.
+`NO_FINDINGS` and `NITS_ONLY` approve the candidate set only when the major and
+minor sections are empty. Major or minor findings block approval regardless of
+the stated verdict. An explicit `CHANGES_REQUESTED` always blocks approval,
+including when every section is empty or only nitpicks are present. Blocking
+feedback goes to the next executor fix attempt.
 
 One reviewer and multiple reviewers use the same loop. The difference is the
 review phase:

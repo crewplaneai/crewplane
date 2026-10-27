@@ -291,40 +291,6 @@ def _final_head_or_diagnostic(
     return None
 
 
-def _append_policy_diagnostics(
-    checkout_root: Path,
-    repo_root: Path,
-    common_git_dir: Path,
-    diagnostics: list[dict[str, str]],
-) -> None:
-    try:
-        reject_common_git_policy_drift(repo_root, common_git_dir)
-        reject_worktree_git_policy_drift(checkout_root)
-    except RuntimeError as exc:
-        diagnostics.append(
-            {
-                "level": "warning",
-                "message": f"Disposable workspace Git policy drift: {exc}",
-            }
-        )
-
-
-def _append_protected_ref_diagnostics(
-    checkout_root: Path,
-    protected_refs: ProtectedRefSnapshot,
-    diagnostics: list[dict[str, str]],
-) -> None:
-    try:
-        reject_protected_ref_drift(checkout_root, protected_refs)
-    except RuntimeError as exc:
-        diagnostics.append(
-            {
-                "level": "warning",
-                "message": f"Disposable workspace protected ref drift: {exc}",
-            }
-        )
-
-
 def _changed_paths_or_diagnostic(
     checkout_root: Path,
     diagnostics: list[dict[str, str]],

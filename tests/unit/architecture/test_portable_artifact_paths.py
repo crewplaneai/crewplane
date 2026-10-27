@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -103,7 +104,47 @@ def test_generated_directory_suffix_removal_is_disambiguated():
 
 
 def test_reserved_log_filename_keeps_valid_task_ids_unchanged():
-    from crewplane.artifacts.naming import build_log_filename
+    from crewplane.architecture.contracts.artifacts import build_log_filename
 
     assert build_log_filename("aux") == "safe-aux.log"
     assert build_log_filename("aux_executor_0") == "aux-executor-0.log"
+
+
+@pytest.mark.parametrize("round_num", [0, 1, 10])
+@pytest.mark.parametrize("role", ["executor", "reviewer"])
+def test_invocation_sidecars_at_component_budget_are_portable(round_num, role):
+    from crewplane.architecture.contracts.artifacts import (
+        build_log_filename,
+        build_review_audit_directory_name,
+        build_reviewer_state_filename,
+        build_task_round_filename,
+        candidate_identity_path,
+        review_metadata_path,
+        review_raw_output_path,
+    )
+    from tests.helpers.invocation_names import boundary_alias
+
+    alias = boundary_alias("review", 9, role, index=10)
+    task_id = f"{alias}_{role}_10"
+    task = Path(build_task_round_filename(task_id, round_num))
+    sidecar = (
+        candidate_identity_path(task)
+        if role == "executor"
+        else review_metadata_path(task)
+    )
+    names = [
+        task.name,
+        sidecar.name,
+        build_log_filename(task_id, 10, round_num),
+        build_review_audit_directory_name(10),
+    ]
+    if role == "reviewer":
+        names.extend(
+            [
+                review_raw_output_path(task).name,
+                build_reviewer_state_filename(task_id, round_num),
+            ]
+        )
+    assert all(is_safe_relative_path(name) and len(name) <= 180 for name in names)
+    if round_num == 10:
+        assert len(sidecar.name) == 180

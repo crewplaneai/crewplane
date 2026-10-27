@@ -14,7 +14,7 @@ from .common import (
     emit_runtime_log,
 )
 from .errors import NodeExecutionError
-from .preflight_files import preflight_content_path
+from .preflight_files import read_verified_static_text
 from .workspace_files import resolve_project_initial_workspace_file
 
 
@@ -37,10 +37,13 @@ def execute_input_stage(
             stage.input_workspace_file_locator_id,
         )
     elif stage.input_content_ref is not None:
-        input_content = _read_input_content(
-            runtime_context.plan.context_root,
-            stage.input_content_ref,
-        )
+        try:
+            input_content = read_verified_static_text(
+                runtime_context.plan, stage.input_content_ref
+            )
+        except ValueError as exc:
+            raise InputContentError(f"Input node '{stage.id}': {exc}") from exc
+
     else:
         raise ValueError(f"Input node '{stage.id}' is missing source content.")
 
@@ -65,15 +68,6 @@ def execute_input_stage(
 
 def _input_output_file(node_dir: Path) -> Path:
     return node_dir / "input_round1.md"
-
-
-def _read_input_content(context_root: str, content_ref: str) -> str:
-    source_path = preflight_content_path(context_root, content_ref, "input")
-    if source_path is None:
-        raise ValueError(
-            f"Input content reference is missing or unsafe: '{content_ref}'."
-        )
-    return source_path.read_text(encoding="utf-8")
 
 
 def _read_workspace_input_content(

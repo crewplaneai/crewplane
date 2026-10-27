@@ -15,7 +15,7 @@ from crewplane.architecture.contracts import (
     InvocationWorkspaceContext,
 )
 from crewplane.runtime.agent.invocation import command, command_lifecycle
-from crewplane.runtime.agent.process import posix_session, runner, session, streams
+from crewplane.runtime.agent.process import posix_session, runner, session, stream_tasks
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
@@ -151,7 +151,7 @@ def test_command_io_keeps_loop_responsive_and_finishes_before_exit_reporting(
         "reap_failed_process",
         AsyncMock(side_effect=drain_error if stage == "unresolved" else None),
     )
-    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(stream_tasks, "drain_process_pipes", AsyncMock())
 
     async def check():
         started = asyncio.Event()
@@ -298,7 +298,7 @@ def command_case(tmp_path, monkeypatch):
         runner, "write_stdin_and_collect_output", AsyncMock(return_value=capture)
     )
     monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(stream_tasks, "drain_process_pipes", AsyncMock())
     monkeypatch.setattr(command, "confirm_workspace_process_drain", Mock())
     monkeypatch.setattr(command, "record_unresolved_workspace_process_drain", Mock())
     try:

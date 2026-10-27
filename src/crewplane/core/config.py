@@ -8,11 +8,12 @@ from pydantic import (
     ConfigDict,
     Field,
     FiniteFloat,
+    ValidationError,
     ValidationInfo,
     field_validator,
     model_validator,
 )
-from yaml.constructor import ConstructorError
+from yaml import YAMLError
 
 from crewplane.architecture.contracts import (
     JsonObject,
@@ -24,6 +25,7 @@ from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.version import SCHEMA_VERSION
 
 from .agent_environment import validate_agent_environment
+from .config_errors import model_error_message, yaml_error_message
 from .provider_names import normalize_provider_name
 from .token_budget import TokenBudgetSettings
 from .workflow.keywords import (
@@ -327,10 +329,10 @@ def load_config(path: Path) -> Config:
 
     try:
         data = load_yaml_unique(path.read_text(encoding="utf-8"))
-    except ConstructorError as error:
-        raise ValueError(f"{path} is invalid: {error}") from error
-
-    if not isinstance(data, dict):
-        raise ValueError("Config file must contain a YAML object.")
-
-    return Config(**data)
+        if not isinstance(data, dict):
+            raise ValueError("Config file must contain a YAML object.")
+        return Config.model_validate(data)
+    except ValidationError as error:
+        raise ValueError(model_error_message(error, Config)) from None
+    except YAMLError as error:
+        raise ValueError(yaml_error_message(error)) from None

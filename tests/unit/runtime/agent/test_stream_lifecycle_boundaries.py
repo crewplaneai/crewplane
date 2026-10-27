@@ -11,18 +11,22 @@ from unittest.mock import Mock, patch
 import pytest
 
 from crewplane.runtime.agent.invocation import retry_reset
+from crewplane.runtime.agent.process.log_writer import (
+    signal_log_queue_complete,
+    watch_log_writer_status,
+)
 from crewplane.runtime.agent.process.stream_capture import CapturedStream
-from crewplane.runtime.agent.process.streams import (
+from crewplane.runtime.agent.process.stream_tasks import (
     ProcessActivity,
+    drain_process_pipes,
+    finish_stream_tasks_after_process_exit,
+    watch_process_idle_timeout,
+)
+from crewplane.runtime.agent.process.streams import (
     capture_process_streams,
     close_log_handle,
     collect_process_output,
-    drain_process_pipes,
-    finish_stream_tasks_after_process_exit,
     pipe_stream,
-    signal_log_queue_complete,
-    watch_log_writer_status,
-    watch_process_idle_timeout,
     write_stdin,
     write_stdin_and_collect_output,
 )
@@ -112,7 +116,7 @@ def test_completed_process_preserves_writer_error_and_drains_remaining_bytes() -
         error = OSError("log failed")
         status.set_result(error)
         with pytest.raises(OSError, match="log failed") as raised:
-            await watch_log_writer_status(process, status)
+            await watch_log_writer_status(status)
         assert raised.value is error
 
     asyncio.run(scenario())
@@ -280,3 +284,123 @@ def test_retry_reset_cancellation_reports_stuck_or_failed_canceller(
             assert all(not worker.is_alive() for worker in workers)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "first_allocation",
+        "second_allocation",
+        "stdout_flush",
+        "stderr_flush",
+        "stdout_close",
+        "stderr_close",
+    ],
+)
+def test_capture_acquisition_and_transfer_failures_reclaim_all_resources(
+    monkeypatch, fault
+):
+    from crewplane.runtime.agent.process import streams
+
+    captures, handles = [], []
+
+    class FaultingCapture(CapturedStream):
+        def __init__(self):
+            index = len(captures)
+            if fault == ("first_allocation" if index == 0 else "second_allocation"):
+                raise OSError("allocation failed")
+            super().__init__()
+            captures.append(self)
+            handle = self._persist_handle
+            handles.append(handle)
+            side = "stdout" if index == 0 else "stderr"
+            if fault.startswith(side):
+                replacement = Mock(wraps=handle)
+                operation = fault.split("_")[1]
+
+                def fail():
+                    if operation == "close":
+                        handle.close()
+                    raise OSError(f"{fault} failed")
+
+                getattr(replacement, operation).side_effect = fail
+                self._persist_handle = replacement
+
+    monkeypatch.setattr(streams, "CapturedStream", FaultingCapture)
+
+    async def check():
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "print('output')",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            with pytest.raises(OSError, match="failed"):
+                await asyncio.wait_for(collect_process_output(process, None), 5)
+            assert process.returncode is not None
+            assert all(not capture.path.exists() for capture in captures)
+            if len(captures) == 2:
+                assert handles[1 if fault.startswith("stdout") else 0].closed
+        finally:
+            if process.returncode is None:
+                process.kill()
+            await asyncio.wait_for(process.wait(), 5)
+            for handle in handles:
+                handle.close()
+            for capture in captures:
+                capture.path.unlink(missing_ok=True)
+
+    asyncio.run(check())
+
+
+def test_capture_cleanup_keeps_primary_error_and_attempts_sibling_unlinks(monkeypatch):
+    from pathlib import Path
+
+    from crewplane.runtime.agent.process import streams
+
+    captures, attempts = [], []
+    original_unlink = Path.unlink
+
+    class FailingCapture(CapturedStream):
+        def __init__(self):
+            super().__init__()
+            captures.append(self)
+
+        def write(self, payload):
+            del payload
+            raise OSError("primary storage failure")
+
+    def unlink(path, missing_ok=False):
+        attempts.append(path)
+        if captures and path == captures[0].path:
+            raise OSError("unlink failed")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(streams, "CapturedStream", FailingCapture)
+    monkeypatch.setattr(Path, "unlink", unlink)
+
+    async def check():
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "print('output')",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            with pytest.raises(OSError, match="primary storage failure") as error:
+                await asyncio.wait_for(collect_process_output(process, None), 5)
+            assert "unlink failed" in str(error.value.__notes__)
+            assert all(capture.path in attempts for capture in captures)
+            assert all(capture._persist_handle.closed for capture in captures)
+            assert not captures[1].path.exists()
+        finally:
+            if process.returncode is None:
+                process.kill()
+            await asyncio.wait_for(process.wait(), 5)
+            for capture in captures:
+                original_unlink(capture.path, missing_ok=True)
+
+    asyncio.run(check())

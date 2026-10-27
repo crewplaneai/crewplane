@@ -304,3 +304,23 @@ def test_history_ignores_records_with_unsafe_or_mismatched_run_keys(tmp_path) ->
     )
 
     assert [record.manifest.run_id for record in records] == ["valid"]
+
+
+def test_history_excludes_pre_fix_execution_signature(tmp_path):
+    from tests.helpers.execution_semantics import compiled_execution_signatures
+
+    current, previous = compiled_execution_signatures(tmp_path)
+    for run, signature in [("previous", previous), ("current", current)]:
+        write_run_manifest(
+            tmp_path,
+            make_run_manifest(
+                run,
+                f"workflow--{run}",
+                status="succeeded",
+                workflow_signature=signature,
+            ),
+        )
+    records = find_same_context_runs(
+        tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, current
+    )
+    assert [record.manifest.run_id for record in records] == ["current"]

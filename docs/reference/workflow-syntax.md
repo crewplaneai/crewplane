@@ -15,6 +15,7 @@ with [Workflow Authoring](../guides/workflow-authoring.md).
 - [Worktrees](#worktrees)
 - [Nodes](#nodes)
 - [Node Modes](#node-modes)
+- [Review Responses](#review-responses)
 - [Provider Objects](#provider-objects)
 - [Input Nodes](#input-nodes)
 - [Prompt Sections](#prompt-sections)
@@ -293,6 +294,25 @@ node produces a canonical same-node executor output. If reviewers report major
 or minor issues, that feedback becomes the local-round-1 executor handoff.
 `depth` still counts remediation attempts after the local-round-1 executor
 candidate; the round-0 review does not consume depth.
+
+### Review Responses
+
+The structured review format and an example appear in the
+[review loop guide](../guides/review-loops.md). `NO_FINDINGS` and `NITS_ONLY`
+approve only when the major and minor issue sections are empty. Major or minor
+issues block approval regardless of the stated verdict. `CHANGES_REQUESTED`
+always blocks approval, even if all sections are empty or contain only nitpicks.
+Otherwise, Crewplane records `NITS_ONLY` when nitpicks are present and
+`NO_FINDINGS` when they are not.
+
+Without a structured verdict, the entire response must be one of `approved`,
+`good to go`, `lgtm`, `looks good`, `looks great`, `looks solid`, `merge ready`,
+`no blockers`, `no blocking issues`, `ready to merge`, or `ship it` to count as
+approval. Matching ignores case and whitespace differences and permits one final
+`.` or `!`. Quotes, Markdown formatting, questions, conditions, and surrounding
+prose prevent a match. Nitpick prose alone does not imply approval. Crewplane
+recognizes some plain-text requests for changes; other responses are saved as
+feedback but do not count as approval.
 
 ## Provider Objects
 

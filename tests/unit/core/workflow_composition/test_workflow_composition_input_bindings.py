@@ -539,3 +539,72 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
         )
         self.assertEqual(validated.nodes[0].needs, ["local.findings"])
         self.assertIn("{{local.findings.output}}", _executor_prompt(validated.nodes[0]))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("same_source", [False, True])
+def test_multiple_public_inputs_require_the_same_fallback_binding(
+    tmp_path, monkeypatch, reverse, same_source
+):
+    monkeypatch.chdir(tmp_path)
+    child = tmp_path / "child.task.md"
+    child.write_text(
+        f'''---
+schema_version: "{SCHEMA_VERSION}"
+name: Child
+inputs: {{first: fallback, second: fallback}}
+nodes:
+  - id: fallback
+    mode: input
+    source: "{{{{file:unused.md}}}}"
+  - id: use
+    mode: sequential
+    needs: [fallback]
+    providers: [alpha]
+---
+## use
+Use {{{{fallback.output}}}}.
+''',
+        encoding="utf-8",
+        newline="\n",
+    )
+    pairs = [("first", "a"), ("second", "a" if same_source else "b")]
+    if reverse:
+        pairs.reverse()
+    bindings = ", ".join(f"{key}: {source}" for key, source in pairs)
+    root = tmp_path / "root.task.md"
+    root.write_text(
+        f'''---
+schema_version: "{SCHEMA_VERSION}"
+name: Root
+imports:
+  - path: child.task.md
+    as: nested
+    inputs: {{{bindings}}}
+nodes:
+  - id: a
+    mode: sequential
+    providers: [alpha]
+  - id: b
+    mode: sequential
+    providers: [alpha]
+---
+## a
+A.
+## b
+B.
+''',
+        encoding="utf-8",
+        newline="\n",
+    )
+    if same_source:
+        workflow = load_tasks_with_sources(root).workflow
+        consumer = next(node for node in workflow.nodes if node.id == "nested.use")
+        assert consumer.needs == ["a"]
+        assert "{{a.output}}" in _executor_prompt(consumer)
+        assert all(node.id != "nested.fallback" for node in workflow.nodes)
+    else:
+        with pytest.raises(ValueError) as raised:
+            load_tasks_with_sources(root)
+        for part in ("child.task.md", "fallback", "first", "second", "'a'", "'b'"):
+            assert part in str(raised.value)

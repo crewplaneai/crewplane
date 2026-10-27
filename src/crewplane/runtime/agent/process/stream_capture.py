@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 from collections import deque
 from collections.abc import Iterator
-from contextlib import suppress
 from dataclasses import dataclass
-from os import close as close_descriptor
 from pathlib import Path
 from typing import BinaryIO
 
@@ -46,13 +45,28 @@ class CapturedStream:
         if max_memory_bytes < 0:
             raise ValueError("max_memory_bytes must be nonnegative")
         descriptor, raw_path = tempfile.mkstemp()
-        close_descriptor(descriptor)
-        self._path = Path(raw_path)
-        self._persist_handle: BinaryIO = self._path.open("wb")  # noqa: SIM115
-        self._tail_chunks: deque[bytes] = deque()
-        self._tail_size = 0
-        self._max_memory_bytes = max_memory_bytes
-        self._closed = False
+        handle: BinaryIO | None = None
+        try:
+            self._path = Path(raw_path)
+            handle = os.fdopen(descriptor, "wb")
+            self._persist_handle = handle
+            self._tail_chunks: deque[bytes] = deque()
+            self._tail_size = 0
+            self._max_memory_bytes = max_memory_bytes
+            self._closed = False
+        except BaseException as exc:
+            try:
+                if handle is None:
+                    os.close(descriptor)
+                else:
+                    handle.close()
+            except BaseException as cleanup_error:
+                exc.add_note(f"Capture descriptor cleanup failed: {cleanup_error!r}")
+            try:
+                os.unlink(raw_path)
+            except OSError as cleanup_error:
+                exc.add_note(f"Capture file cleanup failed: {cleanup_error!r}")
+            raise
 
     def write(self, payload: bytes) -> None:
         self._persist_handle.write(payload)
@@ -91,17 +105,51 @@ class CapturedStream:
     def close(self) -> None:
         if self._closed:
             return
+        failure: BaseException | None = None
         try:
             self._persist_handle.flush()
-        finally:
+        except BaseException as exc:
+            failure = exc
+        try:
             self._persist_handle.close()
             self._closed = True
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+            else:
+                failure.add_note(f"Capture close failed: {exc!r}")
+        if failure is not None:
+            raise failure
 
     def cleanup(self) -> None:
-        with suppress(OSError):
+        failure: BaseException | None = None
+        try:
             self.close()
-        with suppress(OSError):
-            self._path.unlink()
+        except BaseException as exc:
+            failure = exc
+        try:
+            self._path.unlink(missing_ok=True)
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+            else:
+                failure.add_note(f"Capture unlink failed: {exc!r}")
+        if failure is not None:
+            raise failure
+
+
+def close_captures(captures: list[CapturedStream]) -> None:
+    failure: BaseException | None = None
+    for capture in captures:
+        try:
+            capture.close()
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+            else:
+                failure.add_note(f"Sibling capture close failed: {exc!r}")
+    if failure is not None:
+        raise failure
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ import typer
 import crewplane.cli.app as cli
 from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.config_secrets import CONFIG_FAILURES
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     cli_process_state,
@@ -486,3 +487,50 @@ class CliRunPreflightFailureTests(unittest.TestCase):
         self.assertIn("settings.max_audit_rounds", output_text)
         self.assertNotIn("Provider validation failed", output_text)
         self.assertNotIn("Dry run mode", output_text)
+
+
+@pytest.mark.parametrize("command", ["validate", "dry-run", "run", "cleanup"])
+@pytest.mark.parametrize("case", CONFIG_FAILURES)
+def test_config_failure_is_safe_across_cli_entry_points(
+    tmp_path, monkeypatch, command, case
+):
+    from typer.testing import CliRunner
+
+    from tests.helpers.config_secrets import assert_no_secret
+
+    monkeypatch.chdir(tmp_path)
+    state = tmp_path / ".crewplane"
+    state.mkdir()
+    config = state / "config.yml"
+    content, location = CONFIG_FAILURES[case]
+    config.write_bytes(content.encode())
+    workflow = tmp_path / "workflow.task.md"
+    write_basic_workflow(workflow)
+    args = (
+        ["cleanup", "workspaces", "--dry-run"]
+        if command == "cleanup"
+        else [
+            *(
+                ["validate", str(workflow)]
+                if command == "validate"
+                else ["run", "--tasks", str(workflow)]
+            )
+        ]
+    )
+    if command == "dry-run":
+        args.append("--dry-run")
+    result = CliRunner().invoke(cli.app, args)
+    assert result.exit_code == 1, result.output
+    assert_no_secret(result.stdout + result.stderr)
+    assert location in " ".join(result.output.split())
+    files = [
+        path
+        for root in ("execution-stages", "execution-results")
+        for path in (state / root).rglob("*")
+        if path.is_file()
+    ]
+    for path in files:
+        assert_no_secret(path.read_bytes())
+        assert path.name != "run.json"
+        assert path.parent.name == "preflight"
+    assert bool(files) is (command == "run")

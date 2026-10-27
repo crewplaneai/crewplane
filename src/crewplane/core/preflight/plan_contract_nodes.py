@@ -11,6 +11,7 @@ from crewplane.core.workflow.keywords import (
 )
 
 from . import plan_contract_records, plan_contract_workspace_lineage
+from .invocation_names import validate_invocation_names
 
 if TYPE_CHECKING:
     from .models import PreflightExecutionNode, PreflightExecutionPlan, RenderPlan
@@ -43,6 +44,7 @@ def validate_node_relationships(
         )
         _validate_node_consensus_policy(node, snapshot_policy)
         _validate_provider_task_ids(node)
+        validate_invocation_names(node)
 
 
 def _validate_node_execution_policy(node: PreflightExecutionNode) -> None:

@@ -96,8 +96,12 @@ fallback input node:
 - Dependencies on `standards-input` are rewritten to `handoff.standards`.
 - `{{standards-input.output}}` becomes `{{handoff.standards.output}}`.
 
-If an input is not bound by the importer, the fallback input node stays in the
-composed workflow under the import namespace, such as `fix.standards-input`.
+Multiple public inputs may name the same fallback node. The fallback stays in
+the composed workflow under the import namespace, such as `fix.standards-input`,
+only if none of those names is bound. Binding any of them replaces the fallback
+and redirects all references to it. If more than one is bound, they must resolve
+to the same source node, including through nested imports. Conflicting sources
+fail during composition regardless of YAML order.
 
 ## Examples
 

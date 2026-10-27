@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import (
+    candidate_identity_path,
+    review_raw_output_path,
+)
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -22,7 +26,6 @@ from crewplane.core.review_checkpoint_state import (
 )
 from crewplane.core.review_policy import audit_round_context, audit_rounds_or_default
 
-from ..naming import candidate_identity_path, review_raw_output_path
 from ..run_history import RunHistoryRecord
 from ..workspace.checkpoint_state import validate_checkpoint_workspaces
 from .checkpoint_files import (

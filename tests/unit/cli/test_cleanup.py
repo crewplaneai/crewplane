@@ -49,6 +49,32 @@ def test_cleanup_workspaces_yes_removes_paths(tmp_path: Path) -> None:
     assert not workspace_path.exists(), result.output
 
 
+def test_cleanup_workspaces_reads_pre_fix_execution_evidence(tmp_path: Path) -> None:
+    from tests.helpers.execution_semantics import compiled_execution_signatures
+
+    project, config, workspace = cleanup_project(tmp_path, initialize_git=True)
+    current, previous = compiled_execution_signatures(project)
+    assert current != previous
+    run = project / ".crewplane/execution-stages/run-1"
+    for relative_path in (
+        "manifests/run.json",
+        "preflight/execution-plan.json",
+        "node/workspace-state.json",
+    ):
+        path = run / relative_path
+        payload = json.loads(path.read_bytes())
+        payload["workflow_signature"] = previous
+        path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", str(config), "--yes"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "Removed 1 workspace path(s)" in result.output
+    assert not workspace.exists()
+
+
 def test_cleanup_workspaces_rechecks_exact_worktree_identity_before_removal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

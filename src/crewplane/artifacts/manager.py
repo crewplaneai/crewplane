@@ -8,6 +8,7 @@ from crewplane.architecture.contracts import (
     NodeArtifactRequest,
     VerifiedNodeArtifact,
 )
+from crewplane.architecture.contracts.artifacts import build_log_filename
 from crewplane.architecture.ports.artifacts import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
@@ -38,7 +39,6 @@ from .atomic import (
 )
 from .directory_manager import DirectoryManager
 from .naming import (
-    build_log_filename,
     build_stage_directory_name,
     node_state_relative_path,
     preflight_manifest_relative_path,

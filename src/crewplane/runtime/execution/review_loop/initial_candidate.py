@@ -7,10 +7,12 @@ from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
-from crewplane.architecture.contracts.artifacts import build_task_round_filename
+from crewplane.architecture.contracts.artifacts import (
+    build_task_round_filename,
+    candidate_identity_path,
+)
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
-from crewplane.artifacts.naming import candidate_identity_path
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
