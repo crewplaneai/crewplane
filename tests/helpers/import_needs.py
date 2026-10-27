@@ -12,7 +12,9 @@ def write_import_needs_workflow(
 ) -> Path:
     workflow_dir = root / ".crewplane" / "workflows"
     workflow_dir.mkdir(parents=True, exist_ok=True)
-    (root / "context.md").write_text("Existing documentation.\n", encoding="utf-8")
+    (root / "context.md").write_text(
+        "Existing documentation.\n", encoding="utf-8", newline="\n"
+    )
     (workflow_dir / "child.task.md").write_text(
         f'---\nschema_version: "{SCHEMA_VERSION}"\n'
         "name: Documentation review\n"

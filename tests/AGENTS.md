@@ -28,6 +28,14 @@ for placement.
 - Keep short parser inputs and static subprocess snippets inline when that keeps
   the test readable. Use source files for longer or more complex programs. Do not
   modify program behavior through source-text replacement.
+- Make fixture bytes deterministic when asserting bytes, sizes, hashes, or
+  signatures. Use `Path.write_bytes(...)` or
+  `Path.write_text(..., encoding="utf-8", newline="\n")`; default text writes
+  can translate LF to CRLF on Windows, even when the string contains `\n`.
+- Use `read_bytes()` for exact byte assertions; `read_text()` can normalize
+  newlines and hide differences. When newline preservation is the contract,
+  cover LF and CRLF inputs explicitly and assert the original bytes. Fix fixture
+  generation rather than normalizing production output or weakening assertions.
 - Put program files and reusable input files in [fixtures/](fixtures/).
   Pass scenario variations through arguments, environment variables, or data
   files. Keep fixture programs intended for child interpreters outside ordinary

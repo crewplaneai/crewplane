@@ -77,6 +77,23 @@ def test_import_prerequisites_compile_to_ordering_edges_and_round_trip(
     }
 
 
+@pytest.mark.parametrize(
+    "content",
+    [b"Existing documentation.\n", b"Existing documentation.\r\n"],
+    ids=["lf", "crlf"],
+)
+def test_import_prerequisites_preserve_file_input_bytes(
+    tmp_path: Path, content: bytes
+) -> None:
+    workflow = write_import_needs_workflow(tmp_path)
+    (tmp_path / "context.md").write_bytes(content)
+
+    preview = _compile(tmp_path, workflow)
+
+    assert not preview.diagnostics
+    assert set(preview.static_file_payloads.values()) == {content}
+
+
 def test_effective_import_edges_change_signature_without_changing_prompt_artifacts(
     tmp_path: Path,
 ) -> None:
