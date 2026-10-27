@@ -44,6 +44,7 @@ class ImportSpec:
     with_params: dict[str, str]
     inputs: dict[str, str]
     source_path: Path
+    needs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

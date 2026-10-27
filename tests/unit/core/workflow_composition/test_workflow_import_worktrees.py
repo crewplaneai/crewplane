@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import mkdtemp
 
+import pytest
+
 from crewplane.core.config import Config
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.models import (
@@ -20,6 +22,48 @@ from tests.unit.core.workflow_composition.workflow_composition_imports_support i
 )
 
 pytestmark = requires_workspace_support
+
+
+@pytest.mark.parametrize("separate_worktree", [False, True])
+def test_import_prerequisites_obey_worktree_lineage(
+    tmp_path: Path, separate_worktree: bool
+) -> None:
+    child_worktrees = (
+        "worktrees: {other: {kind: worktree}}\n" if separate_worktree else ""
+    )
+    (tmp_path / "child.task.md").write_text(
+        "---\nname: Child\n"
+        f"{child_worktrees}"
+        "nodes: [{id: review, mode: sequential, providers: [alpha]}]\n"
+        "---\n## review\nReview the work.\n",
+        encoding="utf-8",
+    )
+    workflow = tmp_path / "root.task.md"
+    workflow.write_text(
+        "---\nname: Root\n"
+        "worktrees: {primary: {kind: worktree}}\n"
+        "imports: [{path: child.task.md, as: child, needs: [prepare]}]\n"
+        "nodes: [{id: prepare, mode: sequential, providers: [alpha]}]\n"
+        "---\n## prepare\nPrepare the work.\n",
+        encoding="utf-8",
+    )
+
+    composed = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=tmp_path).workflow
+    )
+    messages = _workspace_policy_messages(composed)
+
+    if separate_worktree:
+        assert any(
+            "depends directly on worktree 'primary' while selecting worktree 'child.other'"
+            in message
+            for message in messages
+        )
+    else:
+        assert messages == ()
+        selections = logical_workspace_selections(composed, _workspace_config())
+        assert selections["child.review"].logical_worktree_name == "primary"
+        assert selections["child.review"].source_node_id == "prepare"
 
 
 def _workspace_config(clean_start: str = "strict") -> Config:

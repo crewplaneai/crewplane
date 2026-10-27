@@ -12,6 +12,7 @@ Introduce workflow composition primitives to declarative `.task.md` files. This 
 - **Prompt Parameterization:** Supporting explicit parameter bindings (`{{param:key}}`) mapped through `with` block declarations during an import.
 - **Reusable Input Boundaries:** Supporting explicit workflow input declarations (`inputs`) that point to `mode: input` nodes. Input nodes materialize raw file-backed content and allow a workflow to run standalone.
 - **Import-Time Input Binding:** Supporting `imports[].inputs` so importing workflows can bind declared imported inputs to upstream node IDs and selectively rewire only the consuming branches.
+- **Import Prerequisites:** Supporting `imports[].needs` as caller-scoped ordering dependencies on every provider entry in the fully composed imported subtree, without changing the child workflow.
 - **Namespace Isolation:** Automatically prefixing imported nodes using the import alias (e.g., `alias.node_id`) to prevent task ID collisions across the composed workflow graph.
 - **Cycle Detection:** Strictly checking and rejecting cyclical import chains.
 
@@ -44,13 +45,21 @@ Prior to this decision, the `.task.md` workflow structure had no mechanism for i
 1. **Reuse over Duplication (Phase 2):** Composition is the enabler for code reuse across repositories. Without it, workflows cannot scale beyond single-file copy-paste.
 2. **Preserve Declarative Style:** Rather than relying on dynamic programming structures, static imports ensure the graph can still be validated, hashed, and executed deterministically, keeping the declarative nature of `.task.md` intact.
 3. **Registry Foundation (Phase 4):** Providing parameterizable templates is the fundamental prerequisite for supporting a community or internal workflow registry system sequence.
+4. **Caller-Controlled Ordering:** An importing workflow can wait for earlier
+   work without changing a reusable child or supplying content it does not need.
+   Requiring input bindings for ordering would force child authors to declare
+   artificial inputs and would couple ordering to content. Editing each child
+   to add dependencies would prevent the same child from remaining standalone
+   and reusable in other callers. Composition-time prerequisites use the existing
+   dependency rules, but callers must choose the required upstream nodes and
+   account for their workspace effects.
 
 ## Consequences
 ### Positive
 - Workflows can be modularized and shared.
 - Reduced boilerplate and synchronization effort across projects needing similar steps (e.g., common deployment or test tasks).
 - Reusable workflows can stay runnable on their own through raw input nodes while still composing cleanly into larger DAGs.
-- `imports[].with` remains a small prompt-only mechanism, while `imports[].inputs` handles graph rewiring explicitly.
+- `imports[].with` remains a small prompt-only mechanism, `imports[].inputs` replaces declared input boundaries, and `imports[].needs` gates provider entries without requiring child inputs.
 
 ### Negative
 - Increased complexity in workflow loading, parsing, and internal document representation.
@@ -68,3 +77,5 @@ Prior to this decision, the `.task.md` workflow structure had no mechanism for i
   `.crewplane/inputs/`; the sample raw input files moved under the generated
   workflow library's `example-templates/sample-inputs/` directory as copyable
   examples rather than a blessed project input location.
+- **2026-10-26**: Added caller-scoped import prerequisites as ordinary composed
+  dependencies on provider entries; standalone child workflows remain unchanged.

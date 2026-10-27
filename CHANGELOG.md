@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Order imported workflows with `imports[].needs` while keeping their standalone definitions unchanged.
+
 ### Changed
 
 - **Breaking:** The included Ollama plugin now supports command execution; existing

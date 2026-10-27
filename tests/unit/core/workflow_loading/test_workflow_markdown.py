@@ -1,11 +1,33 @@
 from pathlib import Path
 
+import pytest
+
 from crewplane.core.workflow.markdown import (
     parse_workflow_markdown_document,
     parse_workflow_markdown_text,
     validate_workflow_markdown_text,
 )
 from crewplane.version import SCHEMA_VERSION
+
+
+@pytest.mark.parametrize(
+    ("needs_field", "expected"),
+    [
+        ("", []),
+        ("    needs: []\n", []),
+        ('    needs: [" plan.plan.final "]\n', ["plan.plan.final"]),
+    ],
+)
+def test_markdown_parser_preserves_import_prerequisites(
+    tmp_path: Path, needs_field: str, expected: list[str]
+) -> None:
+    payload = parse_workflow_markdown_text(
+        tmp_path / "root.task.md",
+        "---\nname: Root\nimports:\n  - path: child.task.md\n    as: child\n"
+        f"{needs_field}nodes: []\n---\n",
+    )
+
+    assert payload["imports"][0]["needs"] == expected
 
 
 def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None:

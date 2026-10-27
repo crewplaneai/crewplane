@@ -107,12 +107,60 @@ for what happens between runs and when a run fails.
 | `as` | Import alias namespace. Must match `[a-z0-9._-]+`. |
 | `with` | String parameter bindings for `{{param:key}}`. |
 | `inputs` | Bind child workflow input names to local node IDs. |
+| `needs` | Optional list of caller-scoped node IDs that gate every provider entry in the import. |
 
 Import paths resolve relative to the workflow file that declares them. Imports
 are Markdown-only, alias-namespaced, cycle-checked, and bounded to the project
 root. Duplicate aliases fail. Unused `with` parameters fail so misspelled
 parameter names do not silently disappear.
 `inputs` keys and bound node IDs must be non-empty strings after trimming.
+
+### Import prerequisites
+
+`imports[].needs` adds ordering to an imported workflow without changing its
+source. Omission and `[]` add no ordering. The value must be a list of strings;
+surrounding whitespace is trimmed, and each ID must be non-empty and match
+`[a-z0-9._-]+`. `null`, scalars, mappings, non-string elements, template
+expressions, and parameter substitution are not supported.
+
+IDs resolve in the workflow declaring the import, using the same rules as node
+dependencies. They can name parent-local nodes or concrete nodes in sibling
+imports, including imports declared later. An alias alone does not mean “wait
+for the entire workflow”; name the required nodes explicitly. In nested imports,
+IDs acquire the caller's namespace. To refer to a caller input boundary, use its
+local **node ID**, not its public input name; a bound input ID resolves to its
+replacement node.
+
+After nested imports and input bindings are composed, a provider entry is any
+non-input node with no dependency on another non-input node in that imported
+subtree. Every such entry receives the prerequisites, even if it already depends
+on a caller node or an unbound file input. Existing dependencies come first,
+followed by the import prerequisites. Exact duplicates are removed in first-seen
+order; transitive edges remain. Internal provider dependencies are preserved.
+Input nodes remain dependency-free. Nonempty `needs` fails if the composed child
+has no provider entries, including input-only imports and imports whose nodes
+were all pruned.
+
+`inputs` and `needs` can coexist: bindings replace input consumers' dependencies,
+while prerequisites gate all provider entry branches. Prerequisites add no prompt
+text or artifact references and do not select review material. Add explicit
+prompt references or input bindings when a provider needs upstream content.
+
+These are ordinary node dependencies after composition. Unknown targets
+(including pruned inputs), self-dependencies, and cycles fail validation before
+execution. Prerequisites must succeed under their normal execution policies;
+failed prerequisites block dependent branches. The edges also participate in
+workflow signatures, duplicate detection, and dependency-closed resume.
+
+Import prerequisites have the same workspace effects as node `needs`: they can
+order writers on one logical worktree, but direct dependencies across different
+mutable worktrees remain invalid and no implicit merge occurs. See
+[Workspace Isolation](../guides/workspace-isolation.md).
+
+Ordering does not defer file-input resolution. Unbound file inputs retain their
+preflight or project-initial source semantics and may materialize before the
+prerequisite providers finish. A file that an upstream provider will create is
+not a deferred input; a missing fallback file still fails preflight.
 
 ## Worktrees
 

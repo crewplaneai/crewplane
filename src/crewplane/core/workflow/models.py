@@ -118,6 +118,7 @@ WorkflowImportPayload = TypedDict(
         "as": str,
         "with": dict[str, str],
         "inputs": dict[str, str],
+        "needs": list[str],
     },
 )
 

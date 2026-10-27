@@ -14,11 +14,13 @@ import pytest
 import crewplane.cli.app as cli
 from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.import_needs import write_import_needs_workflow
 from tests.helpers.isolated_git import (
     IsolatedGit,
     configure_isolated_git_environment,
     require_git,
 )
+from tests.helpers.mock_resume import write_mock_config
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
@@ -40,6 +42,21 @@ class InheritedFilesystemArtifactsAdapter(FilesystemArtifactsAdapter):
 
 
 ExternalFilesystemArtifactsAlias = FilesystemArtifactsAdapter
+
+
+def test_dry_run_shows_import_prerequisites_and_execution_waves(tmp_path: Path) -> None:
+    workflow = write_import_needs_workflow(tmp_path)
+    config = tmp_path / ".crewplane" / "config.yml"
+    write_mock_config(config, tmp_path / "fixtures")
+
+    output = run_dry_run(tmp_path, config, workflow)
+
+    assert "needs: doc.context, plan, implement" in output
+    assert "needs: plan, implement" in output
+    assert output.index("Node: implement") < output.index("Node: doc.review")
+    assert output.index("Node: implement") < output.index("Node: doc.audit")
+    assert "Wave 4" in output
+    assert artifact_tree(tmp_path / ".crewplane") == ()
 
 
 class CliDryRunTests(unittest.TestCase):
