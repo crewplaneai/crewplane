@@ -141,7 +141,7 @@ Why this was chosen:
 - Retry/quota behavior inside invoker implementation.
 - Workflow-level success/failure aggregation.
 - Review-loop canonical-candidate validation, remediation no-progress handling, artifact-drift detection, and review-state/status persistence.
-- Workflow composition (`imports`, namespace rewrite, cycle/collision checks, `{{param:...}}` substitution, declared workflow inputs, and import-time input binding rewrite).
+- Workflow composition (`imports`, namespace rewrite, cycle/collision checks, `{{param:...}}` substitution, declared workflow inputs, import-time input binding, and import prerequisite rewrites).
 
 ### Replaceable responsibilities
 - Invocation transport (CLI/API/etc).

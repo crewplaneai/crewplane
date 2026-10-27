@@ -81,6 +81,7 @@ def build_workflow_payload(
                 "as": import_config.alias,
                 "with": dict(import_config.with_params),
                 "inputs": dict(import_config.input_bindings),
+                "needs": list(import_config.needs),
             }
             for import_config in workflow.imports
         ],

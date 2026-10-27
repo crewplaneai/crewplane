@@ -13,6 +13,7 @@ from ..markdown import parse_workflow_markdown_document
 from ..models import WorkflowPayload, workflow_node_payload_dict
 from ..source_locations import SourceSpan
 from .imports import (
+    attach_import_prerequisites,
     bind_import_params,
     resolve_import_path,
     validate_import_params_consumed,
@@ -167,6 +168,14 @@ class WorkflowComposer:
     ) -> CompositionResult:
         resolved_import_path = self._resolve_import_file(import_spec)
         child_namespace = qualify_id(context.namespace_prefix, import_spec.alias)
+        prerequisites = tuple(
+            resolve_dependency_id(
+                dependency,
+                namespace_prefix=context.namespace_prefix,
+                bound_input_nodes=context.bound_input_nodes,
+            )
+            for dependency in import_spec.needs
+        )
         child_result = self._compose_file(
             path=resolved_import_path,
             namespace_prefix=child_namespace,
@@ -187,7 +196,7 @@ class WorkflowComposer:
             import_stack=context.import_stack,
         )
         validate_import_params_consumed(import_spec, child_namespace, child_result)
-        return child_result
+        return attach_import_prerequisites(child_result, prerequisites, import_spec)
 
     def compose_local_nodes(self, context: CompositionContext) -> CompositionResult:
         composed_nodes: list[ComposedNode] = []

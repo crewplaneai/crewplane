@@ -169,6 +169,79 @@ def test_import_config_treats_null_mappings_as_empty() -> None:
     assert imported.input_bindings == {}
 
 
+@pytest.mark.parametrize("fields", [{}, {"needs": []}])
+def test_import_config_defaults_to_no_prerequisites(fields: dict[str, object]) -> None:
+    imported = WorkflowImportConfig.model_validate(
+        {"path": "child.task.md", "as": "child", **fields}
+    )
+
+    assert imported.needs == []
+
+
+def test_import_config_normalizes_prerequisite_ids() -> None:
+    imported = WorkflowImportConfig.model_validate(
+        {
+            "path": "child.task.md",
+            "as": "child",
+            "needs": [
+                "  plan.plan.final  ",
+                "implement-1.handoff_v2",
+                "plan.plan.final",
+            ],
+        }
+    )
+
+    assert imported.needs == [
+        "plan.plan.final",
+        "implement-1.handoff_v2",
+        "plan.plan.final",
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "build", 1, True, {"build": True}, ("build",), {"build"}],
+)
+def test_import_config_requires_a_list_of_prerequisites(value: object) -> None:
+    with pytest.raises(ValidationError, match="needs.*must be a list"):
+        WorkflowImportConfig.model_validate(
+            {"path": "child.task.md", "as": "child", "needs": value}
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        1,
+        True,
+        [],
+        {},
+        "",
+        "  ",
+        "Build",
+        "a/b",
+        "a b",
+        "{{param:step}}",
+        "{{build.output}}",
+    ],
+)
+def test_import_config_rejects_invalid_prerequisite_ids(value: object) -> None:
+    with pytest.raises(ValidationError, match="needs") as caught:
+        WorkflowImportConfig.model_validate(
+            {"path": "child.task.md", "as": "child", "needs": [value]}
+        )
+
+    assert repr(value) in str(caught.value)
+
+
+def test_import_config_still_forbids_unknown_fields() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        WorkflowImportConfig.model_validate(
+            {"path": "child.task.md", "as": "child", "depends_on": ["build"]}
+        )
+
+
 def test_frontmatter_normalizes_worktrees_and_inputs() -> None:
     frontmatter = WorkflowFrontmatter.model_validate(
         {

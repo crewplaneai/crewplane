@@ -30,6 +30,8 @@ In this example, `path` points to the reusable workflow, `as` gives every
 imported node a namespace, and `with` supplies the producer's
 `{{param:project_name}}` value. The optional `inputs` field, covered below,
 connects a child workflow input to a node in the parent workflow.
+Use `needs` when the child should wait for specific nodes before its providers
+start, without requiring a child input declaration.
 
 Import paths resolve relative to the workflow file that declares them. Imports
 are Markdown-only and must stay within the project root. Duplicate aliases fail,
@@ -98,6 +100,45 @@ If an input is not bound by the importer, the fallback input node stays in the
 composed workflow under the import namespace, such as `fix.standards-input`.
 
 ## Examples
+
+### Order an unchanged child workflow
+
+Suppose you have three workflows in the same directory as the caller: a planning
+workflow that produces `plan.final`, an implementation workflow that accepts
+`implementation_plan` and produces `implement.handoff`, and a standalone
+documentation workflow that starts at `review-fix-loop`. For these
+illustrative filenames and node IDs, the caller can order them like this:
+
+```yaml
+imports:
+  - path: write-implementation-plan.task.md
+    as: plan
+
+  - path: plan-implementation.task.md
+    as: implement
+    inputs:
+      implementation_plan: plan.plan.final
+
+  - path: review-fix-iteration.task.md
+    as: review
+    needs:
+      - plan.plan.final
+      - implement.implement.handoff
+```
+
+Composition gives `review.review-fix-loop` both prerequisites. If the child has
+multiple independent provider branches, every entry branch waits. The
+documentation workflow stays runnable on its own and needs no input declaration
+for this ordering.
+
+This only establishes order. It does not put the plan or implementation handoff
+into the documentation review prompt. Supply any required review material
+explicitly through prompts or declared inputs. File inputs retain their existing
+resolution timing, and normal workspace lineage restrictions still apply. See
+[Import prerequisites](../reference/workflow-syntax.md#import-prerequisites)
+for the exact entry-node, namespace, validation, and workspace rules.
+
+### Pass findings through input bindings
 
 The packaged producer defines `review.findings` with `findings: true`. When you
 import it as `quality`, the composed node becomes `quality.review.findings`.

@@ -77,6 +77,24 @@ class WorkflowImportConfig(BaseModel):
     alias: str = Field(alias="as")
     with_params: dict[str, str] = Field(default_factory=dict, alias="with")
     input_bindings: dict[str, str] = Field(default_factory=dict, alias="inputs")
+    needs: list[str] = Field(default_factory=list)
+
+    @field_validator("needs", mode="before")
+    @classmethod
+    def _validate_needs(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            raise ValueError("Workflow import 'needs' must be a list of node IDs.")
+        normalized: list[str] = []
+        for dependency in value:
+            if not isinstance(dependency, str) or not NODE_ID_PATTERN.fullmatch(
+                dependency.strip()
+            ):
+                raise ValueError(
+                    f"Workflow import 'needs' has invalid node ID {dependency!r}; "
+                    "expected a non-empty string matching '[a-z0-9._-]+'."
+                )
+            normalized.append(dependency.strip())
+        return normalized
 
     @field_validator("path", mode="before")
     @classmethod

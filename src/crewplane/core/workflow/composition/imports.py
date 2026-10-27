@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from ..markdown.models import WorkflowImportConfig
@@ -20,6 +21,7 @@ def import_specs_from_frontmatter(
             with_params=dict(import_config.with_params),
             inputs=dict(import_config.input_bindings),
             source_path=source_path,
+            needs=tuple(import_config.needs),
         )
         if import_spec.alias in seen_aliases:
             raise ValueError(
@@ -30,6 +32,46 @@ def import_specs_from_frontmatter(
         imports.append(import_spec)
 
     return tuple(imports)
+
+
+def attach_import_prerequisites(
+    child_result: CompositionResult,
+    prerequisites: tuple[str, ...],
+    import_spec: ImportSpec,
+) -> CompositionResult:
+    if not prerequisites:
+        return child_result
+    provider_ids = {
+        node.payload.id for node in child_result.nodes if node.payload.mode != "input"
+    }
+    entry_ids = {
+        node.payload.id
+        for node in child_result.nodes
+        if node.payload.mode != "input" and provider_ids.isdisjoint(node.payload.needs)
+    }
+    if not entry_ids:
+        raise ValueError(
+            f"Workflow import '{import_spec.alias}' in '{import_spec.source_path}' "
+            "declares 'needs' but has no provider entry nodes."
+        )
+    return replace(
+        child_result,
+        nodes=[
+            replace(
+                node,
+                payload=node.payload.model_copy(
+                    update={
+                        "needs": list(
+                            dict.fromkeys([*node.payload.needs, *prerequisites])
+                        )
+                    }
+                ),
+            )
+            if node.payload.id in entry_ids
+            else node
+            for node in child_result.nodes
+        ],
+    )
 
 
 def resolve_import_path(parent_file: Path, raw_path: str) -> Path:
