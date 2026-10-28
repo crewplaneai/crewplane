@@ -29,7 +29,7 @@ RUN_PACKAGE = $(RUN_PYTHON) scripts/run_package_checks.py -- $(RUN_RELEASE)
 RUN_TESTS = $(RUN_PYTHON) scripts/run_tests.py --profile $(TEST_PROFILE) $(if $(STATEMENT_COVERAGE_FLOOR),--statement-floor $(STATEMENT_COVERAGE_FLOOR)) $(if $(BRANCH_COVERAGE_FLOOR),--branch-floor $(BRANCH_COVERAGE_FLOOR))
 
 .PHONY: help setup uninstall test coverage-check typecheck lint format format-check check actionlint \
-	dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
+	provider-defaults-check dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
 	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
 	ollama-package-build ollama-package-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
@@ -45,6 +45,7 @@ help:
 		'Development:' \
 		'  setup              Install editable dev environment' \
 		'  test               Run pytest with statement and branch coverage gates' \
+		'  provider-defaults-check Check template model defaults and propagation' \
 		'  coverage-check    Check floors in an explicit COVERAGE_REPORT' \
 		'  typecheck          Check strict typing for core, plugins, and fixtures' \
 		'  lint               Run ruff checks' \
@@ -95,6 +96,11 @@ uninstall:
 
 test:
 	$(RUN_TESTS) $(TEST_ARGS)
+
+provider-defaults-check:
+	$(RUN_TESTS) --coverage off \
+		tests/unit/cli/test_onboarding_rendering.py \
+		tests/integration/cli/test_template_provider_defaults.py $(TEST_ARGS)
 
 coverage-check:
 	@test -n "$(COVERAGE_REPORT)" || (printf '%s\n' 'Set COVERAGE_REPORT to a test-results/<invocation>/coverage.json file.'; exit 1)

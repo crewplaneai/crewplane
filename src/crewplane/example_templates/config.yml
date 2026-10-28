@@ -41,6 +41,7 @@ agents:
   #   cli_cmd: ["claude"]
   #   provider_kind: "claude"
   #   prompt_transport: "stdin"
+  #   # Model selection: https://code.claude.com/docs/en/model-config
   #   default_model: "sonnet"
   #   # Optional configured pricing per million tokens:
   #   # pricing:
@@ -71,12 +72,14 @@ agents:
   #   provider_kind: "codex"
   #   prompt_transport: "stdin"
   #   prompt_transport_arg: "-"
-  #   default_model: "gpt-6-astra"
-  #   # Optional configured pricing per million tokens:
+  #   # Model selection: https://learn.chatgpt.com/docs/models
+  #   default_model: "gpt-6.1-sol"
+  #   # Optional Standard API pricing per million tokens (up to 272K input):
+  #   # https://developers.openai.com/api/docs/pricing
   #   # pricing:
-  #   #   input: 10.0
-  #   #   cached_input: 1.0
-  #   #   output: 50.0
+  #   #   input: 2.0
+  #   #   cached_input: 0.1
+  #   #   output: 10.0
   #   # Wall-clock kill is opt-in. By default, active provider CLIs may run past
   #   # 30 minutes; the idle timeout below only kills processes that stop producing
   #   # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
@@ -98,6 +101,7 @@ agents:
   #   cli_cmd: ["gemini"]
   #   provider_kind: "gemini"
   #   prompt_transport: "stdin"
+  #   # Model selection: https://geminicli.com/docs/cli/model/
   #   default_model: "auto"
   #   # Gemini's machine-readable JSON response is emitted only after completion,
   #   # so Crewplane cannot enforce an output-idle timeout for this provider. Set a
@@ -119,7 +123,8 @@ agents:
   #   cli_cmd: ["copilot"]
   #   provider_kind: "copilot"
   #   prompt_transport: "stdin"
-  #   default_model: "claude-sonnet-5"
+  #   # Model selection: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#supported-models
+  #   default_model: "claude-sonnet-5.5"
   #   # Optional configured pricing per million tokens:
   #   # pricing:
   #   #   input: 2.0
@@ -149,6 +154,7 @@ agents:
   #   cli_cmd: ["kilo", "run"]
   #   provider_kind: "kilo"
   #   prompt_transport: "stdin"
+  #   # Model selection: https://kilo.ai/docs/code-with-ai/agents/auto-model
   #   default_model: "kilo/kilo-auto/frontier"
   #   # Optional hard wall-clock kill for special cases such as CI or disposable runners.
   #   invocation_timeout_seconds: null
@@ -167,7 +173,7 @@ agents:
   #   provider_kind: "pi"
   #   prompt_transport: "stdin"
   #   # Example for Pi's Codex login; choose your authenticated provider/model.
-  #   # default_model: "openai-codex/gpt-5.5"
+  #   # default_model: "openai-codex/gpt-6.1-sol"
   #   # Avoid approval prompts from automatically loaded extensions.
   #   extra_args: ["--no-extensions"]
   #   # Text output arrives at completion; only a wall-clock limit is enforceable.

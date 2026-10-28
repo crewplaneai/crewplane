@@ -88,14 +88,15 @@ crewplane run
 ## How Agent Names Work
 
 In Crewplane, an `agent` is a named set of provider CLI settings. Workflow nodes
-use that name to select the settings:
+use that name to select the settings. The model name below is illustrative;
+see [Choose A Model](#choose-a-model) for the shipped defaults and selection rules:
 
 ```yaml
 agents:
   codex:
     cli_cmd: ["codex", "exec"]
     provider_kind: "codex"
-    default_model: "gpt-6-astra"
+    default_model: "example-model"
     prompt_transport: "stdin"
     prompt_transport_arg: "-"
     extra_args:
@@ -229,8 +230,9 @@ Model-selected commands run inside WSL; no Linux Ollama CLI is required.
 ## Pi Text Mode
 
 Install Pi and configure its credentials before using it with Crewplane.
-The generated `.crewplane/config.yml` includes this commented profile.
-Uncomment it and use `pi` in your workflow's `providers` list:
+Uncomment its profile in the generated `.crewplane/config.yml` and use `pi` in
+your workflow's `providers` list. In this illustrative profile, replace
+`provider/model-id` with an available model before enabling that optional line:
 
 ```yaml
 agents:
@@ -238,8 +240,8 @@ agents:
     cli_cmd: [pi]
     provider_kind: pi
     prompt_transport: stdin
-    # Example for Pi's Codex login; choose your authenticated provider/model.
-    # default_model: "openai-codex/gpt-5.5"
+    # Optional: choose a model listed by pi --list-models.
+    # default_model: "provider/model-id"
     extra_args: ["--no-extensions"]
     invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: null
@@ -248,9 +250,9 @@ agents:
 Keep `prompt_transport: stdin` and leave out `prompt_transport_arg`. Crewplane
 sends the prompt and adds the options needed for Pi's text mode automatically.
 
-Pi can use models from multiple providers. Set `default_model` to a
-`provider/model` value matching the provider you authenticated with in Pi.
-For a Pi Codex login, uncomment `default_model: "openai-codex/gpt-5.5"` above.
+Pi can use models from multiple providers. To select one explicitly, set
+`default_model` to a `provider/model` value matching the provider you
+authenticated with in Pi.
 Use `pi --list-models` to find model IDs available in your installation.
 
 A workflow's `model` takes precedence over the agent's `default_model`.
@@ -381,15 +383,24 @@ exclude tasks that OpenCode delegates to other agents.
 
 ## Choose A Model
 
-Set `default_model` in an agent profile to choose its model. If you leave it
-out, the provider CLI uses its own default.
+The [packaged config template](../../src/crewplane/example_templates/config.yml)
+is the source of truth for shipped provider defaults. Check its provider blocks
+or your generated `.crewplane/config.yml` for the selected models. Updating
+Crewplane does not replace an existing project's config or workflow overrides.
 
-To override the model for one workflow node, use a provider object:
+Set `default_model` in an agent profile to choose its model. If you leave it
+out or set it to `null`, the provider CLI uses its own selection where supported.
+Provider aliases can follow newer releases without changing the configured
+string. Use a provider-supported snapshot identifier, when available, to pin a
+specific version. Model availability still depends on your CLI version and account.
+
+To override the model for one workflow node, use a provider object. Replace the
+illustrative `example-model` with an available model:
 
 ```yaml
 providers:
   - provider: codex
-    model: gpt-5.3
+    model: example-model
 ```
 
 Crewplane passes a workflow's `model` value to the provider CLI. DeepSeek is the
@@ -409,7 +420,6 @@ matching `provider_kind`. Use a value supported by your chosen provider and mode
 ```yaml
 providers:
   - provider: codex
-    model: gpt-5.6-sol
     reasoning: xhigh
 ```
 

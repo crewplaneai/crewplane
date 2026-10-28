@@ -228,6 +228,17 @@ Generated templates use `SCHEMA_VERSION`. Ordinary releases and backward-compati
 changes do not require a schema bump. During public alpha (`0.x`), support only the
 current schema; persisted run artifacts are disposable and need no migrations.
 
+## Provider Model Defaults
+
+The [config template](src/crewplane/example_templates/config.yml) is the source
+of truth for shipped provider models. Verify changes against the provider
+documentation linked there and preserve intentional omissions. Existing project
+configs and workflow overrides retain their values.
+
+Run `make provider-defaults-check`, then `make check`; model changes should
+require no synchronized test edits. Use the [package checks](#local-workflows)
+to validate distributions. These checks do not verify live model access.
+
 ## Release Workflow
 
 Production releases publish PyPI, npm, and the Git tag locally. The release

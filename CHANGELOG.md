@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh the Codex and Copilot defaults used by new provider setups.
+
 ### Fixed
 
 - Require explicit review approval and preserve explicit rejection even without listed major or minor findings.

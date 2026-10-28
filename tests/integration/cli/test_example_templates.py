@@ -117,7 +117,7 @@ class ExampleTemplateTests(unittest.TestCase):
             visible_estimate_tokens=1100,
         )
 
-        self.assertAlmostEqual(cost, 0.87)
+        self.assertAlmostEqual(cost, 0.172)
         self.assertEqual(confidence, "full")
 
     def test_default_workflow_is_single_mock_provider_review(self) -> None:
