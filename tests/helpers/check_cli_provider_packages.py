@@ -11,9 +11,15 @@ import venv
 from pathlib import Path
 
 if __package__:
-    from .installed_package_assertions import COMMAND_TIMEOUT_SECONDS
+    from .installed_package_assertions import (
+        COMMAND_TIMEOUT_SECONDS,
+        package_environment,
+    )
 else:
-    from installed_package_assertions import COMMAND_TIMEOUT_SECONDS
+    from installed_package_assertions import (
+        COMMAND_TIMEOUT_SECONDS,
+        package_environment,
+    )
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -90,18 +96,22 @@ def check_artifact_pair(
         root,
         environment,
     )
+    execution = package_environment(
+        root / "execution-environment",
+        os.pathsep.join((str(binary), environment.get("PATH", os.defpath))),
+    )
     for filename in (
         "assert_cli_provider_installation.py",
         "assert_ollama_agent_installation.py",
     ):
         assertions = root / filename
         shutil.copyfile(REPOSITORY / "tests/fixtures/packaging" / filename, assertions)
-        run([str(python), "-I", str(assertions)], root, environment)
+        run([str(python), "-I", str(assertions)], root, execution)
     shutil.copytree(
         REPOSITORY / "plugins/crewplane-ollama/src/crewplane_ollama",
         root / "consumer/crewplane_ollama",
     )
-    run([str(python), "-m", "mypy", "--strict", "consumer"], root, environment)
+    run([str(python), "-m", "mypy", "--strict", "consumer"], root, execution)
     print(f"Installed {root.name} artifacts passed isolated acceptance.")
     return python
 

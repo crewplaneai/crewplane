@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 import pytest
+import yaml
 from rich.console import Console
 
 import crewplane.cli.app as cli
@@ -14,6 +15,10 @@ from crewplane.architecture.ports.artifacts import ArtifactStorePort, StageTaskS
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
+from tests.integration.cli.workflow_runner_support import (
+    mock_runner_config,
+    run_directories,
+)
 
 
 class ConsoleFactory:
@@ -139,7 +144,7 @@ def repo_task_workflow_stage_names(repo_root: Path) -> set[str]:
     }
 
 
-def write_basic_workflow(path: Path) -> None:
+def write_basic_workflow(path: Path, prompt: str = "Do review.") -> None:
     path.write_text(
         "\n".join(
             [
@@ -157,7 +162,7 @@ def write_basic_workflow(path: Path) -> None:
                 "",
                 "## review.node",
                 "",
-                "Do review.",
+                prompt,
             ]
         ),
         encoding="utf-8",
@@ -240,3 +245,27 @@ def write_workflow_with_name(path: Path, workflow_name: str) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def write_mock_config(path: Path) -> None:
+    config = mock_runner_config({"delay_seconds": 0})
+    path.write_text(
+        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True)),
+        encoding="utf-8",
+    )
+
+
+def mock_invocations(root: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for run in run_directories(root)
+        for log in run.glob("review.node/logs/**/*.log")
+        for line in log.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def run_manifests(root: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads((run / "manifests/run.json").read_text(encoding="utf-8"))
+        for run in run_directories(root)
+    ]

@@ -395,7 +395,7 @@ def launch_interruption_fixture(script: Path) -> Iterator[subprocess.Popen[bytes
         process = subprocess.Popen(
             command,
             cwd=root,
-            env=runner_environment(),
+            env=runner_environment(root),
             stdout=output,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,

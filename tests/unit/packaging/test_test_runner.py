@@ -194,7 +194,7 @@ def test_profiles_preserve_selection_and_explicit_plugins(
     assert ("pytest_cov" in command) is args.coverage
     assert ("randomly" in command) is (args.shuffle_seed is not None)
     assert ("xdist.plugin" in command) is bool(args.workers)
-    environment = run_tests.environment_for(args, tmp_path)
+    environment = run_tests.environment_for(args, tmp_path, tmp_path / "environment")
     assert environment["PYTHONHASHSEED"] == "42"
     assert environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
     assert (environment.get("CREWPLANE_REQUIRED_GIT") == "1") is required_git
@@ -309,11 +309,11 @@ def test_launch_environment_does_not_inherit_coverage_or_pytest_overrides(
     monkeypatch.setenv("COVERAGE_FILE", "stale data")
     monkeypatch.setenv("PYTEST_ADDOPTS", "--cov-append -n auto")
     args = run_tests.parse_args(["--coverage", "off"])
-    environment = run_tests.environment_for(args, tmp_path)
+    environment = run_tests.environment_for(args, tmp_path, tmp_path / "environment")
     assert not any(key.startswith("COVERAGE_") for key in environment)
     assert "PYTEST_ADDOPTS" not in environment
     args.coverage = True
-    environment = run_tests.environment_for(args, tmp_path)
+    environment = run_tests.environment_for(args, tmp_path, tmp_path / "environment")
     assert environment["COVERAGE_FILE"] == str(tmp_path / ".coverage")
     assert Path(environment["COVERAGE_RCFILE"]).is_absolute()
 

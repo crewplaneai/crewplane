@@ -1,7 +1,8 @@
 import subprocess
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Event
 from unittest.mock import Mock
 
 import pytest
@@ -120,41 +121,97 @@ def test_reset_removes_policy_files_and_runs_full_git_sequence(
     ]
 
 
-@pytest.mark.parametrize("checkpoint", range(1, 11))
-def test_retry_reset_preserves_cancellation_checkpoints(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkpoint: int
+@pytest.mark.race
+@pytest.mark.parametrize(
+    ("boundary", "permitted"),
+    [
+        ("lock-acquired", ["lock-acquired"]),
+        ("policy-checked", ["lock-acquired", "policy-checked"]),
+        (
+            "reset-completed",
+            ["lock-acquired", "policy-checked", "read-tree", "reset-completed"],
+        ),
+        (
+            "clean-completed",
+            [
+                "lock-acquired",
+                "policy-checked",
+                "read-tree",
+                "reset-completed",
+                "clean-completed",
+            ],
+        ),
+    ],
+)
+def test_retry_reset_preserves_cancellation_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str, permitted: list[str]
 ) -> None:
     checkout, common_git_dir, git_dir = worktree_layout(tmp_path)
+    ownership = {
+        path: path.read_bytes() for path in (checkout / ".git", git_dir / "gitdir")
+    }
+    policy_file = git_dir / "config.worktree"
+    policy_file.write_text("owned policy", encoding="utf-8")
+    cancelled = Event()
+    released = Event()
+    observed: list[str] = []
+
+    def completed(step: str) -> None:
+        observed.append(step)
+        if step == boundary:
+            cancelled.set()
+
+    @contextmanager
+    def metadata_lock(*args):
+        del args
+        completed("lock-acquired")
+        try:
+            yield
+        finally:
+            released.set()
+
+    def check_policy(*args):
+        del args
+        completed("policy-checked")
+
     command = GitCommand()
-    calls = 0
 
-    def cancelled() -> bool:
-        nonlocal calls
-        calls += 1
-        return calls == checkpoint
-
-    monkeypatch.setattr(reset, "git_metadata_lock", Mock(return_value=nullcontext()))
-    with pytest.raises(RuntimeError, match="Workspace retry reset was cancelled"):
-        run_reset(
-            monkeypatch,
-            checkout,
-            common_git_dir,
-            git_dir,
-            command,
-            retry=True,
-            cancel_requested=cancelled,
+    def run_git(*args: str) -> None:
+        command.runs.append(args)
+        completed(
+            {
+                "read-tree": "read-tree",
+                "reset": "reset-completed",
+                "clean": "clean-completed",
+            }[args[0]]
         )
 
-    expected_commands = [
-        ("read-tree", "--empty"),
-        ("reset", "--hard", "expected"),
-        ("clean", "-dffx"),
-    ]
-    assert calls == checkpoint
-    assert (
-        command.runs
-        == expected_commands[: 0 if checkpoint <= 3 else 2 if checkpoint == 4 else 3]
-    )
+    command.run = run_git
+    monkeypatch.setattr(reset, "git_metadata_lock", metadata_lock)
+    monkeypatch.setattr(reset, "git", Mock(return_value=command))
+    monkeypatch.setattr(reset, "reject_common_git_policy_drift", check_policy)
+    verify_policy = Mock()
+    verify_clean = Mock()
+    monkeypatch.setattr(reset, "reject_worktree_git_policy_drift", verify_policy)
+    monkeypatch.setattr(reset, "changed_paths", verify_clean)
+
+    with pytest.raises(RuntimeError, match="Workspace retry reset was cancelled"):
+        reset.reset_worktree_attempt(
+            checkout,
+            "expected",
+            common_git_dir.parent,
+            common_git_dir,
+            git_dir,
+            ProtectedRefSnapshot(scopes=(), refs=()),
+            cancelled.is_set,
+        )
+
+    assert observed == permitted
+    assert released.is_set()
+    assert {path: path.read_bytes() for path in ownership} == ownership
+    assert policy_file.exists() == (boundary in {"lock-acquired", "policy-checked"})
+    verify_policy.assert_not_called()
+    verify_clean.assert_not_called()
 
 
 @pytest.mark.parametrize("retry", [False, True])

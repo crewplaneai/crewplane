@@ -74,7 +74,9 @@ def test_plugin_pytest_honors_the_explicit_pytest_cap(
     monkeypatch.setattr(test_process.time, "monotonic", lambda: 100.0)
     monkeypatch.setattr(run_tests, "run_logged", run)
     args = run_tests.parse_args(["--suite", "dots", "--timeout", "7"])
-    run_tests.run_dots(args, tmp_path / "dots", Deadline.after(50))
+    run_tests.run_dots(
+        args, tmp_path / "dots", Deadline.after(50), tmp_path / "environment"
+    )
     assert timeouts == [50, 7]
 
 

@@ -144,10 +144,15 @@ def test_project_root_retry_retains_edits_but_not_conversation(tmp_path):
     assert len(script.shows) == 2
 
 
+@pytest.mark.parametrize("initial_host", [None, "http://inherited:11434"])
 @pytest.mark.parametrize("changed", ["command", "endpoint", "version"])
 def test_agent_command_endpoint_and_plugin_version_change_existing_signature(
-    tmp_path, changed
+    tmp_path, changed, initial_host, monkeypatch
 ):
+    if initial_host is None:
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST", initial_host)
     agent, config, _ = configured_agent(tmp_path, "http://127.0.0.1:11434")
 
     def signature():
@@ -172,4 +177,5 @@ def test_agent_command_endpoint_and_plugin_version_change_existing_signature(
         metadata = next(tmp_path.glob("crewplane_ollama-*.dist-info/METADATA"))
         metadata.write_text("Name: crewplane-ollama\nVersion: 0.3.0\n")
     assert signature() != before
-    assert os.environ.get("OLLAMA_HOST") != "http://other-host:11434"
+    parent_host = os.environ.get("OLLAMA_HOST")
+    assert parent_host == initial_host

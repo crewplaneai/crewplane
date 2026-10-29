@@ -1,6 +1,8 @@
 import asyncio
 import os
 
+import pytest
+
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import AgentConfig
@@ -12,16 +14,36 @@ from tests.helpers.cli_provider import (
 )
 
 
+@pytest.mark.parametrize(
+    ("initial_host", "override", "expected_host"),
+    [
+        (None, None, None),
+        ("http://inherited:11434", None, "http://inherited:11434"),
+        (None, "http://configured:11434", "http://configured:11434"),
+        (
+            "http://inherited:11434",
+            "http://configured:11434",
+            "http://configured:11434",
+        ),
+    ],
+)
 def test_configured_path_and_host_apply_to_preflight_and_execution(
-    ollama, tmp_path, monkeypatch
+    ollama, tmp_path, monkeypatch, initial_host, override, expected_host
 ):
+    if initial_host is None:
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST", initial_host)
+    environment = {"PATH": "."}
+    if override is not None:
+        environment["OLLAMA_HOST"] = override
     monkeypatch.setenv("PATH", "")
     agent = AgentConfig(
         cli_cmd=["ollama-agent"],
         provider_kind="ollama",
         invocation_timeout_seconds=60,
         default_model="text",
-        environment={"PATH": ".", "OLLAMA_HOST": "http://configured:11434"},
+        environment=environment,
     )
     config = provider_config(agent, ollama.options)
     canonical = build_runtime_config_snapshot(
@@ -45,8 +67,11 @@ def test_configured_path_and_host_apply_to_preflight_and_execution(
         ollama.receipts, "check"
     )
     assert len(receipts) == 2
-    assert all(receipt["host"] == "http://configured:11434" for receipt in receipts)
-    assert os.environ["PATH"] == ""
+    assert all(receipt["host"] == expected_host for receipt in receipts)
+    parent_path = os.environ["PATH"]
+    parent_host = os.environ.get("OLLAMA_HOST")
+    assert parent_path == ""
+    assert parent_host == initial_host
 
 
 def test_overlapping_agents_keep_distinct_environments(ollama, tmp_path, monkeypatch):
@@ -80,4 +105,5 @@ def test_overlapping_agents_keep_distinct_environments(ollama, tmp_path, monkeyp
     assert sorted(
         receipt["host"] for receipt in command_receipts(ollama.receipts, "run")
     ) == ["http://server-0:11434", "http://server-1:11434"]
-    assert os.environ["OLLAMA_HOST"] == "http://inherited:11434"
+    parent_host = os.environ["OLLAMA_HOST"]
+    assert parent_host == "http://inherited:11434"

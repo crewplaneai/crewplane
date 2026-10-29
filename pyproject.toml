@@ -101,6 +101,10 @@ installed_command_seconds = 180
 native_package_seconds = 300
 race_iteration_seconds = 90
 race_overhead_seconds = 150
+# Local async test watchdogs bound readiness, the scenario, and owned-task cleanup.
+readiness_seconds = 5
+scenario_seconds = 15
+cleanup_seconds = 5
 
 [tool.crewplane.validation.runner]
 default_profile = "local"

@@ -72,13 +72,13 @@ def test_symlink_capability_skips_only_documented_unavailability(
 @pytest.mark.parametrize(
     "setup_failure", [False, True], ids=["normal-exit", "setup-failure"]
 )
-def test_session_fixture_initializes_and_restores_process_timezone(
+def test_collection_hook_initializes_and_restores_process_timezone(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path_factory: pytest.TempPathFactory,
+    tmp_path: Path,
     setup_failure: bool,
 ) -> None:
     import time
-    from contextlib import closing
+    from contextlib import ExitStack
     from datetime import UTC, datetime
 
     from tests import conftest
@@ -100,17 +100,18 @@ def test_session_fixture_initializes_and_restores_process_timezone(
             if setup_failure:
                 environment.setenv("CREWPLANE_REQUIRED_GIT", "1")
                 environment.setattr(isolated_git, "require_git", unavailable_git)
-            fixture = conftest.isolated_session_git_environment.__wrapped__(
-                tmp_path_factory
-            )
-            with closing(fixture):
+            environment.setenv("CREWPLANE_TEST_ENV_ROOT", str(tmp_path / "environment"))
+            with ExitStack() as cleanup:
+                config = SimpleNamespace(
+                    add_cleanup=cleanup.callback, stash=pytest.Stash()
+                )
                 if setup_failure:
                     with pytest.raises(
                         RuntimeError, match="injected capability failure"
                     ):
-                        next(fixture)
+                        conftest.pytest_configure(config)
                 else:
-                    next(fixture)
+                    conftest.pytest_configure(config)
                     assert utc_noon().hour == 12
             assert utc_noon().hour == 19
     finally:

@@ -15,11 +15,13 @@ from crewplane.architecture.loader import instantiate_adapter
 from crewplane.bootstrap.runtime_config import build_runtime_config_snapshot
 from crewplane.core.config import Config, load_config
 from crewplane.runtime.agent.invocation import command as invocation_command
+from tests import conftest
 from tests.helpers import isolated_git as git_helpers
 from tests.helpers.isolated_git import IsolatedGit
 from tests.helpers.platforms import requires_workspace_support
 
 isolated_git = git_helpers.isolated_git
+isolated_test_environment = conftest.isolated_test_environment
 
 
 @pytest.fixture

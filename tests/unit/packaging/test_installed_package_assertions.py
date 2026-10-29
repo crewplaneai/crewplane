@@ -83,7 +83,7 @@ def test_wheel_smoke_imports_in_both_launch_modes(tmp_path, mode) -> None:
     result = subprocess.run(
         [sys.executable, *arguments, "--help"],
         cwd=script.parents[2] if mode == "package" else tmp_path,
-        env=acceptance.package_environment(),
+        env=acceptance.package_environment(tmp_path / "environment"),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -188,13 +188,38 @@ def test_shared_artifact_assertions_reject_corrupt_output(
 
 def test_package_acceptance_removes_checkout_and_measurement_environment(
     monkeypatch,
+    tmp_path,
 ) -> None:
     monkeypatch.setenv("PYTHONPATH", "checkout/src")
     monkeypatch.setenv("COVERAGE_PROCESS_CONFIG", "measurement only")
     monkeypatch.setenv("COV_CORE_SOURCE", "old measurement")
-    environment = acceptance.package_environment()
-    assert "PYTHONPATH" not in environment
-    assert not any(key.startswith(("COVERAGE_", "COV_CORE_")) for key in environment)
+    monkeypatch.setenv("OLLAMA_HOST", "http://ambient.invalid:11434")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-credential-sentinel")
+    external = tmp_path / "external-cache"
+    external.mkdir()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(external))
+    original_path = os.environ.get("PATH")
+    environment = acceptance.package_environment(
+        tmp_path / "environment", "restricted-tools"
+    )
+    tool_path = environment["PATH"]
+    parent_path = os.environ.get("PATH")
+    has_host = "OLLAMA_HOST" in environment
+    has_api_key = "OPENAI_API_KEY" in environment
+    assert tool_path == "restricted-tools"
+    assert parent_path == original_path
+    assert not has_host
+    assert not has_api_key
+    cache = Path(environment["XDG_CACHE_HOME"])
+    assert cache == tmp_path / "environment/xdg-cache"
+    (cache / "receipt").write_text("owned", encoding="utf-8")
+    assert not list(external.iterdir())
+    has_python_path = "PYTHONPATH" in environment
+    has_coverage = any(
+        key.startswith(("COVERAGE_", "COV_CORE_")) for key in environment
+    )
+    assert not has_python_path
+    assert not has_coverage
 
 
 @pytest.mark.parametrize(

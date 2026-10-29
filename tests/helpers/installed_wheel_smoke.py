@@ -93,15 +93,9 @@ def main() -> None:
         diagnostics = Path(
             tempfile.mkdtemp(prefix=f"package-{args.installer}-", dir=results)
         )
-        original_path = os.environ.get("PATH")
-        try:
-            os.environ["PATH"] = env["PATH"]
-            smoke(python, cli, root / "project", version, checkout, diagnostics)
-        finally:
-            if original_path is None:
-                os.environ.pop("PATH", None)
-            else:
-                os.environ["PATH"] = original_path
+        smoke(
+            python, cli, root / "project", version, checkout, diagnostics, env["PATH"]
+        )
 
 
 if __name__ == "__main__":

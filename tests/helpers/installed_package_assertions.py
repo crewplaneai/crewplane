@@ -10,7 +10,13 @@ import shutil
 import subprocess
 import tempfile
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
+
+if __package__:
+    from .execution_environment import build_execution_environment
+else:
+    from execution_environment import build_execution_environment
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/packaging"
 # Read policy data without adding checkout imports to installed-package probes.
@@ -60,8 +66,9 @@ def smoke(
     expected_version: str,
     checkout: Path,
     diagnostics: Path,
+    tool_path: str | None = None,
 ) -> None:
-    env = package_environment()
+    env = package_environment(diagnostics / "environment", tool_path)
     assert not project.resolve().is_relative_to(checkout.resolve()), (
         "Acceptance must run outside the checkout"
     )
@@ -170,12 +177,14 @@ def smoke(
     )
 
 
-def package_environment() -> dict[str, str]:
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key != "PYTHONPATH" and not key.startswith(("COVERAGE_", "COV_CORE_"))
-    }
+def package_environment(
+    root: Path, tool_path: str | None = None, scenario: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    return build_execution_environment(
+        root,
+        os.environ.get("PATH", os.defpath) if tool_path is None else tool_path,
+        scenario,
+    )
 
 
 def inspect_installation(

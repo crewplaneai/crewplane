@@ -51,6 +51,10 @@ for placement.
 - Use temporary directories and the existing Git, environment, and platform
   helpers. Restore process-wide state and keep tests independent of execution
   order and parallel workers.
+- Let the execution-environment helper own home, configuration, cache, and
+  temporary-directory layout. Supply inheritance scenarios explicitly with
+  synthetic values. Keep environment diagnostics to selected non-sensitive
+  fields; do not serialize complete environment mappings.
 - Establish concurrency interleavings with events, barriers, or readiness
   receipts and bounded waits. Timing alone must not establish correctness.
 - Make ownership of processes, tasks, locks, and files explicit. Ensure cleanup

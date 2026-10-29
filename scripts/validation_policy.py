@@ -36,6 +36,9 @@ class Timeouts:
     native_package_seconds: float
     race_iteration_seconds: float
     race_overhead_seconds: float
+    readiness_seconds: float
+    scenario_seconds: float
+    cleanup_seconds: float
 
 
 @dataclass(frozen=True)
