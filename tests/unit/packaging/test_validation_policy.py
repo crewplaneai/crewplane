@@ -24,7 +24,7 @@ def test_job_budgets_include_phase_and_overhead() -> None:
         "win32": 45,
         "package": 20,
         "testpypi": 45,
-        "race": 10,
+        "race": 18,
         "fuzz": 3,
     }
 
@@ -42,7 +42,7 @@ def test_budget_change_updates_every_dependent_job_and_rounds_up(
 
 def test_race_budget_tracks_repetitions(tmp_path: Path) -> None:
     path = policy_file(tmp_path, "race_iterations = 5", "race_iterations = 6")
-    assert validation_policy.load_policy(path).job_minutes()["race"] == 12
+    assert validation_policy.load_policy(path).job_minutes()["race"] == 21
 
 
 @pytest.mark.parametrize(
