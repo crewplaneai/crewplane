@@ -52,7 +52,8 @@ not separate imported modules.
 
 Configure the `codex` agent profile and a finite concurrency cap, for example
 `settings.max_concurrent_nodes: 4`. Save the files below in `.crewplane/workflows/`.
-Folder names are data supplied to a fixed procedure.
+Folder names are data supplied to a fixed procedure. This literal collection needs
+no `max_items`; its length supplies the bound.
 
 `folder-audit.task.md`:
 
@@ -67,7 +68,6 @@ nodes:
     items:
       - {folder: src}
       - {folder: tests}
-    max_items: 2
 ---
 ## folders
 <!-- Audit each declared folder. -->
@@ -115,6 +115,8 @@ Place `request.md` in the project root with the source material and analysis
 requirements. Keep the finite concurrency setting from the folder example.
 A single executor emits the collection inside its findings block. Its ordinary
 Markdown output is not a collection source.
+The artifact reference requires `max_items` because its collection is resolved at
+runtime; a collection exceeding the cap fails before any child starts.
 
 `chunk-analysis.task.md`:
 

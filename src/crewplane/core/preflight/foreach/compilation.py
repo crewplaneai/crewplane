@@ -198,14 +198,19 @@ def _compile_foreach_template(
     child_nodes = [
         nodes[node_id] for node_id in preview.execution_order if node_id in ids
     ]
-    if group.workflow is None or group.items is None or group.max_items is None:
+    if group.workflow is None or group.items is None:
         raise ValueError(f"Incomplete foreach '{group.id}'")
+    limit = group.max_items
+    if limit is None:
+        if not isinstance(group.items, list):
+            raise ValueError(f"Incomplete foreach '{group.id}'")
+        limit = len(group.items)
     template = CompiledForeach(
         group_id=group.id,
         namespace=child.namespace,
         workflow=group.workflow,
         items=group.items,
-        max_items=group.max_items,
+        max_items=limit,
         item_node_id=child.item_node_id,
         shared_bindings=child.shared_bindings,
         parameters=child.parameters,

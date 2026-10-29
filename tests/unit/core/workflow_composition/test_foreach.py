@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.core.preflight.source import load_workflow_source_for_preflight
+from crewplane.core.workflow.models import WorkflowPlan, workflow_payload_dict
 from tests.helpers.foreach import (
     compile_foreach_file,
     copy_foreach_fixture,
@@ -32,6 +33,43 @@ def test_imported_parent_rewrites_callers_once_and_keeps_child_names_distinct(
     assert all("outer.outer" not in str(edge) for edge in template.dependency_graph)
 
 
+@pytest.mark.parametrize("items", [[], [{"text": "{{request.output}}"}]])
+@pytest.mark.parametrize("max_items", [None, 4])
+def test_imported_literal_cap_and_payload_roundtrip(
+    tmp_path: Path, items, max_items: int | None
+) -> None:
+    path = copy_foreach_fixture(tmp_path)
+    payload, body = workflow_document(path)
+    group = payload["nodes"][2]
+    group["items"] = items
+    if max_items is None:
+        del group["max_items"]
+    else:
+        group["max_items"] = max_items
+    write_workflow_document(path, payload, body)
+    root = tmp_path / "root.md"
+    write_workflow_document(
+        root,
+        {"name": "Root", "nodes": [], "imports": [{"path": path.name, "as": "outer"}]},
+        "",
+    )
+    source = load_workflow_source_for_preflight(root, tmp_path)
+    serialized = workflow_payload_dict(source.workflow)
+    authored = next(node for node in serialized["nodes"] if node["mode"] == "foreach")
+    assert authored["id"] == "outer.chunks"
+    assert authored["items"] == items
+    assert authored["inputs"] == {"request": "outer.request"}
+    assert ("max_items" in authored) == (max_items is not None)
+    if max_items is not None:
+        assert authored["max_items"] == max_items
+    assert workflow_payload_dict(WorkflowPlan.model_validate(serialized)) == serialized
+    preview = compile_foreach_file(root)
+    assert not preview.has_errors(), preview.diagnostics
+    assert preview.foreach_templates[0].max_items == (
+        max_items if max_items is not None else len(items)
+    )
+
+
 @pytest.mark.parametrize(
     "bindings,item_input",
     [
@@ -48,6 +86,8 @@ def test_invalid_or_aliased_child_bindings_rejected(
     child["inputs"]["alias"] = "item"
     write_workflow_document(tmp_path / "child.md", child, body)
     parent, body = workflow_document(path)
+    parent["nodes"][2]["items"] = []
+    del parent["nodes"][2]["max_items"]
     parent["nodes"][2].update(inputs=bindings, item_input=item_input)
     write_workflow_document(path, parent, body)
     with pytest.raises(ValueError, match="unknown child input|same child node"):

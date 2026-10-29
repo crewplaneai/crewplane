@@ -52,6 +52,27 @@ def test_preserves_order_duplicates_and_template_text() -> None:
         validate_collection(items, 1, "chunks")
 
 
+def test_zero_bound_allows_only_empty_collections() -> None:
+    items = []
+    assert validate_collection(items, 0, "chunks") is items
+    assert collection_bytes(items, 0, "chunks") == b"[]"
+    assert decode_collection(b"[]", 0, "chunks") == []
+    for validate in (validate_collection, collection_bytes):
+        with pytest.raises(ValueError, match="1 items exceeds max_items 0"):
+            validate([{}], 0, "chunks")
+    with pytest.raises(ValueError, match="1 items exceeds max_items 0"):
+        decode_collection(b"[{}]", 0, "chunks")
+
+
+@pytest.mark.parametrize("limit", [None, True, False, -1, "1", 1.0])
+def test_internal_bounds_require_strict_nonnegative_integers(limit: object) -> None:
+    for validate in (validate_collection, collection_bytes):
+        with pytest.raises(ValueError, match="strict nonnegative integer"):
+            validate([], limit, "chunks")
+    with pytest.raises(ValueError, match="strict nonnegative integer"):
+        decode_collection(b"[]", limit, "chunks")
+
+
 def test_collection_byte_limit() -> None:
     items = [{"x": "x" * (COLLECTION_BYTE_LIMIT - len(b'[{"x":""}]'))}]
     assert len(collection_bytes(items, 1, "chunks")) == COLLECTION_BYTE_LIMIT

@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -175,6 +176,43 @@ def test_no_foreach_templates_require_no_expansion_settings(
     before = plan.model_dump()
     assert validate_frozen_templates(plan) is None
     assert plan.model_dump() == before
+
+
+@pytest.mark.parametrize("limit", [None, True, False, "1", 1.0, -1])
+def test_serialized_plan_rejects_invalid_compiled_caps(
+    plan: PreflightExecutionPlan, limit: object
+) -> None:
+    payload = plan.model_dump(mode="json")
+    payload["foreach_templates"][0]["max_items"] = limit
+    with pytest.raises(ValueError, match="max_items"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_requires_compiled_cap(plan: PreflightExecutionPlan) -> None:
+    payload = plan.model_dump(mode="json")
+    del payload["foreach_templates"][0]["max_items"]
+    with pytest.raises(ValueError, match="max_items"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "items", [[], [{}], "{{planner.findings}}", "{{request.output}}"]
+)
+def test_serialized_zero_bound_permits_only_empty_literal(
+    plan: PreflightExecutionPlan, items
+) -> None:
+    plan.foreach_templates[0].items = items
+    plan.foreach_templates[0].max_items = 0
+    serialized = plan.model_dump_json()
+    if items == []:
+        restored = PreflightExecutionPlan.model_validate_json(serialized)
+        assert restored.foreach_templates[0].max_items == 0
+        assert restored.foreach_templates[0].node_bound == 0
+    else:
+        with pytest.raises(
+            ValueError, match="exceeds max_items 0|requires positive max_items"
+        ):
+            PreflightExecutionPlan.model_validate_json(serialized)
 
 
 @pytest.mark.parametrize(

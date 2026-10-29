@@ -49,7 +49,7 @@ class CompiledForeach(BaseModel):
     namespace: str
     workflow: str
     items: list[JsonObject] | str
-    max_items: int = Field(strict=True, gt=0)
+    max_items: int = Field(strict=True, ge=0)
     item_node_id: str
     shared_bindings: dict[str, str]
     parameters: dict[str, str]

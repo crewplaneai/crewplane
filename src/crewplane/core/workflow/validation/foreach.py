@@ -47,8 +47,8 @@ def validate_foreach_declaration(
     Raises:
         ValueError: If a non-foreach node has foreach-only fields, or a foreach
             declaration has forbidden fields, invalid required strings, a
-            non-fixed .md workflow path, a max_items that is not a strict
-            positive integer, invalid collection data or reference, or invalid
+            non-fixed .md workflow path, a supplied max_items that is not a strict
+            positive integer, an uncapped reference, invalid collection data, or invalid
             bindings. Checks run in field-policy, scalar, collection, then binding order;
             bindings are checked in ``inputs``, ``with``, ``with_params`` order.
     """
@@ -84,7 +84,7 @@ def _validate_foreach_fields(
         )
 
 
-def _validate_foreach_scalars(value: dict[str, object], group: str) -> int:
+def _validate_foreach_scalars(value: dict[str, object], group: str) -> int | None:
     for field in ("workflow", "item_input"):
         text = value.get(field)
         if not isinstance(text, str) or not text.strip():
@@ -92,7 +92,9 @@ def _validate_foreach_scalars(value: dict[str, object], group: str) -> int:
     workflow = cast(str, value["workflow"])
     if "{{" in workflow or not workflow.endswith(".md"):
         raise ValueError(f"Foreach '{group}' workflow must be a fixed .md path")
-    limit = value.get("max_items")
+    if "max_items" not in value:
+        return None
+    limit = value["max_items"]
     if type(limit) is not int or limit <= 0:
         raise ValueError(
             f"Foreach '{group}' max_items must be a strict positive integer"
@@ -100,10 +102,16 @@ def _validate_foreach_scalars(value: dict[str, object], group: str) -> int:
     return limit
 
 
-def _validate_foreach_items(items: object, limit: int, group: str) -> None:
+def _validate_foreach_items(items: object, limit: int | None, group: str) -> None:
     if isinstance(items, str):
+        if limit is None:
+            raise ValueError(f"Foreach '{group}' artifact reference requires max_items")
         collection_reference(items)
     else:
+        if not isinstance(items, list):
+            raise ValueError(f"Foreach '{group}' items: expected an array of objects")
+        if limit is None:
+            limit = len(items)
         validate_collection(items, limit, group)
 
 

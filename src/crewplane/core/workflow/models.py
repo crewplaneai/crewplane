@@ -247,20 +247,22 @@ def workflow_node_payload_dict(node: WorkflowNode) -> WorkflowNodePayload:
             node.workflow is None
             or node.item_input is None
             or node.items is None
-            or node.max_items is None
+            or (isinstance(node.items, str) and node.max_items is None)
         ):
             raise ValueError(f"Incomplete foreach declaration '{node.id}'")
-        return {
+        foreach_payload: WorkflowNodePayload = {
             "id": node.id,
             "mode": node.mode,
             "needs": list(node.needs),
             "workflow": node.workflow,
             "item_input": node.item_input,
             "items": node.items,
-            "max_items": node.max_items,
             "inputs": dict(node.inputs),
             "with_params": dict(node.with_params),
         }
+        if node.max_items is not None:
+            foreach_payload["max_items"] = node.max_items
+        return foreach_payload
     node_payload: WorkflowNodePayload = {
         "id": node.id,
         "mode": node.mode,

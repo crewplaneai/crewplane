@@ -89,7 +89,10 @@ def freeze_foreach(
 
 
 def compile_literal_foreach(
-    root: Path, items: str = "[{x: 1}, {x: 1}]", **settings: object
+    root: Path,
+    items: str = "[{x: 1}, {x: 1}]",
+    max_items: int | None = None,
+    **settings: object,
 ):
     (root / "child.md").write_text(
         """---
@@ -117,9 +120,9 @@ nodes:
     mode: foreach
     workflow: child.md
     item_input: item
-    max_items: 10
     items: """
         + items
+        + (f"\n    max_items: {max_items}" if max_items is not None else "")
         + """
 ---
 ## chunks

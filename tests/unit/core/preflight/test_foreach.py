@@ -49,11 +49,56 @@ def test_frozen_child_slots_expand_and_gate_all_roots(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("items", ["[]", "[{}]"])
+@pytest.mark.parametrize("max_items", [None, 10])
 def test_empty_and_single_collections_validate_without_fallback_files(
-    tmp_path: Path, items: str
+    tmp_path: Path, items: str, max_items: int | None
 ) -> None:
-    preview = compile_literal_foreach(tmp_path, items)
+    preview = compile_literal_foreach(tmp_path, items, max_items)
     assert not preview.has_errors(), preview.diagnostics
+    template = preview.foreach_templates[0]
+    assert template.max_items == (
+        max_items if max_items is not None else len(json.loads(items))
+    )
+    assert len(template.nodes) == 3
+
+
+@pytest.mark.parametrize("max_items", [None, 10])
+def test_literal_budget_uses_exact_length_including_input_nodes(
+    tmp_path: Path, max_items: int | None
+) -> None:
+    rejected = compile_literal_foreach(
+        tmp_path, max_items=max_items, max_expanded_nodes=5
+    )
+    assert rejected.has_errors()
+    assert "bound 6" in str(rejected.diagnostics)
+    accepted = compile_literal_foreach(
+        tmp_path, max_items=max_items, max_expanded_nodes=6
+    )
+    assert not accepted.has_errors(), accepted.diagnostics
+    assert accepted.foreach_templates[0].node_bound == 6
+
+
+def test_literal_assertion_rejects_overflow_before_compilation(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="2 items exceeds max_items 1"):
+        compile_literal_foreach(tmp_path, max_items=1)
+
+
+@pytest.mark.parametrize("include_literal", [False, True])
+def test_dynamic_and_mixed_group_budgets(tmp_path: Path, include_literal: bool) -> None:
+    path = copy_foreach_fixture(tmp_path)
+    payload, body = workflow_document(path)
+    if include_literal:
+        literal = {**payload["nodes"][2], "id": "literal", "items": [{}]}
+        del literal["max_items"]
+        payload["nodes"].append(literal)
+        write_workflow_document(path, payload, body + "\n## literal\n")
+    bound = 10 if include_literal else 8
+    rejected = compile_foreach_file(path, foreach_config(max_expanded_nodes=bound - 1))
+    assert rejected.has_errors()
+    assert f"bound {bound}" in str(rejected.diagnostics)
+    accepted = compile_foreach_file(path, foreach_config(max_expanded_nodes=bound))
+    assert not accepted.has_errors(), accepted.diagnostics
+    assert sum(template.node_bound for template in accepted.foreach_templates) == bound
 
 
 @pytest.mark.parametrize(
@@ -86,9 +131,11 @@ def test_preflight_validates_entire_procedure_and_collection_sources(
     child, child_body = workflow_document(tmp_path / "analyze.md")
     if change == "provider":
         payload["nodes"][2]["items"] = []
+        del payload["nodes"][2]["max_items"]
         child["nodes"][-1]["providers"] = ["missing"]
     elif change == "prompt":
         payload["nodes"][2]["items"] = []
+        del payload["nodes"][2]["max_items"]
         child_body += "\n{{file:missing-context.txt}}"
     elif change == "namespace":
         payload["nodes"].append(
@@ -143,6 +190,33 @@ def test_child_repetition_and_ignored_fallback_do_not_change_signature(
     after = compile_foreach_file(path)
     assert not after.has_errors(), after.diagnostics
     assert before.workflow_signature == after.workflow_signature
+
+
+@pytest.mark.parametrize("change", ["contents", "order", "explicit_cap"])
+def test_literal_signature_preserves_authored_identity(
+    tmp_path: Path, change: str
+) -> None:
+    before = compile_literal_foreach(tmp_path, "[{x: 1}, {x: 2}]")
+    path = tmp_path / "parent.md"
+    assert compile_foreach_file(path).workflow_signature == before.workflow_signature
+    payload, body = workflow_document(path)
+    group = payload["nodes"][0]
+    if change == "contents":
+        group["items"][0]["x"] = 3
+    elif change == "order":
+        group["items"].reverse()
+    else:
+        group["max_items"] = 2
+    write_workflow_document(path, payload, body)
+    after = compile_foreach_file(path)
+    assert not after.has_errors(), after.diagnostics
+    assert after.workflow_signature != before.workflow_signature
+    if change == "explicit_cap":
+        del group["max_items"]
+        write_workflow_document(path, payload, body)
+        assert (
+            compile_foreach_file(path).workflow_signature == before.workflow_signature
+        )
 
 
 def test_literal_projected_index_rejects_collection_near_byte_limit(

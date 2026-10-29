@@ -6,18 +6,22 @@ from pathlib import Path
 import pytest
 
 from crewplane.artifacts import OutputManager
-from crewplane.artifacts.expansions import reconstruct_expansions
+from crewplane.artifacts.expansions import load_expansion, reconstruct_expansions
 from crewplane.artifacts.naming import node_state_relative_path
 from crewplane.artifacts.resume.expansions import hydrate_expansions
 from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.core.preflight.foreach.expansion import instantiate_foreach
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.preflight.serialization import canonical_json_bytes
 from crewplane.runtime.execution import execute_workflow
 from tests.helpers.foreach import (
     compile_foreach_file,
     copy_foreach_fixture,
     freeze_foreach,
+    workflow_document,
+    write_workflow_document,
 )
 from tests.helpers.resume import make_run_manifest
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
@@ -27,8 +31,15 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 def completed_run(
     root: Path,
+    literal: bool = False,
 ) -> tuple[PreflightExecutionPlan, OutputManager, RunHistoryRecord]:
-    preview = compile_foreach_file(copy_foreach_fixture(root))
+    path = copy_foreach_fixture(root)
+    if literal:
+        payload, body = workflow_document(path)
+        payload["nodes"][2]["items"] = [{"chunk": 0}, {"chunk": 1}]
+        del payload["nodes"][2]["max_items"]
+        write_workflow_document(path, payload, body)
+    preview = compile_foreach_file(path)
     output = OutputManager("foreach", base_dir=root)
     plan = freeze_foreach(preview, output)
     invoker = MockAgentInvoker(
@@ -122,10 +133,14 @@ def test_resume_invalidates_only_affected_expansion_evidence(
         assert len(reconstructed.plan.nodes) == 8
 
 
+@pytest.mark.parametrize("literal", [False, True])
+@pytest.mark.parametrize("damage", ["changed", "missing"])
 def test_selected_expansion_is_rechecked_and_hydrated_before_successes(
     tmp_path: Path,
+    literal: bool,
+    damage: str,
 ) -> None:
-    plan, output, history = completed_run(tmp_path)
+    plan, output, history = completed_run(tmp_path, literal)
     (output.results_dir / "chunks-result.md").unlink()
     frontier = validate_resume_frontier(history, plan)
     target = OutputManager("foreach", base_dir=tmp_path)
@@ -163,9 +178,35 @@ def test_selected_expansion_is_rechecked_and_hydrated_before_successes(
     )
     assert state["run_id"] == target.run_id
     assert state["expansion"]["digest"] == evidence.digest
-    (output.stages_dir / evidence.items[0].relative_path).write_bytes(b"changed")
-    with pytest.raises(ValueError, match="descriptor"):
+    path = output.stages_dir / evidence.items[0].relative_path
+    if damage == "changed":
+        path.write_bytes(b"changed")
+    else:
+        path.unlink()
+    error = ValueError if damage == "changed" else FileNotFoundError
+    message = "descriptor" if damage == "changed" else "0.json"
+    with pytest.raises(error, match=message):
         hydrate_expansions(frontier, fresh, OutputManager("foreach", base_dir=tmp_path))
+
+
+def test_recomputed_evidence_cannot_change_literal_items(tmp_path: Path) -> None:
+    plan, output, history = completed_run(tmp_path, literal=True)
+    template = plan.foreach_templates[0]
+    batch, items = load_expansion(plan, template, output.stages_dir)
+    items.reverse()
+    forged = instantiate_foreach(plan, template, items, batch.state.caller_artifacts)
+    (output.stages_dir / forged.state.collection.relative_path).write_bytes(
+        canonical_json_bytes(items)
+    )
+    for evidence, item in zip(forged.state.items, items, strict=True):
+        (output.stages_dir / evidence.relative_path).write_bytes(
+            canonical_json_bytes(item)
+        )
+    output.write_preflight_json("expansions/chunks/expansion.json", forged)
+    with pytest.raises(ValueError, match="Literal expansion items differ"):
+        load_expansion(plan, template, output.stages_dir)
+    assert reconstruct_expansions(plan, output.stages_dir).invalid_groups == {"chunks"}
+    assert not validate_resume_frontier(history, plan).expansion_batches
 
 
 def test_forged_additions_and_uncommitted_bundles_do_not_authorize_reuse(

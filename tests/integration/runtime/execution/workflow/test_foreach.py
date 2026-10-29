@@ -7,6 +7,7 @@ import pytest
 from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.expansions import reconstruct_expansions
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.execution import execute_workflow
 from tests.helpers.foreach import (
     compile_foreach_file,
@@ -85,7 +86,9 @@ def test_dynamic_foreach_commits_before_children_and_joins_in_item_order(
     assert reconstructed.plan == effective
 
 
-@pytest.mark.parametrize("items,count", [("[]", 0), ("[{}]", 1), ("[{}, {}, {}]", 3)])
+@pytest.mark.parametrize(
+    "items,count", [("[]", 0), ("[{}]", 1), ('[{"x":2}, {"x":1}, {"x":2}]', 3)]
+)
 def test_literal_instances_and_empty_join(
     tmp_path: Path, items: str, count: int
 ) -> None:
@@ -98,9 +101,22 @@ def test_literal_instances_and_empty_join(
     )
     assert len(invoker.calls) == count * 2
     assert len(effective.nodes) == 1 + count * 3
-    assert (
-        len(json.loads((output.results_dir / "chunks-result.md").read_bytes())) == count
+    index_bytes = (output.results_dir / "chunks-result.md").read_bytes()
+    index = json.loads(index_bytes)
+    assert [entry["item"] for entry in index] == json.loads(items)
+    assert [entry["index"] for entry in index] == list(range(count))
+    if count == 0:
+        assert index_bytes == b"[]"
+    reloaded = PreflightExecutionPlan.model_validate_json(
+        (output.stages_dir / "preflight/execution-plan.json").read_bytes()
     )
+    assert reloaded.foreach_templates[0].max_items == count
+    reconstructed = reconstruct_expansions(reloaded, output.stages_dir)
+    assert not reconstructed.invalid_groups
+    assert reconstructed.plan == effective
+    assert json.loads(
+        (output.stages_dir / "preflight/expansions/chunks/items.json").read_bytes()
+    ) == json.loads(items)
 
 
 def test_two_ready_groups_use_one_scheduler_with_concurrency_one(
@@ -206,7 +222,18 @@ def test_runtime_data_changes_expansion_identity_without_changing_root_signature
 
 
 @pytest.mark.parametrize(
-    "collection", ['[{"x":1,"x":2}]', "```json\n[]\n```", "[1]", '[{"x":NaN}]']
+    "collection",
+    [
+        '[{"x":1,"x":2}]',
+        "```json\n[]\n```",
+        "[1]",
+        '[{"x":NaN}]',
+        "[{}, {}, {}, {}, {}]",
+        pytest.param(
+            json.dumps([{"data": "x" * (1024 * 1024 - 20)}]), id="projected-bytes"
+        ),
+        pytest.param("[" + '{"x":' * 63 + "0" + "}" * 63 + "]", id="projected-depth"),
+    ],
 )
 def test_invalid_runtime_collection_blocks_children_but_keeps_independent_work(
     tmp_path: Path, collection: str

@@ -38,19 +38,20 @@ def validate_collection(
 
     Container depth is bounded by COLLECTION_DEPTH_LIMIT, counting the root
     array as depth 1. Compact UTF-8 JSON must fit COLLECTION_BYTE_LIMIT.
+    A zero max_items bound permits only an empty array.
 
     Returns:
         The original list, preserving item order, duplicates, and shared containers.
 
     Raises:
-        ValueError: If max_items is not a strict positive integer, the array
+        ValueError: If max_items is not a strict nonnegative integer, the array
             exceeds max_items, or its shape, JSON values, string keys, UTF-8,
             cycles, depth, or encoded size are invalid. Errors identify group
             and source, with a nested path when applicable.
     """
     label = f"Foreach '{group}' {source}"
-    if type(max_items) is not int or max_items <= 0:
-        raise ValueError(f"{label}: max_items must be a strict positive integer")
+    if type(max_items) is not int or max_items < 0:
+        raise ValueError(f"{label}: max_items must be a strict nonnegative integer")
     if not isinstance(value, list):
         raise ValueError(f"{label}: expected an array of objects")
     if len(value) > max_items:
@@ -128,6 +129,8 @@ def collection_bytes(
 ) -> bytes:
     """Validate and encode a collection using validate_collection's limits.
 
+    max_items must be a strict nonnegative integer; zero permits only an empty array.
+
     Returns:
         Compact UTF-8 JSON bytes with sorted object keys and unescaped Unicode,
         preserving array order and duplicate items without modifying the input.
@@ -162,6 +165,7 @@ def decode_collection(
 
     Input bytes and compact re-encoded JSON must fit COLLECTION_BYTE_LIMIT.
     The decoded array also obeys validate_collection's item and depth limits.
+    max_items must be a strict nonnegative integer; zero permits only an empty array.
 
     Returns:
         A new list of JSON objects, preserving array order and duplicate items.

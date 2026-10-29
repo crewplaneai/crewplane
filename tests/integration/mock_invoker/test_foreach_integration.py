@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 import crewplane.cli.app as cli
 from tests.helpers.foreach import (
+    compile_literal_foreach,
     copy_foreach_fixture,
     workflow_document,
     write_workflow_document,
@@ -28,8 +29,12 @@ def records(root: Path) -> list[tuple[Path, dict[str, object]]]:
 
 @requires_resume_support
 @pytest.mark.parametrize("shift_child_lines", [False, True])
+@pytest.mark.parametrize("literal", [False, True])
 def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shift_child_lines: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shift_child_lines: bool,
+    literal: bool,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     clock = Mock()
@@ -38,6 +43,11 @@ def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
     ]
     monkeypatch.setattr("crewplane.artifacts.directory_manager.datetime", clock)
     workflow = copy_foreach_fixture(tmp_path)
+    if literal:
+        payload, body = workflow_document(workflow)
+        payload["nodes"][2]["items"] = [{"chunk": "a"}, {"chunk": "b"}]
+        del payload["nodes"][2]["max_items"]
+        write_workflow_document(workflow, payload, body)
     fixtures = tmp_path / "outputs"
     config = tmp_path / ".crewplane/config.yml"
     write_mock_config(config, fixtures)
@@ -57,10 +67,11 @@ def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
     arguments = ["--tasks", str(workflow), "--config", str(config)]
     valid = runner.invoke(cli.app, ["validate", str(workflow), "--config", str(config)])
     assert valid.exit_code == 0, valid.output
-    assert "0..4" in valid.output and "budget=10000" in valid.output
+    assert ("items=2" if literal else "0..4") in valid.output
+    assert "budget=10000" in valid.output
     dry = runner.invoke(cli.app, ["run", *arguments, "--dry-run"])
     assert dry.exit_code == 0, dry.output
-    assert "generated-node bound=8" in dry.output
+    assert f"generated-node bound={4 if literal else 8}" in dry.output
     assert not (tmp_path / ".crewplane/execution-stages").exists()
     failed = runner.invoke(cli.app, ["run", *arguments, "--no-live"])
     assert failed.exit_code == 1, (failed.output, failed.exception)
@@ -106,6 +117,7 @@ def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
         ).read_bytes()
     )
     assert [entry["index"] for entry in index] == [0, 1]
+    assert [entry["item"] for entry in index] == [{"chunk": "a"}, {"chunk": "b"}]
     if shift_child_lines:
         payload, body = workflow_document(child)
         write_workflow_document(child, payload, "\n\n" + body)
@@ -127,3 +139,44 @@ def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
             (first[0] / "preflight/expansions/chunks/expansion.json").read_bytes()
         )["state"]["digest"]
     )
+
+
+def test_mock_empty_literal_validate_dry_run_skip_force(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    compile_literal_foreach(tmp_path, "[]")
+    workflow = tmp_path / "parent.md"
+    config = tmp_path / ".crewplane/config.yml"
+    write_mock_config(config, tmp_path / "outputs")
+    payload = yaml.safe_load(config.read_bytes())
+    payload["settings"]["max_concurrent_nodes"] = 1
+    config.write_text(yaml.safe_dump(payload), encoding="utf-8", newline="\n")
+    runner = CliRunner()
+    arguments = ["--tasks", str(workflow), "--config", str(config), "--no-live"]
+    valid = runner.invoke(cli.app, ["validate", str(workflow), "--config", str(config)])
+    assert valid.exit_code == 0, valid.output
+    assert "items=0" in valid.output
+    dry = runner.invoke(cli.app, ["run", *arguments, "--dry-run"])
+    assert dry.exit_code == 0, dry.output
+    assert "generated-node bound=0" in dry.output
+    assert not (tmp_path / ".crewplane/execution-stages").exists()
+    for suffix in ([], [], ["--force"]):
+        result = runner.invoke(cli.app, ["run", *arguments, *suffix])
+        assert result.exit_code == 0, result.output
+        if not suffix:
+            assert len(records(tmp_path)) == 1
+    assert len(records(tmp_path)) == 2
+    for run_dir, manifest in records(tmp_path):
+        assert manifest["status"] == "succeeded"
+        result = tmp_path / ".crewplane/execution-results" / run_dir.name
+        assert (result / "chunks-result.md").read_bytes() == b"[]"
+        assert (
+            run_dir / "preflight/expansions/chunks/items.json"
+        ).read_bytes() == b"[]"
+        expansion = json.loads(
+            (run_dir / "preflight/expansions/chunks/expansion.json").read_bytes()
+        )
+        assert expansion["nodes"] == []
+        assert expansion["state"]["items"] == []
+        assert not list(run_dir.glob("chunks.i*"))

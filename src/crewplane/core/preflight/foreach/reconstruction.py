@@ -68,6 +68,10 @@ def _validate_frozen_template(template: CompiledForeach) -> None:
     if isinstance(template.items, list):
         validate_collection(template.items, template.max_items, template.group_id)
     else:
+        if template.max_items <= 0:
+            raise ValueError(
+                f"Foreach '{template.group_id}' artifact reference requires positive max_items"
+            )
         collection_reference(template.items)
     if (
         template.namespace != f"{template.group_id}.template"

@@ -13,7 +13,6 @@ def declaration(**overrides: object) -> dict[str, object]:
         "workflow": "child.md",
         "item_input": "item",
         "items": [],
-        "max_items": 3,
         **overrides,
     }
 
@@ -72,7 +71,7 @@ def test_foreach_requires_strict_positive_max_items(limit: object) -> None:
 )
 def test_foreach_collection_has_no_expressions_or_discovery(items: str) -> None:
     with pytest.raises(ValueError, match="exactly one"):
-        parse(declaration(items=items))
+        parse(declaration(items=items, max_items=3))
 
 
 @pytest.mark.parametrize(
@@ -97,7 +96,7 @@ def test_foreach_requires_empty_section(section: str) -> None:
 )
 def test_yaml_collections_are_validated_before_coercion(value: str) -> None:
     text = (
-        "---\nname: Parent\nnodes:\n  - {id: group, mode: foreach, workflow: child.md, item_input: item, max_items: 2, items: "
+        "---\nname: Parent\nnodes:\n  - {id: group, mode: foreach, workflow: child.md, item_input: item, items: "
         + value
         + "}\n---\n## group\n"
     )
@@ -109,6 +108,20 @@ def test_comments_empty_and_repeated_objects_preserve_item_data() -> None:
     items = [{"name": "{{file:secret}}"}, {"name": "{{file:secret}}"}]
     payload = parse(declaration(items=items))
     assert payload["nodes"][0]["items"] == items
+    assert "max_items" not in payload["nodes"][0]
+
+
+@pytest.mark.parametrize("items", [[], [{}]])
+def test_literal_cap_omission_survives_markdown_conversion(items) -> None:
+    payload = parse(declaration(items=items))
+    assert payload["nodes"][0]["items"] == items
+    assert "max_items" not in payload["nodes"][0]
+
+
+@pytest.mark.parametrize("items", ["{{a.output}}", "{{a.findings}}"])
+def test_reference_cap_is_required_in_markdown(items: str) -> None:
+    with pytest.raises(ValueError, match="requires max_items"):
+        parse(declaration(items=items))
 
 
 def test_normalized_binding_names_and_string_parameters_are_strict() -> None:

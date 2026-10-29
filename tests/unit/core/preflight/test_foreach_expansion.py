@@ -27,7 +27,7 @@ from tests.helpers.foreach import compile_literal_foreach
 
 @pytest.fixture
 def plan(tmp_path: Path) -> PreflightExecutionPlan:
-    preview = compile_literal_foreach(tmp_path)
+    preview = compile_literal_foreach(tmp_path, max_items=10)
     assert not preview.has_errors(), preview.diagnostics
     return PreflightExecutionPlan.from_preview(
         preview,

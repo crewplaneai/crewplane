@@ -128,6 +128,7 @@ def review_project(
 
 @requires_resume_support
 @pytest.mark.parametrize("shift_child_lines", [False, True])
+@pytest.mark.parametrize("literal", [False, True])
 @pytest.mark.parametrize(
     "phase,expected_roles",
     [
@@ -142,9 +143,15 @@ def test_generated_review_checkpoint_resumes_only_unfinished_phases(
     phase: str,
     expected_roles: list[str],
     shift_child_lines: bool,
+    literal: bool,
 ) -> None:
     root = tmp_path / "project"
     config, workflow = review_project(root, tmp_path / "fixtures", phase == "executors")
+    if literal:
+        payload, body = workflow_document(workflow)
+        payload["nodes"][2]["items"] = [{"chunk": "a"}, {"chunk": "b"}]
+        del payload["nodes"][2]["max_items"]
+        write_workflow_document(workflow, payload, body)
     if shift_child_lines:
         # Workflow edits must leave the checkpoint's observed source tree intact.
         definitions = root / ".crewplane/workflows"

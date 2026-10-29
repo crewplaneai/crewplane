@@ -389,13 +389,27 @@ instances succeed and publishes a JSON result index through `{{group.output}}`.
 | `workflow` | Fixed `.md` path relative to the declaring workflow, within the project root. |
 | `item_input` | Name of a declared child input that receives one JSON object. |
 | `items` | Literal array of JSON objects, or exactly one upstream `{{node.output}}` or `{{node.findings}}` reference. |
-| `max_items` | Maximum collection size; required strict positive integer. Boolean, string, and fractional values are invalid. |
+| `max_items` | Optional for literal arrays; required for artifact references. When supplied, must be a strict positive integer. |
 | `inputs` | Optional mapping of other child input names to caller node IDs. |
 | `with` | Optional string parameters substituted for `{{param:key}}` during composition, shared by every instance. |
 
 These are the only foreach fields. Provide an empty or HTML-comment-only
 `## <id>` section. Provider, prompt, worktree, findings, and invocation/review/
 failure-policy fields are rejected even when explicitly empty or false.
+
+| `items` | `max_items` | Result |
+| --- | --- | --- |
+| Literal array, including `[]` | Omitted | Accepted; preflight uses the array length as its bound. |
+| Literal array | Positive integer at least its length | Accepted; the cap acts as an optional assertion. |
+| Literal array | Smaller than its length | Rejected during preflight. |
+| Artifact reference | Omitted | Rejected during declaration validation. |
+| Artifact reference | Positive integer | Accepted; the resolved collection must fit before any child starts. |
+| Either form | Explicit `null`, boolean, string, fractional number, zero, or negative value | Rejected. |
+
+Omit the key to infer a literal bound; `max_items: null` does not mean omission.
+Every artifact reference requires an explicit cap, including references to input
+outputs and earlier foreach result indexes. Literal arrays contribute their actual
+length to the generated-node budget, even when an explicit cap is larger.
 
 Every collection or shared source must already be an ancestor through `needs`.
 Bindings do not authorize unrelated nodes. `.output` collection sources must
