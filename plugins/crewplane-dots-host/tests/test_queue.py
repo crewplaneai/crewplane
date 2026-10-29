@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 from crewplane_dots_host import Queue, invoke, main
+from .readiness import read_job_receipt
 
 
 def receipt(model=None, reasoning=None):
@@ -113,8 +114,7 @@ def test_subprocess_transport_and_cancellation(tmp_path):
             process.stdin.write("real stdin prompt")
             process.stdin.close()
             # A ready receipt, not sleep, establishes the interleaving.
-            ready = process.stderr.readline()
-            job = ready.strip().split()[-1]
+            job = read_job_receipt(process.stderr)
             assert queue.inspect(job)[0]["request"]["prompt"] == "real stdin prompt"
             claim = queue.claim(job, 20)
             if cancel:
@@ -293,7 +293,7 @@ def test_external_cancellation_stops_invocation(tmp_path):
     )
     queue = Queue(tmp_path)
     try:
-        job = process.stderr.readline().strip().split()[-1]
+        job = read_job_receipt(process.stderr)
         queue.cancel(job)
         assert process.wait(timeout=5) == 1
         assert "cancelled" in process.stderr.read()
@@ -377,7 +377,7 @@ def test_core_termination_fences_receipt_despite_locked_database(tmp_path):
     )
     queue = Queue(tmp_path)
     try:
-        job = process.stderr.readline().strip().split()[-1]
+        job = read_job_receipt(process.stderr)
         claim = queue.claim(job, 20)
         queue.db.execute("BEGIN IMMEDIATE")
         evidence = drain_popen_process(process, process.pid)

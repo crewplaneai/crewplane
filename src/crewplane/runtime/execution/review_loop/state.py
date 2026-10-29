@@ -3,16 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import (
+    review_metadata_path,
+    review_raw_output_path,
+)
 from crewplane.architecture.safe_files import (
     contained_regular_file,
     ensure_contained_directory,
 )
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
-from crewplane.artifacts.naming import (
-    review_metadata_path,
-    review_raw_output_path,
-    reviewer_state_relative_path,
-)
+from crewplane.artifacts.naming import reviewer_state_relative_path
 from crewplane.artifacts.results.review_loop_status import (
     REVIEW_LOOP_STATUS_RELATIVE_PATH,
     ReviewLoopStatusOutputEntry,

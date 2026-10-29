@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from crewplane.architecture.contracts.artifacts import candidate_identity_path
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.generated_files.evidence import (
     verified_generated_file_descriptors,
@@ -15,7 +16,6 @@ from crewplane.artifacts.generated_files.evidence import (
 from crewplane.artifacts.generated_files.paths import (
     RESERVED_WORKSPACE_PATH_ROOTS,
 )
-from crewplane.artifacts.naming import candidate_identity_path
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.runtime.execution.activity.telemetry import ActivityTrackerSnapshot
 from crewplane.runtime.workspace.git import git

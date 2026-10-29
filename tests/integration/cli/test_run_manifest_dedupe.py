@@ -8,11 +8,18 @@ import pytest
 import crewplane.cli.app as cli
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
-    ConsoleFactory,
+    cli_process_state,
+    mock_invocations,
+    run_manifests,
     write_basic_config,
     write_basic_workflow,
+    write_mock_config,
     write_successful_workflow_outputs,
     write_workflow_with_name,
+)
+from tests.integration.cli.workflow_runner_support import (
+    result_directories,
+    run_directories,
 )
 
 
@@ -29,8 +36,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_execute_workflow = cli.execute_workflow
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
@@ -41,14 +46,8 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     kwargs["workflow_identity"],
                 )
 
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            try:
+            with cli_process_state(stream) as process_state:
+                process_state.setattr(cli, "execute_workflow", fake_execute_workflow)
                 cli.run(
                     tasks_file=workflow_path,
                     config_file=config_path,
@@ -61,9 +60,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     dry_run=False,
                     force=False,
                 )
-            finally:
-                cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 1)
             self.assertIn("Identical context detected", stream.getvalue())
@@ -76,38 +72,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertEqual(len(stage_runs), 1)
             self.assertEqual(len(result_runs), 1)
 
-    def test_run_force_executes_duplicate_context(self) -> None:
-        with temporary_project_cwd(self.tmp_path) as tmp_path:
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            write_basic_config(config_path)
-            write_basic_workflow(workflow_path)
-
-            original_execute_workflow = cli.execute_workflow
-            calls = {"count": 0}
-
-            async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
-                calls["count"] += 1
-
-            cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            try:
-                cli.run(
-                    tasks_file=workflow_path,
-                    config_file=config_path,
-                    dry_run=False,
-                    force=False,
-                )
-                cli.run(
-                    tasks_file=workflow_path,
-                    config_file=config_path,
-                    dry_run=False,
-                    force=True,
-                )
-            finally:
-                cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-
-            self.assertEqual(calls["count"], 2)
-
     def test_run_prints_artifact_paths_with_sanitized_workflow_key(self) -> None:
         with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
@@ -116,29 +80,18 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             write_workflow_with_name(workflow_path, "Review apps")
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_execute_workflow = cli.execute_workflow
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
 
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            try:
+            with cli_process_state(stream) as process_state:
+                process_state.setattr(cli, "execute_workflow", fake_execute_workflow)
                 cli.run(
                     tasks_file=workflow_path,
                     config_file=config_path,
                     dry_run=False,
                     force=False,
                 )
-            finally:
-                cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue().replace("\\", "/")
             self.assertIn("Workflow: Review apps", output_text)
@@ -159,3 +112,30 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                 re.escape(results_root)
                 + r"/review-apps--[0-9a-f]{12}-\d{8}-\d{6}(?:-\d{6})?",
             )
+
+
+def test_run_force_executes_duplicate_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "config.yml"
+    workflow_path = tmp_path / "workflow.task.md"
+    write_mock_config(config_path)
+    write_basic_workflow(workflow_path)
+    signatures = []
+    for force, expected_count in [(False, 1), (False, 1), (True, 2)]:
+        cli.run(
+            tasks_file=workflow_path, config_file=config_path, no_live=True, force=force
+        )
+        assert len(mock_invocations(tmp_path)) == expected_count
+        assert len(run_directories(tmp_path)) == expected_count
+        results = result_directories(tmp_path)
+        assert len(results) == expected_count
+        assert all(
+            "Do review." in (run / "review.node-result.md").read_text()
+            for run in results
+        )
+        manifests = run_manifests(tmp_path)
+        assert all(manifest["status"] == "succeeded" for manifest in manifests)
+        signatures.extend(manifest["workflow_signature"] for manifest in manifests)
+    assert len(set(signatures)) == 1

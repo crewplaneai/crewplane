@@ -100,24 +100,10 @@ def review_checkpoint_relative_path(node_id: str) -> Path:
     return Path("manifests") / "review-checkpoints" / build_node_state_filename(node_id)
 
 
-def review_metadata_path(output_file: Path) -> Path:
-    return output_file.with_suffix(".review.json")
-
-
-def review_raw_output_path(output_file: Path) -> Path:
-    return output_file.with_suffix(".raw.txt")
-
-
-def candidate_identity_path(output_file: Path) -> Path:
-    return output_file.with_suffix(".candidate.json")
-
-
-def build_reviewer_state_filename(task_id: str, round_num: int) -> str:
-    return f"{safe_artifact_name(task_id)}-round-{round_num}.state.json"
-
-
 def reviewer_state_relative_path(task_id: str, round_num: int) -> Path:
-    return Path("review-state") / build_reviewer_state_filename(task_id, round_num)
+    return Path("review-state") / _artifact_contracts.build_reviewer_state_filename(
+        task_id, round_num
+    )
 
 
 def build_provider_process_state_filename(
@@ -172,16 +158,3 @@ def build_generated_file_result_dir_name(name: str) -> str:
     available = MAX_GENERATED_FILE_RESULT_DIR_CHARS - len(suffix)
     prefix = safe_name[:available].rstrip(".-")
     return f"{prefix or 'stage'}{suffix}"
-
-
-def build_log_filename(
-    task_id: str,
-    audit_round_num: int | None = None,
-    round_num: int | None = None,
-) -> str:
-    audit_part = f"-audit{audit_round_num}" if audit_round_num is not None else ""
-    round_part = f"-round{round_num}" if round_num is not None else ""
-    suffix = f"{audit_part}{round_part}.log"
-    return _artifact_contracts.bounded_artifact_filename(
-        task_id, safe_artifact_name(task_id), suffix
-    )

@@ -9,7 +9,7 @@ from typing import BinaryIO, cast
 
 from crewplane.architecture.contracts import InvocationDiagnosticSink
 
-from . import runner, streams
+from . import runner, stream_tasks
 from .drain import (
     PROCESS_GROUP_KILL_GRACE_SECONDS,
     PROCESS_GROUP_TERM_GRACE_SECONDS,
@@ -19,7 +19,8 @@ from .drain import (
 from .session import wait_for_owned_task
 from .signals import wait_for_process_exit
 from .stream_capture import ProcessOutputCapture
-from .streams import cancel_pending_stream_tasks, write_stdin_and_collect_output
+from .stream_tasks import cancel_pending_stream_tasks
+from .streams import write_stdin_and_collect_output
 from .windows_gate import GATE_BYTE
 from .windows_job import WindowsJob
 
@@ -93,7 +94,7 @@ class WindowsLaunch:
         """Capture output and confirm tree drainage before transferring ownership.
 
         The caller owns the returned capture files. On failure or cancellation,
-        completed captures are reclaimed off the event loop after bounded task
+        completed captures are reclaimed off the event loop after output-owner
         settlement. Repeated cancellation waits for owned cleanup to finish.
         """
         if self.process is None:
@@ -110,14 +111,27 @@ class WindowsLaunch:
             )
         )
         failure: BaseException | None = None
+        drain: asyncio.Task[None] | None = None
         try:
             result = await _wait_for_collection(monitor, output)
             self.cleanup_confirmed = True
         except BaseException as exc:
             failure = exc
+            drain = asyncio.create_task(self.drain())
             raise
         finally:
-            await _finish_collection(monitor, output, failure)
+            try:
+                await _finish_collection(monitor, output, failure, drain)
+            except BaseException as exc:
+                if (
+                    failure is not None
+                    or not isinstance(exc, asyncio.CancelledError)
+                    or exc.__cause__ is not None
+                ):
+                    self.cleanup_confirmed = False
+                raise
+            if failure is not None:
+                self.cleanup_confirmed = False
         return result
 
     async def _drain_after_leader_exit(self) -> None:
@@ -203,7 +217,7 @@ class WindowsLaunch:
         await self.drain()
         if self.process is not None:
             await runner.reap_failed_process(self.process, None, diagnostics)
-            await streams.drain_process_pipes(self.process, diagnostics, None)
+            await stream_tasks.drain_process_pipes(self.process, diagnostics, None)
 
     def can_report_completion(self, cleanup_confirmed: bool) -> bool:
         return cleanup_confirmed and self.assigned
@@ -262,9 +276,9 @@ async def _wait_for_collection(
         (monitor, output), return_when=asyncio.FIRST_COMPLETED
     )
     if monitor in done:
-        await monitor
-    result = await output
-    await monitor
+        await asyncio.shield(monitor)
+    result = await asyncio.shield(output)
+    await asyncio.shield(monitor)
     return result
 
 
@@ -272,28 +286,62 @@ async def _finish_collection(
     monitor: asyncio.Task[None],
     output: asyncio.Task[ProcessOutputCapture],
     failure: BaseException | None,
+    drain: asyncio.Task[None] | None,
 ) -> None:
     cancellation = failure if isinstance(failure, asyncio.CancelledError) else None
     settlement = asyncio.create_task(_settle_collection_tasks(monitor, output))
     cancellation = await wait_for_owned_task(settlement, cancellation)
-    try:
-        settlement.result()
-    except BaseException as exc:
+    if drain is not None:
+        cancellation = await wait_for_owned_task(drain, cancellation)
+    cleanup_errors = [
+        error
+        for task in (drain, settlement)
+        if task is not None
+        and not task.cancelled()
+        and (error := task.exception()) is not None
+    ]
+    output_error = _output_failure(output)
+    if output_error is not None and failure is not None and output_error is not failure:
+        failure.add_note(f"Output collection failed: {output_error!r}")
+        if failure.__cause__ is None:
+            failure.__cause__ = output_error
+    if failure is not None or cancellation is not None or cleanup_errors:
         cancellation = await _reclaim_capture(output, cancellation)
+    if cleanup_errors:
+        error = cleanup_errors[0]
         if cancellation is not None:
-            raise cancellation from exc
-        raise
-    if failure is not None or cancellation is not None:
-        cancellation = await _reclaim_capture(output, cancellation)
+            try:
+                raise error from failure
+            except BaseException as cleanup_error:
+                raise cancellation from cleanup_error
+        raise error from failure
     if cancellation is not None and cancellation is not failure:
-        raise cancellation
+        raise cancellation from failure
+
+
+def _output_failure(output: asyncio.Task[ProcessOutputCapture]) -> BaseException | None:
+    if not output.cancelled():
+        return output.exception()
+    try:
+        output.result()
+    except asyncio.CancelledError as error:
+        if error.__cause__ is not None or getattr(error, "__notes__", None):
+            return error
+    return None
 
 
 async def _settle_collection_tasks(
     monitor: asyncio.Task[None], output: asyncio.Task[ProcessOutputCapture]
 ) -> None:
-    await cancel_pending_stream_tasks(monitor, output)
-    await asyncio.gather(monitor, output, return_exceptions=True)
+    if not output.done():
+        output.cancel()
+    try:
+        await cancel_pending_stream_tasks(monitor)
+    finally:
+        # Pipe deadlines cannot release a thread worker or its log/capture ownership.
+        await wait_for_owned_task(output)
+        if not output.cancelled():
+            output.exception()
 
 
 async def _reclaim_capture(

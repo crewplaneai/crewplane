@@ -22,6 +22,8 @@ from .serialization import to_json_safe
 from .signatures import signature_for_payload
 from .source import PreflightWorkflowSource
 
+EXECUTION_SEMANTICS_REVISION = 1
+
 SOURCE_LOCATION_METADATA_FIELDS = frozenset({"source_span"})
 
 
@@ -41,6 +43,7 @@ def workflow_signature(
     semantic_workflow = semantic_workflow_payload(source.composed_workflow)
     return signature_for_payload(
         {
+            "execution_semantics_revision": EXECUTION_SEMANTICS_REVISION,
             "composed_workflow": semantic_workflow,
             "dependency_graph": dependency_graph,
             "effective_runtime_config_signature": runtime_snapshot.effective_runtime_config_signature,

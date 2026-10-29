@@ -91,22 +91,7 @@ def test_assemble_prompt_reads_static_bundle_not_original_source_path(
     static_path = context_root / "preflight" / content_ref
     static_path.parent.mkdir(parents=True)
     static_path.write_bytes(payload)
-    plan = make_fragment_plan(context_root, content_ref=content_ref).model_copy(
-        update={
-            "static_resources": [
-                {
-                    "resource_id": content_sha256,
-                    "kind": "file",
-                    "raw_path": "deleted.md",
-                    "source_root": (tmp_path / "source").as_posix(),
-                    "resolved_path": (tmp_path / "source" / "deleted.md").as_posix(),
-                    "content_ref": content_ref,
-                    "size_bytes": len(payload),
-                    "sha256": content_sha256,
-                }
-            ]
-        }
-    )
+    plan = make_fragment_plan(context_root, content_ref, payload)
     store = FragmentArtifactStore(tmp_path)
     (store.results_dir / "compiled-input.md").write_text("node", encoding="utf-8")
     secrets = SecretContext()
@@ -251,3 +236,140 @@ def test_runtime_rejects_unsupported_artifact_tokens(
             FragmentArtifactStore(tmp_path),
             SecretContext(),
         )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"a\nb\n",
+        b"a\r\nb\r\n",
+        b"a\rb\r",
+        b"a\r\nb\rc\n",
+        "雪\n".encode(),
+        b"no newline",
+        b" \t\n",
+        b"",
+    ],
+)
+@pytest.mark.parametrize("consumer", ["prompt", "input"])
+def test_static_consumers_preserve_verified_bytes(tmp_path, payload, consumer):
+    plan, consume, published = _static_consumer(tmp_path, payload, consumer)
+    if consumer == "input" and not payload.strip():
+        with pytest.raises(RuntimeError, match="empty after preflight"):
+            consume()
+        assert not published.exists()
+    else:
+        assert consume() == payload
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "replacement",
+        "growth",
+        "truncation",
+        "missing",
+        "no_descriptor",
+        "ambiguous",
+        "encoding",
+        "negative_size",
+        "boolean_size",
+        "sha256",
+        "invalid_utf8",
+        "nul",
+        "symlink",
+        "hardlink",
+        "traversal",
+        "absolute",
+        "backslash",
+    ],
+)
+@pytest.mark.parametrize("consumer", ["prompt", "input"])
+def test_static_consumers_reject_untrusted_bundle(tmp_path, fault, consumer):
+    from tests.helpers.static_resources import static_resource
+
+    payload = b"verified bytes"
+    plan, consume, published = _static_consumer(tmp_path, payload, consumer)
+    resource = plan.static_resources[0]
+    path = Path(plan.context_root) / "preflight" / resource.content_ref
+    if fault in {"replacement", "growth", "truncation", "invalid_utf8", "nul"}:
+        replacement = {
+            "replacement": b"x" * len(payload),
+            "growth": payload + b"extra",
+            "truncation": payload[:-1],
+            "invalid_utf8": b"\xff",
+            "nul": b"\x00",
+        }[fault]
+        path.write_bytes(replacement)
+        if fault in {"invalid_utf8", "nul"}:
+            plan.static_resources = [static_resource(replacement, resource.content_ref)]
+    elif fault == "missing":
+        path.unlink()
+    elif fault == "no_descriptor":
+        plan.static_resources = []
+    elif fault == "ambiguous":
+        plan.static_resources.append(resource)
+    elif fault in {"encoding", "negative_size", "boolean_size", "sha256"}:
+        update = {
+            "encoding": {"encoding": "latin1"},
+            "negative_size": {"size_bytes": -1},
+            "boolean_size": {"size_bytes": True},
+            "sha256": {"sha256": "invalid"},
+        }[fault]
+        plan.static_resources = [resource.model_copy(update=update)]
+    elif fault in {"symlink", "hardlink"}:
+        outside = tmp_path / "outside"
+        outside.write_bytes(payload)
+        path.unlink()
+        if fault == "symlink":
+            symlink_or_skip(path, outside)
+        else:
+            path.hardlink_to(outside)
+    else:
+        reference = {
+            "traversal": "../outside",
+            "absolute": "/outside",
+            "backslash": "static-files\\outside",
+        }[fault]
+        resource.content_ref = reference
+        plan.nodes[0].input_content_ref = reference
+        plan.render_plans[0].streams[0].fragments[0].content_ref = reference
+    with pytest.raises((ValueError, RuntimeError)):
+        consume()
+    assert not published.exists()
+
+
+def _static_consumer(tmp_path, payload, consumer):
+    from crewplane.artifacts import OutputManager
+    from crewplane.runtime.execution.common import CompiledRuntimeContext
+    from crewplane.runtime.execution.input import execute_input_stage
+
+    root = tmp_path / "bundle"
+    content_ref = make_static_content_ref(payload)
+    path = root / "preflight" / content_ref
+    path.parent.mkdir(parents=True)
+    path.write_bytes(payload)
+    plan = make_fragment_plan(root, content_ref, payload)
+    plan.nodes[0].input_content_ref = content_ref
+    plan.render_plans[0].streams[0].fragments = [
+        Fragment(
+            fragment_index=0,
+            kind="static_file_content",
+            source_role=PromptSegmentRole.SHARED,
+            content_ref=content_ref,
+        )
+    ]
+    output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
+    published = output.stages_dir / "input-stage" / "input_round1.md"
+
+    def consume():
+        if consumer == "prompt":
+            return assemble_prompt_details(
+                plan, plan.nodes[1], ProviderRole.EXECUTOR, output, SecretContext()
+            ).text.encode("utf-8")
+        execute_input_stage(
+            plan.nodes[0], output, CompiledRuntimeContext(plan, SecretContext())
+        )
+        return published.read_bytes()
+
+    return plan, consume, published

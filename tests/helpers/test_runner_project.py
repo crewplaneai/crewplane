@@ -1,14 +1,20 @@
 """Small real pytest projects for exercising the repository launcher."""
 
+import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
+from tests.helpers.execution_environment import (
+    build_execution_environment,
+    validation_controls,
+    validation_tool_path,
+)
 from tests.helpers.fixture_files import copy_fixture
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +31,15 @@ def runner_project(root: Path) -> Path:
         "check_coverage.py",
     ):
         shutil.copyfile(ROOT / "scripts" / filename, scripts / filename)
+    helpers = root / "tests/helpers"
+    helpers.mkdir(parents=True)
+    for relative in ("tests/__init__.py", "tests/helpers/__init__.py"):
+        shutil.copyfile(ROOT / relative, root / relative)
+    shutil.copyfile(
+        ROOT / "tests/helpers/execution_environment.py",
+        helpers / "execution_environment.py",
+    )
+    copy_fixture("test_runner/scenario_runner.py", scripts / "scenario_runner.py")
     (root / "uv.lock").write_text("test-owned lockfile\n", encoding="utf-8")
     policy = (
         (ROOT / "pyproject.toml").read_text(encoding="utf-8").split("[tool.ruff]", 1)[0]
@@ -40,21 +55,37 @@ def runner_project(root: Path) -> Path:
     return scripts / "run_tests.py"
 
 
-def runner_environment() -> dict[str, str]:
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("COVERAGE_", "COV_CORE_"))
-    }
+def runner_environment(
+    root: Path, pollution: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    environment = build_execution_environment(
+        root / "launcher-environment",
+        validation_tool_path(os.environ),
+        validation_controls(os.environ),
+    )
+    environment.update(pollution or {})
+    return environment
 
 
-def run_fixture(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    with launch_fixture(script, *args) as process:
+def run_fixture(
+    script: Path,
+    *args: str,
+    pollution: Mapping[str, str] | None = None,
+    scenario: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    with launch_fixture(
+        script, *args, pollution=pollution, scenario=scenario
+    ) as process:
         return wait_for_fixture(process, script.parent.parent)
 
 
 @contextmanager
-def launch_fixture(script: Path, *args: str) -> Iterator[subprocess.Popen[str]]:
+def launch_fixture(
+    script: Path,
+    *args: str,
+    pollution: Mapping[str, str] | None = None,
+    scenario: Mapping[str, str] | None = None,
+) -> Iterator[subprocess.Popen[str]]:
     command = [
         sys.executable,
         str(script),
@@ -64,10 +95,14 @@ def launch_fixture(script: Path, *args: str) -> Iterator[subprocess.Popen[str]]:
         "42",
         *args,
     ]
+    if scenario is not None:
+        scenario_file = script.parent.parent / "scenario-environment.json"
+        scenario_file.write_text(json.dumps(dict(scenario)), encoding="utf-8")
+        command[1:2] = [str(script.with_name("scenario_runner.py")), str(scenario_file)]
     with subprocess.Popen(
         command,
         cwd=script.parent.parent,
-        env=runner_environment(),
+        env=runner_environment(script.parent.parent, pollution),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

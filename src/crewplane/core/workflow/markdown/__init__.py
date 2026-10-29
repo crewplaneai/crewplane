@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
 from yaml.constructor import ConstructorError
 
-from crewplane.core.yaml_loader import load_yaml_unique
+from crewplane.core.yaml_loader import load_yaml_unique_with_node
 
 from ..models import WorkflowPayload
+from .errors import format_frontmatter_errors
 from .frontmatter import read_workflow_text, split_frontmatter
 from .models import (
     ParsedWorkflowMarkdown,
@@ -55,13 +57,16 @@ def parse_workflow_markdown_document(
 
     frontmatter_text, body, body_start_line = split_frontmatter(markdown_text, path)
     try:
-        frontmatter = load_yaml_unique(frontmatter_text)
+        frontmatter, source_node = load_yaml_unique_with_node(frontmatter_text)
     except ConstructorError as error:
         raise ValueError(f"{path} frontmatter is invalid: {error}") from error
-    if not isinstance(frontmatter, dict):
+    if not isinstance(frontmatter, dict) or source_node is None:
         raise ValueError(f"{path} frontmatter must be a YAML object.")
 
-    workflow = WorkflowFrontmatter(**frontmatter)
+    try:
+        workflow = WorkflowFrontmatter(**frontmatter)
+    except ValidationError as error:
+        raise ValueError(format_frontmatter_errors(error, path, source_node)) from error
     declared_node_ids = {node.id for node in workflow.nodes}
     parsed_body = parse_workflow_body(body, declared_node_ids, body_start_line)
     validate_node_sections(workflow, parsed_body, path)

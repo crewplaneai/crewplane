@@ -5,6 +5,7 @@ from zipfile import ZipFile
 import pytest
 
 from tests.helpers import installed_wheel_smoke
+from tests.helpers.installed_package_assertions import package_environment
 
 
 @pytest.mark.parametrize("installer", ["pip", "uv"])
@@ -51,7 +52,7 @@ def test_install_uses_built_plugin_wheel(
             "print(version('crewplane-ollama'), crewplane_ollama.SOURCE)",
         ],
         tmp_path,
-        dict(os.environ),
+        package_environment(tmp_path / "execution-environment", str(python.parent)),
     )
     assert selected.strip() == "0.1.0 local"
 

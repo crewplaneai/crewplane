@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
-import locale
 import os
 import platform
 import secrets
@@ -14,7 +14,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import time
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 
@@ -26,6 +26,14 @@ else:
     from validation_policy import load_policy
 
 ROOT = Path(__file__).resolve().parents[1]
+# Load shared standard-library support without exposing the checkout on child import paths.
+_environment_spec = importlib.util.spec_from_file_location(
+    "execution_environment", ROOT / "tests/helpers/execution_environment.py"
+)
+assert _environment_spec is not None and _environment_spec.loader is not None
+execution_environment = importlib.util.module_from_spec(_environment_spec)
+_environment_spec.loader.exec_module(execution_environment)
+
 DEPENDENCIES = (
     "crewplane",
     "pytest",
@@ -145,7 +153,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def pytest_command(
-    args: argparse.Namespace, diagnostics: Path, root: Path = ROOT
+    args: argparse.Namespace,
+    diagnostics: Path,
+    environment_root: Path,
+    root: Path = ROOT,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -154,6 +165,7 @@ def pytest_command(
         "-q",
         "-c",
         str(root / "pyproject.toml"),
+        f"--basetemp={environment_root / 'pytest'}",
         f"--junitxml={diagnostics / 'junit.xml'}",
         f"--durations={POLICY.runner.duration_count}",
     ]
@@ -185,16 +197,21 @@ def pytest_command(
     return [*command, *args.selection]
 
 
-def environment_for(args: argparse.Namespace, diagnostics: Path) -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("COVERAGE_", "COV_CORE_"))
-        and key not in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS")
-    }
+def environment_for(
+    args: argparse.Namespace,
+    diagnostics: Path,
+    root: Path,
+    scenario: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    controls = execution_environment.validation_controls(os.environ)
+    environment = execution_environment.build_execution_environment(
+        root,
+        execution_environment.validation_tool_path(os.environ),
+        controls | dict(scenario or {}),
+    )
     environment.update(
+        CREWPLANE_TEST_ENV_ROOT=str(root),
         PYTHONHASHSEED=str(args.hash_seed),
-        PYTHONUNBUFFERED="1",
         PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
     )
     if PROFILES[args.profile].required_git:
@@ -206,12 +223,16 @@ def environment_for(args: argparse.Namespace, diagnostics: Path) -> dict[str, st
 
 
 def command_output(
-    command: list[str], root: Path, deadline: Deadline | None = None
+    command: list[str],
+    root: Path,
+    deadline: Deadline | None = None,
+    environment: dict[str, str] | None = None,
 ) -> str | None:
     try:
         result = subprocess.run(
             command,
             cwd=root,
+            env=environment,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -287,9 +308,11 @@ def metadata(
     deadline: Deadline | None = None,
 ) -> dict[str, object]:
     return {
-        "source_commit": command_output(["git", "rev-parse", "HEAD"], ROOT, deadline),
+        "source_commit": command_output(
+            ["git", "rev-parse", "HEAD"], ROOT, deadline, environment
+        ),
         "source_dirty": command_output(
-            ["git", "status", "--porcelain"], ROOT, deadline
+            ["git", "status", "--porcelain"], ROOT, deadline, environment
         ),
         "command": launch_command(command),
         "pytest_command": command,
@@ -310,10 +333,27 @@ def metadata(
         },
         "lock_sha256": hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest(),
         "dependencies": dependency_versions(),
-        "git": command_output(["git", "--version"], ROOT, deadline),
-        "locale": locale.setlocale(locale.LC_ALL),
-        "timezone": os.environ.get("TZ"),
-        "local_timezone": time.tzname,
+        "git": command_output(["git", "--version"], ROOT, deadline, environment),
+        "locale": environment["LC_ALL"],
+        "timezone": environment["TZ"],
+        "execution_environment": {
+            key: environment[key]
+            for key in (
+                "HOME",
+                "XDG_CONFIG_HOME",
+                "XDG_CACHE_HOME",
+                "TMPDIR",
+                "TERM",
+                "LC_ALL",
+                "TZ",
+                "PYTHONHASHSEED",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+                "CREWPLANE_REQUIRED_GIT",
+                "GIT_FLOOR_BIN",
+                "CREWPLANE_TEST_ENV_ROOT",
+            )
+            if key in environment
+        },
         "profile": args.profile,
         "suite": args.suite,
         "total_timeout": args.total_timeout,
@@ -420,11 +460,15 @@ def dots_arguments(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def run_dots(
-    args: argparse.Namespace, diagnostics: Path, deadline: Deadline
+    args: argparse.Namespace,
+    diagnostics: Path,
+    deadline: Deadline,
+    environment_root: Path,
+    scenario: Mapping[str, str] | None = None,
 ) -> list[dict[str, object]]:
     diagnostics.mkdir()
     plugin_args = dots_arguments(args)
-    environment = environment_for(plugin_args, diagnostics)
+    environment = environment_for(plugin_args, diagnostics, environment_root, scenario)
     plugin_deadline = Deadline.after(deadline.remaining(POLICY.timeouts.plugin_seconds))
     commands = [
         [
@@ -437,14 +481,14 @@ def run_dots(
             "-e",
             "plugins/crewplane-dots-host",
         ],
-        pytest_command(plugin_args, diagnostics),
+        pytest_command(plugin_args, diagnostics, environment_root),
     ]
     outcomes = []
     for name, command in zip(("install", "pytest"), commands, strict=True):
         result = run_logged(
             command,
             ROOT,
-            environment,
+            dict(os.environ) if name == "install" else environment,
             diagnostics / f"{name}.log",
             plugin_deadline.remaining(args.timeout if name == "pytest" else None),
             args.shutdown_timeout,
@@ -455,21 +499,30 @@ def run_dots(
     return outcomes
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None, scenario: Mapping[str, str] | None = None
+) -> int:
     args = parse_args(argv)
     deadline = Deadline.after(args.total_timeout)
     results = ROOT / "test-results"
     results.mkdir(exist_ok=True)
     diagnostics = Path(tempfile.mkdtemp(prefix=f"{args.profile}-", dir=results))
     outcome: dict[str, object] = {}
+    environment_root = Path(tempfile.mkdtemp(prefix="crewplane-tests-"))
     exit_code = 1
     try:
         execution_args = dots_arguments(args) if args.suite == "dots" else args
+        suite_environment = environment_root / (
+            "dots" if args.suite == "dots" else "core"
+        )
         command = pytest_command(
             execution_args,
             diagnostics / "dots" if args.suite == "dots" else diagnostics,
+            suite_environment,
         )
-        environment = environment_for(execution_args, diagnostics)
+        environment = environment_for(
+            execution_args, diagnostics, suite_environment, scenario
+        )
         details = metadata(execution_args, command, environment, deadline)
         details["reproduce"] = reproduction_command(args)
         write_json(diagnostics / "metadata.json", details)
@@ -492,7 +545,13 @@ def main(argv: list[str] | None = None) -> int:
                 if any(report["returncode"] != 0 for report in reports):
                     exit_code = exit_code or 1
         if exit_code == 0 and args.suite in ("dots", "all"):
-            plugins = run_dots(args, diagnostics / "dots", deadline)
+            plugins = run_dots(
+                args,
+                diagnostics / "dots",
+                deadline,
+                environment_root / "dots",
+                scenario,
+            )
             outcome["dots"] = plugins
             exit_code = next(
                 (
@@ -527,6 +586,13 @@ def main(argv: list[str] | None = None) -> int:
             (diagnostics / "durations.txt").write_text(
                 "\n".join(lines[first_duration:]) + "\n", encoding="utf-8"
             )
+        if exit_code == 0:
+            try:
+                execution_environment.remove_execution_directory(environment_root)
+            except OSError as error:
+                outcome["cleanup_error"] = f"{type(error).__name__}: {error}"
+                print(outcome["cleanup_error"], file=sys.stderr)
+                exit_code = 1
         outcome["exit_code"] = exit_code if exit_code >= 0 else 1
         write_json(diagnostics / "outcome.json", outcome)
     return int(outcome["exit_code"])

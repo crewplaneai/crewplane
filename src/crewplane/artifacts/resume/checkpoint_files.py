@@ -8,6 +8,9 @@ from pathlib import Path
 
 from crewplane.architecture.contracts.artifacts import (
     build_review_audit_directory_name,
+    candidate_identity_path,
+    review_metadata_path,
+    review_raw_output_path,
 )
 from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import (
@@ -25,12 +28,7 @@ from crewplane.core.review_checkpoint_state import (
 )
 
 from ..atomic import atomic_write_bytes
-from ..naming import (
-    candidate_identity_path,
-    review_metadata_path,
-    review_raw_output_path,
-    reviewer_state_relative_path,
-)
+from ..naming import reviewer_state_relative_path
 
 
 def describe_checkpoint_file(

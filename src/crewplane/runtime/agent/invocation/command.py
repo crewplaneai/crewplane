@@ -28,7 +28,7 @@ from ..process.drain import ProcessDrainError
 from ..process.runner import (
     build_retry_log_header,
 )
-from ..process.streams import format_timeout_seconds
+from ..process.stream_tasks import format_timeout_seconds
 from ..workspace_environment import record_workspace_child_environment_applied
 from .command_lifecycle import (
     CommandLifecycle,

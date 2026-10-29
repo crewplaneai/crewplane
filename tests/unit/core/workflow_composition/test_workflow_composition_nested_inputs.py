@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import mkdtemp
 
 import pytest
+import yaml
 
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks_with_sources
@@ -17,6 +18,99 @@ def _write_workflow(path: Path, lines: list[str]) -> None:
 
 def _executor_prompt(node: WorkflowNode) -> str:
     return render_prompt_for_role(node, PromptSegmentRole.EXECUTOR)
+
+
+@pytest.mark.parametrize("same_source", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_nested_aliases_compare_canonical_sources(tmp_path, same_source, reverse):
+    def write(name, header, body):
+        path = tmp_path / f"{name}.task.md"
+        path.write_text(
+            "---\n"
+            + yaml.safe_dump(
+                {"schema_version": SCHEMA_VERSION, "name": name, **header},
+                sort_keys=False,
+            )
+            + "---\n"
+            + body,
+            encoding="utf-8",
+            newline="\n",
+        )
+        return path
+
+    def fallback(node_id):
+        return {"id": node_id, "mode": "input", "source": "{{file:unused.md}}"}
+
+    write(
+        "child",
+        {
+            "inputs": {"left": "fallback", "right": "fallback"},
+            "nodes": [
+                fallback("fallback"),
+                {
+                    "id": "use",
+                    "mode": "sequential",
+                    "providers": ["alpha"],
+                    "needs": ["fallback"],
+                },
+            ],
+        },
+        "## use\nUse {{fallback.output}}\n",
+    )
+    bindings = [("left", "first"), ("right", "second")]
+    write(
+        "module",
+        {
+            "inputs": {"first_input": "first", "second_input": "second"},
+            "imports": [
+                {
+                    "path": "child.task.md",
+                    "as": "inner",
+                    "inputs": dict(reversed(bindings) if reverse else bindings),
+                }
+            ],
+            "nodes": [fallback("first"), fallback("second")],
+        },
+        "",
+    )
+    path = write(
+        "root",
+        {
+            "imports": [
+                {
+                    "path": "module.task.md",
+                    "as": "outer",
+                    "inputs": {
+                        "first_input": "source.one",
+                        "second_input": "source.one" if same_source else "source.two",
+                    },
+                }
+            ],
+            "nodes": [
+                {"id": node_id, "mode": "sequential", "providers": ["alpha"]}
+                for node_id in ("source.one", "source.two")
+            ],
+        },
+        "## source.one\nOne\n## source.two\nTwo\n",
+    )
+    if not same_source:
+        with pytest.raises(ValueError) as raised:
+            load_tasks_with_sources(path, project_root=tmp_path)
+        for expected in (
+            "child.task.md",
+            "fallback",
+            "left",
+            "right",
+            "source.one",
+            "source.two",
+        ):
+            assert expected in str(raised.value)
+    else:
+        workflow = load_tasks_with_sources(path, project_root=tmp_path).workflow
+        node = next(node for node in workflow.nodes if node.id == "outer.inner.use")
+        assert node.needs == ["source.one"]
+        assert "{{source.one.output}}" in _executor_prompt(node)
+        assert not any(node.mode == "input" for node in workflow.nodes)
 
 
 class WorkflowCompositionNestedInputTests(unittest.TestCase):

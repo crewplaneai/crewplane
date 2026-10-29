@@ -22,7 +22,7 @@ from crewplane.core.workflow.keywords import (
     ProviderRole,
 )
 
-from .preflight_files import preflight_content_path
+from .preflight_files import read_verified_static_text
 from .workspace_files import (
     ResolvedWorkspaceFile,
     resolve_workspace_file,
@@ -56,14 +56,17 @@ def assemble_prompt_details(
     text_parts: list[str] = []
     workspace_files: list[ResolvedWorkspaceFile] = []
     for fragment in sorted(stream.fragments, key=lambda item: item.fragment_index):
-        text, workspace_file = _resolve_fragment(
-            plan,
-            fragment,
-            output,
-            secret_context,
-            workspace_candidate_source,
-            workspace_candidate_context,
-        )
+        try:
+            text, workspace_file = _resolve_fragment(
+                plan,
+                fragment,
+                output,
+                secret_context,
+                workspace_candidate_source,
+                workspace_candidate_context,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Node '{node.id}': {exc}") from exc
         text_parts.append(text)
         if workspace_file is not None:
             workspace_files.append(workspace_file)
@@ -151,7 +154,7 @@ def _resolve_fragment(
         case "static_file_content":
             if fragment.content_ref is None:
                 raise ValueError("Static file fragment is missing content_ref.")
-            return _read_static_file(plan, fragment.content_ref), None
+            return read_verified_static_text(plan, fragment.content_ref), None
         case "workspace_file_locator":
             locator_id = (
                 fragment.locator.get("locator_id")
@@ -177,15 +180,6 @@ def _resolve_fragment(
         case "runtime_locator_lookup":
             node_id, artifact_name = _locator_parts(fragment)
             return _resolve_runtime_locator(plan, output, node_id, artifact_name), None
-
-
-def _read_static_file(plan: PreflightExecutionPlan, content_ref: str) -> str:
-    path = preflight_content_path(plan.context_root, content_ref, "static")
-    if path is None:
-        raise ValueError(
-            f"Static content reference is missing or unsafe: '{content_ref}'."
-        )
-    return path.read_text(encoding="utf-8")
 
 
 def _locator_parts(fragment: Fragment) -> tuple[str, str]:

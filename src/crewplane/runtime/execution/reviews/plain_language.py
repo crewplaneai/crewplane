@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from crewplane.core.review_contract import (
     REQUIRED_EMPTY_SENTINEL,
     VERDICT_CHANGES_REQUESTED,
-    VERDICT_NITS_ONLY,
     VERDICT_NO_FINDINGS,
     ParsedReviewResult,
 )
@@ -47,16 +46,6 @@ _BLOCKER_CUES = (
     "remaining issues",
     "should fix",
 )
-_NITPICK_CUES = (
-    "nit",
-    "nitpick",
-    "nitpicks",
-    "nit only",
-    "non blocking",
-    "optional",
-    "polish",
-    "style only",
-)
 
 
 @dataclass(frozen=True)
@@ -73,32 +62,21 @@ def infer_plain_language_review(output: str) -> PlainLanguageReviewInference | N
 
     normalized_output = normalize_text_token(stripped_output)
     has_blocker = any(contains_cue(normalized_output, cue) for cue in _BLOCKER_CUES)
-    has_approval = any(contains_cue(normalized_output, cue) for cue in _APPROVAL_CUES)
-    has_nitpicks = any(contains_cue(normalized_output, cue) for cue in _NITPICK_CUES)
-
-    if has_approval and not has_blocker:
-        if has_nitpicks:
-            parsed = ParsedReviewResult(
-                verdict=VERDICT_NITS_ONLY,
-                major_issues=REQUIRED_EMPTY_SENTINEL,
-                minor_issues=REQUIRED_EMPTY_SENTINEL,
-                nitpicks=stripped_output,
-            )
-            warning = "Inferred NITS_ONLY approval from plain-language reviewer output."
-        else:
-            parsed = ParsedReviewResult(
+    approval = " ".join(stripped_output.casefold().split())
+    if approval.endswith((".", "!")):
+        approval = approval[:-1]
+    if approval in _APPROVAL_CUES:
+        return PlainLanguageReviewInference(
+            parsed=ParsedReviewResult(
                 verdict=VERDICT_NO_FINDINGS,
                 major_issues=REQUIRED_EMPTY_SENTINEL,
                 minor_issues=REQUIRED_EMPTY_SENTINEL,
                 nitpicks=REQUIRED_EMPTY_SENTINEL,
-            )
-            warning = (
-                "Inferred NO_FINDINGS approval from plain-language reviewer output."
-            )
-        return PlainLanguageReviewInference(
-            parsed=parsed,
+            ),
             evaluation_kind="plain_language_approval",
-            warnings=(warning,),
+            warnings=(
+                "Inferred NO_FINDINGS approval from plain-language reviewer output.",
+            ),
         )
 
     if has_blocker:

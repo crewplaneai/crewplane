@@ -519,3 +519,27 @@ def test_checkpoint_gates_follow_identity_checks_and_skip_detailed_validation(
         "validate_checkpoint_node",
         "read_review_checkpoint",
     ]
+
+
+@pytest.mark.parametrize("pre_fix", [False, True])
+def test_pre_fix_checkpoint_with_valid_hashes_is_not_reusable(tmp_path, pre_fix):
+    from tests.helpers.execution_semantics import compiled_execution_signatures
+
+    current, previous = compiled_execution_signatures(tmp_path)
+    source, plan, checkpoint, observation = checkpoint_history(tmp_path)
+    historical = previous if pre_fix else current
+    plan = plan.model_copy(update={"workflow_signature": current})
+    source = replace(
+        source,
+        manifest=source.manifest.model_copy(update={"workflow_signature": historical}),
+    )
+    checkpoint = checkpoint.model_copy(update={"workflow_signature": historical})
+    publish_review_checkpoint(source.run_dir, checkpoint)
+    descriptor = write_result(
+        source.results_dir, "b-result.md", "completed independent prerequisite"
+    )
+    write_node_state(
+        source.run_dir, make_node_state(source.manifest, "b", [descriptor])
+    )
+    frontier = validate_resume_frontier(source, plan, observation)
+    assert frontier.checkpoint_node_ids == (() if pre_fix else ("a",))

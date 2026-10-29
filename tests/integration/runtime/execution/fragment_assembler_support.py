@@ -23,6 +23,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.static_resources import static_resource
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
 )
@@ -213,7 +214,7 @@ def write_lineage_state_with_bundle(
 
 
 def make_fragment_plan(
-    root: Path, content_ref: str | None = None
+    root: Path, content_ref: str | None = None, payload: bytes = b"file"
 ) -> PreflightExecutionPlan:
     static_content_ref = content_ref or make_static_content_ref(b"file")
     upstream = PreflightExecutionNode(
@@ -317,7 +318,7 @@ def make_fragment_plan(
                 ],
             )
         ],
-        static_resources=[],
+        static_resources=[static_resource(payload, static_content_ref)],
         token_catalog=[],
         dependency_graph=[
             DependencyEdge(

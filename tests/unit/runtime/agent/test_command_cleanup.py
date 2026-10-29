@@ -13,7 +13,7 @@ from crewplane.runtime.agent.process import (
     posix_session,
     runner,
     session,
-    streams,
+    stream_tasks,
 )
 from crewplane.runtime.agent.process.stream_capture import (
     ProcessOutputCapture,
@@ -104,7 +104,7 @@ def test_process_cleanup_finishes_before_cancellation_and_persistence(
             if drain_fails:
                 raise drain_error
 
-        monkeypatch.setattr(streams, "drain_process_pipes", pipes)
+        monkeypatch.setattr(stream_tasks, "drain_process_pipes", pipes)
         monkeypatch.setattr(
             session,
             "sys",
@@ -245,7 +245,7 @@ def test_windows_drain_failure_deletes_owned_captures_before_finalization(
     )
     reaper, pipes = AsyncMock(), AsyncMock()
     monkeypatch.setattr(runner, "reap_failed_process", reaper)
-    monkeypatch.setattr(streams, "drain_process_pipes", pipes)
+    monkeypatch.setattr(stream_tasks, "drain_process_pipes", pipes)
 
     async def check():
         with pytest.raises(

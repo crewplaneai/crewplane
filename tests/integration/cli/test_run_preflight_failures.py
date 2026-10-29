@@ -9,6 +9,8 @@ import typer
 import crewplane.cli.app as cli
 from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.config_secrets import CONFIG_FAILURES
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     cli_process_state,
@@ -486,3 +488,128 @@ class CliRunPreflightFailureTests(unittest.TestCase):
         self.assertIn("settings.max_audit_rounds", output_text)
         self.assertNotIn("Provider validation failed", output_text)
         self.assertNotIn("Dry run mode", output_text)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "validate",
+        "dry-run",
+        "run",
+        pytest.param("cleanup", marks=requires_workspace_support),
+    ],
+)
+@pytest.mark.parametrize("case", CONFIG_FAILURES)
+def test_config_failure_is_safe_across_cli_entry_points(
+    tmp_path, monkeypatch, command, case
+):
+    from typer.testing import CliRunner
+
+    from tests.helpers.config_secrets import assert_no_secret
+
+    monkeypatch.chdir(tmp_path)
+    state = tmp_path / ".crewplane"
+    state.mkdir()
+    config = state / "config.yml"
+    content, location = CONFIG_FAILURES[case]
+    config.write_bytes(content.encode())
+    workflow = tmp_path / "workflow.task.md"
+    write_basic_workflow(workflow)
+    args = (
+        ["cleanup", "workspaces", "--dry-run"]
+        if command == "cleanup"
+        else [
+            *(
+                ["validate", str(workflow)]
+                if command == "validate"
+                else ["run", "--tasks", str(workflow)]
+            )
+        ]
+    )
+    if command == "dry-run":
+        args.append("--dry-run")
+    result = CliRunner().invoke(cli.app, args)
+    assert result.exit_code == 1, result.output
+    assert_no_secret(result.stdout + result.stderr)
+    assert location in " ".join(result.output.split())
+    files = [
+        path
+        for root in ("execution-stages", "execution-results")
+        for path in (state / root).rglob("*")
+        if path.is_file()
+    ]
+    for path in files:
+        assert_no_secret(path.read_bytes())
+        assert path.name != "run.json"
+        assert path.parent.name == "preflight"
+    assert bool(files) is (command == "run")
+
+
+@pytest.mark.parametrize("command", ["validate", "dry-run", "run"])
+@pytest.mark.parametrize("role", ["executors", "[bold]executors[/bold]"])
+def test_workflow_validation_error_is_consistent_across_cli_entry_points(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, role: str
+) -> None:
+    import json
+    from unittest.mock import AsyncMock
+
+    from typer.testing import CliRunner
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("COLUMNS", "240")
+    execution = AsyncMock()
+    monkeypatch.setattr(cli, "execute_workflow", execution)
+    state = tmp_path / ".crewplane"
+    state.mkdir()
+    write_basic_config(state / "config.yml")
+    workflow = tmp_path / "[red]workflow.task.md"
+    workflow.write_text(
+        "---\nname: Design\nnodes:\n  - id: design\n    mode: sequential\n"
+        "    providers:\n      - provider: alpha\n"
+        f"        role: '{role}'\n"
+        "        model: private-model-value\n---\n\n## design\nPrivate prompt.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    args = (
+        ["validate", str(workflow)]
+        if command == "validate"
+        else ["run", "--tasks", str(workflow)]
+    )
+    if command == "dry-run":
+        args.append("--dry-run")
+
+    result = CliRunner().invoke(cli.app, args)
+
+    expected = (
+        f"{workflow}:8:15\n"
+        "  Node 'design', provider #1 ('alpha'), role:\n"
+        f"    Invalid value {role!r}.\n"
+        "    Allowed values: executor, reviewer."
+    )
+    assert result.exit_code == 1, result.output
+    assert expected in result.output
+    for hidden in (
+        "private-model-value",
+        "Private prompt.",
+        "ProviderSpec",
+        "WorkflowFrontmatter",
+        "pydantic.dev",
+        "Suggested correction:",
+    ):
+        assert hidden not in result.output
+    execution.assert_not_awaited()
+    files = [
+        path
+        for directory in ("execution-results", "execution-stages")
+        for path in (state / directory).rglob("*")
+        if path.is_file()
+    ]
+    assert bool(files) is (command == "run")
+    assert all(path.parent.name == "preflight" for path in files)
+    if command == "run":
+        diagnostics_path = next(
+            path for path in files if path.name == "diagnostics.json"
+        )
+        diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+        assert diagnostics[0]["message"] == expected

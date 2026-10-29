@@ -173,3 +173,68 @@ def test_fake_client_queries_never_launch_subprocesses(
     )
     assert client.call_sockets == ["simulated-socket"] * 4
     run.assert_not_called()
+
+
+@pytest.mark.parametrize("check", [False, True])
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["unknown-command"],
+        ["has-session", "-t"],
+        ["kill-session", "-t", ""],
+        ["display-message", "-p", "#{pane_width}"],
+        ["display-message", "-p", "-t", "%10", "#{unknown}"],
+        ["display-message", "-p", "-t", "session", "#{pane_width}"],
+        ["new-session", "-P"],
+        ["split-window", "-t", "%10"],
+        ["bind-key", "-T", "root", "q"],
+        ["set-option", "-t", "session", "unknown", "on"],
+        ["select-pane", "-t", "%10", "extra"],
+    ],
+)
+def test_fake_client_rejects_unsupported_commands(args: list[str], check: bool) -> None:
+    client = FakeTmuxClient()
+    if check:
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            client.run(args, check=True)
+        assert "Unsupported tmux" in error.value.stderr
+    else:
+        result = client.run(args, check=False)
+        assert result.returncode != 0
+        assert "Unsupported tmux" in result.stderr
+
+
+@pytest.mark.parametrize("check", [False, True])
+@pytest.mark.parametrize(
+    ("failure", "args"),
+    [
+        ("session_exists_value", ["has-session", "-t", "missing"]),
+        ("fail_status_option", ["set-option", "-t", "session", "status-left", "text"]),
+        (
+            "fail_pane_title",
+            ["set-option", "-p", "-t", "%10", "@crewplane_title", "title"],
+        ),
+        (
+            "fail_next_key_table_restore",
+            ["set-option", "-t", "session", "key-table", "root"],
+        ),
+    ],
+)
+def test_fake_client_failure_obeys_check(
+    failure: str, args: list[str], check: bool
+) -> None:
+    client = FakeTmuxClient()
+    setattr(client, failure, failure != "session_exists_value")
+    if check:
+        with pytest.raises(subprocess.CalledProcessError):
+            client.run(args, check=True)
+    else:
+        assert client.run(args, check=False).returncode == 1
+
+
+def test_fake_client_checked_timeout_raises() -> None:
+    client = FakeTmuxClient()
+    client.has_session_times_out = True
+    with pytest.raises(RuntimeError, match="tmux command timed out"):
+        client.run(["has-session", "-t", "session"])

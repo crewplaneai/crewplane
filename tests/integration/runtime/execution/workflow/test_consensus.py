@@ -19,9 +19,9 @@ class ExecutorConsensusTests(unittest.TestCase):
     def test_check_consensus_accepts_plain_language_approval(self) -> None:
         self.assertTrue(check_consensus(["LGTM"]))
 
-    def test_check_consensus_accepts_negated_blocker_approval_language(self) -> None:
-        self.assertTrue(check_consensus(["LGTM, no blocking issues."]))
-        self.assertTrue(check_consensus(["Ready to merge, no blockers."]))
+    def test_check_consensus_rejects_combined_approval_language(self) -> None:
+        self.assertFalse(check_consensus(["LGTM, no blocking issues."]))
+        self.assertFalse(check_consensus(["Ready to merge, no blockers."]))
 
     def testextract_verdict_accepts_no_findings_contract(self) -> None:
         self.assertEqual(
@@ -230,24 +230,24 @@ class ExecutorConsensusTests(unittest.TestCase):
         self.assertEqual(result.unresolved_issue_count, 0)
         self.assertIn("raw reviewer feedback", result.normalized_markdown)
 
-    def test_evaluate_review_output_infers_plain_language_nits_only(self) -> None:
+    def test_evaluate_review_output_keeps_plain_language_nits_unapproved(self) -> None:
         result = evaluate_review_output(
             "LGTM overall. One optional nitpick: rename the helper for clarity."
         )
 
-        self.assertTrue(result.approved)
-        self.assertEqual(result.verdict, "NITS_ONLY")
+        self.assertFalse(result.approved)
+        self.assertIsNone(result.verdict)
         self.assertIn("optional nitpick", result.normalized_markdown)
 
-    def test_evaluate_review_output_infers_plain_language_nits_with_no_blockers(
+    def test_evaluate_review_output_keeps_nit_prose_with_no_blockers_unapproved(
         self,
     ) -> None:
         result = evaluate_review_output(
             "Looks good to me, no blockers. One optional polish item remains."
         )
 
-        self.assertTrue(result.approved)
-        self.assertEqual(result.verdict, "NITS_ONLY")
+        self.assertFalse(result.approved)
+        self.assertIsNone(result.verdict)
 
     def test_evaluate_review_output_exposes_sections_and_unresolved_fingerprints(
         self,
@@ -337,8 +337,8 @@ class ExecutorConsensusTests(unittest.TestCase):
     def test_evaluate_review_output_does_not_match_nit_inside_other_words(self) -> None:
         result = evaluate_review_output("Looks good initially, ready to merge.")
 
-        self.assertTrue(result.approved)
-        self.assertEqual(result.verdict, "NO_FINDINGS")
+        self.assertFalse(result.approved)
+        self.assertIsNone(result.verdict)
 
     def test_evaluate_review_output_leaves_ambiguous_unstructured_review_unapproved(
         self,

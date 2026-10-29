@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from pathlib import Path
+
 import pytest
 
 from crewplane.cli.onboarding.rendering import (
@@ -12,49 +15,135 @@ from crewplane.cli.onboarding.rendering import (
     rendered_default_config,
     rendered_default_workflow,
 )
+from crewplane.cli.onboarding.rendering_config_agents import (
+    extract_commented_provider_block,
+)
+from crewplane.cli.onboarding.rendering_yaml_blocks import uncomment_comment_block
+from crewplane.cli.onboarding.rendering_yaml_loading import (
+    load_yaml_mapping,
+    mapping_child,
+)
 from crewplane.core.config import load_config
 from crewplane.core.provider_names import known_provider_names
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.core.yaml_loader import load_yaml_unique
 
 
 def test_onboarding_known_provider_names_follow_core_provider_names() -> None:
     assert known_provider_names() == KNOWN_PROVIDER_NAMES
 
 
-def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
+def _provider_template_mapping(template: str, provider: str) -> Mapping[str, object]:
+    block = extract_commented_provider_block(template, provider)
+    data = load_yaml_mapping(uncomment_comment_block(block), f"{provider} example")
+    agent = mapping_child(data, provider, f"{provider} example")
+    model = agent.get("default_model")
+    if model is not None:
+        assert isinstance(model, str), f"{provider} default_model must be a string"
+        assert model.strip(), f"{provider} default_model must not be blank"
+    return agent
+
+
+@pytest.mark.parametrize("provider", KNOWN_PROVIDER_NAMES)
+def test_provider_ready_config_renders_each_known_provider(
+    tmp_path: Path, provider: str
+) -> None:
     default_config = rendered_default_config()
-    expected_models = {
-        "claude": "sonnet",
-        "codex": "gpt-6-astra",
-        "gemini": "auto",
-        "copilot": "claude-sonnet-5",
-        "kilo": "kilo/kilo-auto/frontier",
-        "pi": None,
-        "deepseek": None,
-        "opencode": None,
-    }
-    assert set(expected_models) == set(KNOWN_PROVIDER_NAMES)
-    for provider in KNOWN_PROVIDER_NAMES:
-        rendered = render_provider_ready_config(default_config, (provider,))
-        config_path = tmp_path / f"{provider}.yml"
-        config_path.write_text(rendered, encoding="utf-8")
+    template_agent = _provider_template_mapping(default_config, provider)
+    rendered = render_provider_ready_config(default_config, (provider,))
+    config_path = tmp_path / f"{provider}.yml"
+    config_path.write_text(rendered, encoding="utf-8", newline="\n")
 
-        config = load_config(config_path)
+    config = load_config(config_path)
 
-        assert list(config.agents) == [provider]
-        assert config.agents[provider].default_model == expected_models[provider]
-        assert config.settings is not None
-        assert config.settings.integrations.invoker.implementation == "cli"
-        assert config.settings.integrations.invoker.options == {}
-        assert f"  {provider}:" in rendered
-        assert "  # mock:" in rendered
-        assert (
-            '  #   cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' in rendered
+    assert list(config.agents) == [provider]
+    assert config.agents[provider].provider_kind == provider
+    assert config.agents[provider].default_model == template_agent.get("default_model")
+    if provider in {"pi", "deepseek", "opencode"}:
+        assert "default_model" not in template_agent
+        assert "default_model" not in load_yaml_unique(rendered)["agents"][provider]
+        assert config.agents[provider].default_model is None
+    if provider == "pi":
+        assert any(
+            line.startswith("    # default_model:") for line in rendered.splitlines()
         )
-        assert '      # implementation: "mock"' in rendered
-        assert "      # options:" in rendered
-        assert '      #   output_mode: "lorem"' in rendered
+    assert config.settings is not None
+    assert config.settings.integrations.invoker.implementation == "cli"
+    assert config.settings.integrations.invoker.options == {}
+    assert f"  {provider}:" in rendered
+    assert "  # mock:" in rendered
+    assert '  #   cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' in rendered
+    assert '      # implementation: "mock"' in rendered
+    assert "      # options:" in rendered
+    assert '      #   output_mode: "lorem"' in rendered
+
+
+def _template_with_codex_fields(fields: str) -> str:
+    template = rendered_default_config()
+    block = extract_commented_provider_block(template, "codex")
+    replacement = (
+        "  # codex:\n"
+        "  #   cli_cmd: [codex, exec]\n"
+        "  #   provider_kind: codex\n"
+        f"  #   {fields}\n"
+    )
+    return template.replace(block, replacement, 1)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param("default_model: [", id="malformed-yaml"),
+        pytest.param(
+            "default_model: first\n  #   default_model: second", id="duplicate-key"
+        ),
+        pytest.param("default_model: 42", id="numeric-model"),
+        pytest.param("default_model: true", id="boolean-model"),
+        pytest.param("default_model: [model]", id="list-model"),
+        pytest.param("default_model: {name: model}", id="mapping-model"),
+        pytest.param("max_retries: invalid", id="invalid-other-field"),
+    ],
+)
+def test_provider_ready_config_rejects_invalid_commented_fields(fields: str) -> None:
+    template = _template_with_codex_fields(fields)
+
+    with pytest.raises(OnboardingRenderingError, match="not valid YAML|is invalid"):
+        render_provider_ready_config(template, ("codex",))
+
+
+@pytest.mark.parametrize("model", ["", "   "])
+def test_template_contract_rejects_blank_models_without_restricting_user_config(
+    tmp_path: Path, model: str
+) -> None:
+    template = _template_with_codex_fields(f'default_model: "{model}"')
+
+    with pytest.raises(AssertionError, match="default_model must not be blank"):
+        _provider_template_mapping(template, "codex")
+
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        render_provider_ready_config(template, ("codex",)),
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert load_config(config_path).agents["codex"].default_model == model
+
+
+@pytest.mark.parametrize("model", ["  illustrative-model  ", None])
+def test_template_contract_preserves_nonblank_models_and_null(
+    tmp_path: Path, model: str | None
+) -> None:
+    field = "default_model: null" if model is None else f'default_model: "{model}"'
+    template = _template_with_codex_fields(field)
+    assert _provider_template_mapping(template, "codex")["default_model"] == model
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        render_provider_ready_config(template, ("codex",)),
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert load_config(config_path).agents["codex"].default_model == model
 
 
 def test_provider_ready_config_comments_current_mock_invoker_values() -> None:

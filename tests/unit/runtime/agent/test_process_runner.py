@@ -462,7 +462,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             raise drain_error
 
         with patch(
-            "crewplane.runtime.agent.process.streams.reap_failed_process",
+            "crewplane.runtime.agent.process.stream_tasks.drain_async_process",
             new=fail_drain,
         ):
             collector_task = asyncio.create_task(collect_process_output(process, None))
@@ -472,9 +472,11 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError) as caught:
                 await asyncio.wait_for(collector_task, timeout=1.0)
 
-        self.assertIn(
-            "provider drain remained unresolved",
-            getattr(caught.exception, "__notes__", ()),
+        self.assertTrue(
+            any(
+                "provider drain remained unresolved" in note
+                for note in getattr(caught.exception, "__notes__", ())
+            )
         )
 
     async def test_reap_failed_process_reports_process_already_exited_warning(

@@ -14,12 +14,13 @@ from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
-from crewplane.runtime.execution.input import execute_input_stage
+from crewplane.runtime.execution.input import InputContentError, execute_input_stage
 from crewplane.runtime.execution.workspace_files import (
     resolve_project_initial_workspace_file,
 )
 from tests.helpers.platforms import symlink_or_skip
 from tests.helpers.resume import make_plan
+from tests.helpers.static_resources import static_resource
 
 
 @pytest.fixture(params=["input", "static", "workspace"])
@@ -28,13 +29,19 @@ def content_reader(request, tmp_path):
     output = OutputManager("Workflow", base_dir=tmp_path / "artifacts")
     secrets = SecretContext()
 
-    def read(reference):
+    def read(reference, payload=b"outside"):
+        resource = static_resource(payload).model_copy(
+            update={"content_ref": reference}
+        )
+        compiled = plan.model_copy(update={"static_resources": [resource]})
         if request.param == "input":
-            node = plan.nodes[0].model_copy(
+            node = compiled.nodes[0].model_copy(
                 update={"mode": "input", "input_content_ref": reference}
             )
-            execute_input_stage(node, output, CompiledRuntimeContext(plan, secrets))
-            return (output.stages_dir / "a/input_round1.md").read_text(encoding="utf-8")
+            execute_input_stage(node, output, CompiledRuntimeContext(compiled, secrets))
+            return (
+                (output.stages_dir / "a/input_round1.md").read_bytes().decode("utf-8")
+            )
         if request.param == "static":
             render_plan = RenderPlan(
                 render_plan_id="a",
@@ -53,7 +60,7 @@ def content_reader(request, tmp_path):
                     )
                 ],
             )
-            compiled = plan.model_copy(update={"render_plans": [render_plan]})
+            compiled = compiled.model_copy(update={"render_plans": [render_plan]})
             return assemble_prompt_details(
                 compiled, compiled.nodes[0], ProviderRole.EXECUTOR, output, secrets
             ).text
@@ -81,18 +88,25 @@ def content_reader(request, tmp_path):
 @pytest.mark.parametrize(
     "reference", ["../outside.txt", "nested/../file.txt", "absolute"]
 )
-def test_invalid_reference_preserves_value_error_and_message(
+def test_invalid_reference_is_rejected_with_consumer_context(
     tmp_path, content_reader, reference
 ):
     kind, read = content_reader
     if reference == "absolute":
         reference = str(tmp_path / "outside.txt")
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(InputContentError if kind == "input" else ValueError) as caught:
         read(reference)
 
-    assert str(caught.value) == f"Invalid {kind} content reference '{reference}'."
-    assert caught.value.__cause__ is None
+    if kind == "workspace":
+        assert (
+            str(caught.value) == f"Invalid workspace content reference '{reference}'."
+        )
+        assert caught.value.__cause__ is None
+    else:
+        assert "missing or unsafe" in str(caught.value)
+        assert reference in str(caught.value)
+        assert "node 'a'" in str(caught.value).lower()
 
 
 @pytest.mark.parametrize(
@@ -114,15 +128,26 @@ def test_unsafe_or_missing_content_keeps_caller_error_policy(
             symlink_or_skip(target, source)
         else:
             target.hardlink_to(source)
-    error_type = RuntimeError if kind == "workspace" else ValueError
+    error_type = (
+        InputContentError
+        if kind == "input"
+        else RuntimeError
+        if kind == "workspace"
+        else ValueError
+    )
 
     with pytest.raises(error_type) as caught:
         read(reference)
 
-    assert str(caught.value) == (
-        f"{kind.capitalize()} content reference is missing or unsafe: '{reference}'."
-    )
-    assert caught.value.__cause__ is None
+    if kind == "workspace":
+        assert (
+            str(caught.value)
+            == f"Workspace content reference is missing or unsafe: '{reference}'."
+        )
+        assert caught.value.__cause__ is None
+    else:
+        assert "missing or unsafe" in str(caught.value)
+        assert "node 'a'" in str(caught.value).lower()
 
 
 @pytest.mark.parametrize("payload", [b"first\r\nsecond\r\n", b"text\x00", b"\xff"])
@@ -146,8 +171,11 @@ def test_content_readers_preserve_text_and_byte_semantics(
         assert resolved.text == payload.decode()
         assert resolved.byte_size == len(payload)
         assert resolved.sha256 == hashlib.sha256(payload).hexdigest()
-    elif payload == b"\xff":
-        with pytest.raises(UnicodeDecodeError):
-            read("./content.txt")
+    elif payload in (b"\xff", b"text\x00"):
+        message = "not valid UTF-8" if payload == b"\xff" else "contains NUL"
+        with pytest.raises(
+            InputContentError if kind == "input" else ValueError, match=message
+        ):
+            read("content.txt", payload)
     else:
-        assert read("./content.txt") == payload.decode().replace("\r\n", "\n")
+        assert read("content.txt", payload).encode() == payload

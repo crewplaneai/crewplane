@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import yaml
 from yaml.constructor import ConstructorError
-from yaml.nodes import MappingNode
+from yaml.nodes import MappingNode, Node
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -55,4 +55,17 @@ UniqueKeyLoader.add_constructor(
 def load_yaml_unique(text: str) -> object:
     """Load YAML text while rejecting duplicate mapping keys."""
 
-    return yaml.load(text, Loader=UniqueKeyLoader)
+    value, _node = load_yaml_unique_with_node(text)
+    return value
+
+
+def load_yaml_unique_with_node(text: str) -> tuple[object, Node | None]:
+    """Load YAML values and retain syntax nodes for source diagnostics."""
+
+    loader = UniqueKeyLoader(text)
+    try:
+        node = loader.get_single_node()
+        value = loader.construct_document(node) if node is not None else None
+        return value, node
+    finally:
+        loader.dispose()

@@ -12,11 +12,14 @@ from crewplane.core.workflow.models import ProviderSpec, WorkflowNode
 from .compile_state import (
     CompileState,
     PreflightCompileOptions,
+    append_diagnostic,
     module_id,
     node_source_span,
     source_file,
     source_root,
 )
+from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
+from .invocation_names import validate_invocation_names
 from .models import (
     ConcurrencyPolicy,
     DependencyEdge,
@@ -62,7 +65,7 @@ def compile_execution_node(
             ),
         ),
     )
-    return PreflightExecutionNode(
+    compiled = PreflightExecutionNode(
         id=node.id,
         module_id=module_id(node, options),
         source_file=source_file(node, options),
@@ -84,6 +87,18 @@ def compile_execution_node(
             node.id
         ),
     )
+
+    try:
+        validate_invocation_names(compiled)
+    except ValueError as exc:
+        append_diagnostic(
+            state,
+            PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+            PreflightDiagnosticPhase.NODE_POLICY,
+            str(exc),
+            node_id=node.id,
+        )
+    return compiled
 
 
 def nodes_with_graph_dependencies(

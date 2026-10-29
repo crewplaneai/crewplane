@@ -309,73 +309,57 @@ class RuntimeConfigSnapshot(BaseModel):
             name: agent_config_input_payload(agent)
             for name, agent in sorted(config.agents.items())
         }
-        agents, sensitive_agent_paths = redact_sensitive_config(raw_agents)
+        _, sensitive_agent_paths = redact_sensitive_config(raw_agents)
+        agents, _ = redact_sensitive_config_with_fingerprints(raw_agents, None)
         agent_snapshots = runtime_agent_snapshots(agents)
-        raw_workspace = cast(
-            JsonObject,
-            {
-                "setup_profiles": settings.workspace.model_dump(mode="json")[
-                    "setup_profiles"
-                ]
-            },
-        )
-        redacted_workspace, sensitive_workspace_paths = redact_sensitive_config(
+        raw_workspace: JsonObject = {
+            "setup_profiles": settings.workspace.model_dump(mode="json")[
+                "setup_profiles"
+            ]
+        }
+        _, sensitive_workspace_paths = redact_sensitive_config(
             raw_workspace,
             ("workspace",),
         )
+        redacted_workspace, _ = redact_sensitive_config_with_fingerprints(
+            raw_workspace, None, ("workspace",)
+        )
+        integrations = (("invoker", invoker), ("artifacts", artifacts), ("ui", ui))
         sensitive_paths = sorted(
-            [
-                *sensitive_agent_paths,
-                *sensitive_workspace_paths,
-                *sensitive_integration_option_paths("invoker", invoker),
-                *sensitive_integration_option_paths("artifacts", artifacts),
-                *sensitive_integration_option_paths("ui", ui),
+            sensitive_agent_paths
+            + sensitive_workspace_paths
+            + [
+                path
+                for name, value in integrations
+                for path in sensitive_integration_option_paths(name, value)
             ]
         )
-        observer = RuntimeObserverSnapshot(
-            console_is_terminal=options.console_is_terminal,
-            no_live=options.no_live,
-        )
+        setup_profiles = cast(JsonObject, redacted_workspace["setup_profiles"])
         workspace = runtime_workspace_snapshot(
             settings.workspace,
-            cast(JsonObject, redacted_workspace["setup_profiles"]),
+            setup_profiles,
         )
-        redacted_invoker, _ = integration_with_sensitive_option_fingerprints(
-            invoker,
-            "invoker",
-            None,
+        if sensitive_paths:
+            workspace = workspace.model_copy(update={"setup_profiles": setup_profiles})
+        redacted_invoker, redacted_artifacts, redacted_ui = (
+            integration_with_sensitive_option_fingerprints(value, name, None)[0]
+            for name, value in integrations
         )
-        redacted_artifacts, _ = integration_with_sensitive_option_fingerprints(
-            artifacts,
-            "artifacts",
-            None,
+        file_access_snapshot = RuntimeFileAccessSnapshot.model_validate(
+            resolved_file_access.model_dump(mode="python")
         )
-        redacted_ui, _ = integration_with_sensitive_option_fingerprints(
-            ui,
-            "ui",
-            None,
-        )
-        payload: JsonObject = {
-            "agents": runtime_agent_snapshot_payloads(agent_snapshots),
-            "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
-            "execution": execution_effective_payload(execution),
-            "file_access": resolved_file_access.model_dump(mode="json"),
-            "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
-            "schema_version": config.version,
-            "workspace": workspace_signature_payload(workspace),
-        }
         return cls(
             schema_version=config.version,
             execution=execution,
-            file_access=RuntimeFileAccessSnapshot.model_validate(
-                resolved_file_access.model_dump(mode="python")
-            ),
+            file_access=file_access_snapshot,
             agents=agent_snapshots,
             invoker=redacted_invoker,
             artifacts=redacted_artifacts,
             ui=redacted_ui,
             validation=RuntimeValidationSnapshot(integrations_loaded=True),
-            observer=observer,
+            observer=RuntimeObserverSnapshot(
+                console_is_terminal=options.console_is_terminal, no_live=options.no_live
+            ),
             workspace=workspace,
             sensitive_config_paths=sensitive_paths,
             raw_agents=raw_agents,
@@ -383,8 +367,16 @@ class RuntimeConfigSnapshot(BaseModel):
             raw_invoker=invoker,
             raw_artifacts=artifacts,
             raw_ui=ui,
-            effective_runtime_config_signature=signature_for_payload(payload),
-        ).with_sensitive_config_fingerprints(None)
+            effective_runtime_config_signature=_effective_signature(
+                config.version,
+                execution,
+                file_access_snapshot,
+                agent_snapshots,
+                redacted_invoker,
+                redacted_artifacts,
+                workspace,
+            ),
+        )
 
     def redacted_payload(self) -> JsonObject:
         payload = cast(JsonObject, self.model_dump(mode="json", exclude_none=True))
@@ -400,8 +392,14 @@ class RuntimeConfigSnapshot(BaseModel):
         if not self.sensitive_config_paths:
             return self.model_copy(
                 update={
-                    "effective_runtime_config_signature": self._effective_signature(
-                        self.agents
+                    "effective_runtime_config_signature": _effective_signature(
+                        self.schema_version,
+                        self.execution,
+                        self.file_access,
+                        self.agents,
+                        self.invoker,
+                        self.artifacts,
+                        self.workspace,
                     )
                 }
             )
@@ -422,12 +420,7 @@ class RuntimeConfigSnapshot(BaseModel):
             )
         )
         workspace = self.workspace.model_copy(
-            update={
-                "setup_profiles": cast(
-                    JsonObject,
-                    workspace_payload["setup_profiles"],
-                )
-            }
+            update={"setup_profiles": workspace_payload["setup_profiles"]}
         )
         invoker, invoker_fingerprints = integration_with_sensitive_option_fingerprints(
             self.raw_invoker or self.invoker,
@@ -464,7 +457,10 @@ class RuntimeConfigSnapshot(BaseModel):
                 "ui": ui,
                 "workspace": workspace,
                 "config_fingerprints": all_fingerprints,
-                "effective_runtime_config_signature": self._effective_signature(
+                "effective_runtime_config_signature": _effective_signature(
+                    self.schema_version,
+                    self.execution,
+                    self.file_access,
                     agent_snapshots,
                     invoker,
                     artifacts,
@@ -473,25 +469,27 @@ class RuntimeConfigSnapshot(BaseModel):
             }
         )
 
-    def _effective_signature(
-        self,
-        agents: Mapping[str, RuntimeAgentConfigSnapshot],
-        invoker: CanonicalIntegrationConfig | None = None,
-        artifacts: CanonicalIntegrationConfig | None = None,
-        workspace: RuntimeWorkspaceSettingsSnapshot | None = None,
-    ) -> str:
-        signature_invoker = invoker or self.invoker
-        signature_artifacts = artifacts or self.artifacts
-        payload: JsonObject = {
+
+def _effective_signature(
+    schema_version: str,
+    execution: RuntimeExecutionSnapshot,
+    file_access: RuntimeFileAccessSnapshot,
+    agents: Mapping[str, RuntimeAgentConfigSnapshot],
+    invoker: CanonicalIntegrationConfig,
+    artifacts: CanonicalIntegrationConfig,
+    workspace: RuntimeWorkspaceSettingsSnapshot,
+) -> str:
+    return signature_for_payload(
+        {
             "agents": runtime_agent_effective_payloads(agents),
-            "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
-            "execution": execution_effective_payload(self.execution),
-            "file_access": self.file_access.model_dump(mode="json"),
-            "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),
-            "schema_version": self.schema_version,
-            "workspace": workspace_signature_payload(workspace or self.workspace),
+            "artifacts": artifacts.scoped_payload({"artifact", "execution"}),
+            "execution": execution_effective_payload(execution),
+            "file_access": file_access.model_dump(mode="json"),
+            "invoker": invoker.scoped_payload({"execution", "artifact"}),
+            "schema_version": schema_version,
+            "workspace": workspace_signature_payload(workspace),
         }
-        return signature_for_payload(payload)
+    )
 
 
 def runtime_workspace_snapshot(

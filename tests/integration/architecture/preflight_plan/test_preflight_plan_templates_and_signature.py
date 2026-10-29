@@ -729,3 +729,11 @@ def _persisted_review_plan_payload(root: Path) -> dict[str, Any]:
         "sequential_consensus_on_exhaustion"
     ] = "continue"
     return payload
+
+
+def test_execution_semantics_revision_invalidates_previous_payload(tmp_path):
+    from tests.helpers.execution_semantics import compiled_execution_signatures
+
+    current, previous = compiled_execution_signatures(tmp_path)
+    assert current != previous
+    assert compiled_execution_signatures(tmp_path) == (current, previous)

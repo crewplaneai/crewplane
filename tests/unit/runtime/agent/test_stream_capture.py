@@ -91,3 +91,56 @@ def test_process_output_capture_exposes_tails_iteration_and_cleanup(
     capture.cleanup()
     assert not stdout_path.exists()
     assert not stderr_path.exists()
+
+
+@pytest.mark.parametrize("stage", ["fdopen", "initialization"])
+def test_capture_initialization_reclaims_descriptor_and_path(
+    tmp_path, monkeypatch, stage
+):
+    import os
+    import tempfile
+
+    from crewplane.runtime.agent.process import stream_capture
+
+    descriptor, path = tempfile.mkstemp(dir=tmp_path)
+    monkeypatch.setattr(stream_capture.tempfile, "mkstemp", lambda: (descriptor, path))
+
+    def fail(*args):
+        del args
+        raise OSError("initialization failed")
+
+    monkeypatch.setattr(
+        stream_capture.os if stage == "fdopen" else stream_capture,
+        "fdopen" if stage == "fdopen" else "deque",
+        fail,
+    )
+    with pytest.raises(OSError, match="initialization failed"):
+        CapturedStream()
+    assert not Path(path).exists()
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
+
+
+@pytest.mark.parametrize("operation", ["flush", "close"])
+def test_capture_cleanup_attempts_unlink_after_handle_failure(operation):
+    from unittest.mock import Mock
+
+    capture = CapturedStream()
+    real = capture._persist_handle
+    handle = Mock(wraps=real)
+
+    def fail():
+        if operation == "close":
+            real.close()
+        raise OSError(f"{operation} failed")
+
+    getattr(handle, operation).side_effect = fail
+    capture._persist_handle = handle
+    try:
+        with pytest.raises(OSError, match=f"{operation} failed"):
+            capture.cleanup()
+        assert not capture.path.exists()
+        assert handle.close.called
+        assert capture._closed is (operation != "close")
+    finally:
+        real.close()

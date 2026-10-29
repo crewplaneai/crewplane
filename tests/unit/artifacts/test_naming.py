@@ -3,11 +3,11 @@ import json
 
 import pytest
 
+from crewplane.architecture.contracts.artifacts import build_log_filename
 from crewplane.artifacts.naming import (
     MAX_GENERATED_PATH_COMPONENT_CHARS,
     build_findings_filename,
     build_lock_name,
-    build_log_filename,
     build_node_state_filename,
     build_provider_process_state_filename,
     build_result_filename,

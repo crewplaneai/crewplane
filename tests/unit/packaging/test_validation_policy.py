@@ -24,7 +24,7 @@ def test_job_budgets_include_phase_and_overhead() -> None:
         "win32": 45,
         "package": 20,
         "testpypi": 45,
-        "race": 10,
+        "race": 18,
         "fuzz": 3,
     }
 
@@ -42,15 +42,20 @@ def test_budget_change_updates_every_dependent_job_and_rounds_up(
 
 def test_race_budget_tracks_repetitions(tmp_path: Path) -> None:
     path = policy_file(tmp_path, "race_iterations = 5", "race_iterations = 6")
-    assert validation_policy.load_policy(path).job_minutes()["race"] == 12
+    assert validation_policy.load_policy(path).job_minutes()["race"] == 21
 
 
+@pytest.mark.parametrize(
+    "setting",
+    ["metadata_seconds", "readiness_seconds", "scenario_seconds", "cleanup_seconds"],
+)
 @pytest.mark.parametrize("replacement", ["0", "-1", "true", '"10"', "nan", "inf"])
-def test_invalid_timeout_fails_explicitly(tmp_path: Path, replacement: str) -> None:
-    path = policy_file(
-        tmp_path, "metadata_seconds = 10", f"metadata_seconds = {replacement}"
-    )
-    with pytest.raises(ValueError, match="metadata_seconds"):
+def test_invalid_timeout_fails_explicitly(
+    tmp_path: Path, replacement: str, setting: str
+) -> None:
+    default = getattr(validation_policy.load_policy().timeouts, setting)
+    path = policy_file(tmp_path, f"{setting} = {default}", f"{setting} = {replacement}")
+    with pytest.raises(ValueError, match=setting):
         validation_policy.load_policy(path)
 
 

@@ -2,12 +2,13 @@
 
 import asyncio
 import threading
+import traceback
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from crewplane.runtime.agent.process import streams, windows_launch
+from crewplane.runtime.agent.process import stream_tasks, windows_launch
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     unconfirmed_process_cleanup,
@@ -468,7 +469,7 @@ def test_settlement_failure_reclaims_capture_and_keeps_error_precedence(
 
 def test_collect_cancellation_keeps_bounded_settlement_failure(monkeypatch, launch):
     launch.process = SimpleNamespace(pid=42, stdin=Mock(), returncode=0)
-    monkeypatch.setattr(streams, "PROCESS_PIPE_DRAIN_GRACE_SECONDS", 0.1)
+    monkeypatch.setattr(stream_tasks, "PROCESS_PIPE_DRAIN_GRACE_SECONDS", 0.1)
 
     async def check():
         ready, settling, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -515,3 +516,69 @@ def test_collect_cancellation_keeps_bounded_settlement_failure(monkeypatch, laun
 
     asyncio.run(check())
     assert not launch.cleanup_confirmed
+
+
+@pytest.mark.race
+@pytest.mark.parametrize("failure_kind", ["monitor", "cancel"])
+@pytest.mark.parametrize("output_failure", [None, "error", "cancelled_error"])
+def test_windows_output_owner_outlives_finite_pipe_deadline(
+    monkeypatch, launch, capture, failure_kind, output_failure
+):
+    launch.process = SimpleNamespace(pid=42, stdin=Mock(), returncode=0)
+    monkeypatch.setattr(stream_tasks, "PROCESS_PIPE_DRAIN_GRACE_SECONDS", 0.01)
+
+    async def check():
+        started, release, drained, cancelled = (asyncio.Event() for _ in range(4))
+
+        async def monitor():
+            await started.wait()
+            if failure_kind == "monitor":
+                raise ValueError("monitor failed")
+            await asyncio.Event().wait()
+
+        async def drain():
+            drained.set()
+
+        async def output(*args):
+            del args
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()
+            if output_failure:
+                capture.cleanup()
+                error = OSError("output owner failed")
+                if output_failure == "cancelled_error":
+                    raise asyncio.CancelledError("owner cancelled") from error
+                raise error
+            return capture
+
+        monkeypatch.setattr(launch, "_drain_after_leader_exit", monitor)
+        monkeypatch.setattr(launch, "drain", drain)
+        monkeypatch.setattr(windows_launch, "write_stdin_and_collect_output", output)
+        task = asyncio.create_task(launch.collect(None, None, None, None))
+        try:
+            await asyncio.wait_for(started.wait(), 5)
+            if failure_kind == "cancel":
+                task.cancel("first")
+            await asyncio.wait_for(drained.wait(), 5)
+            await asyncio.wait_for(cancelled.wait(), 5)
+            done, _ = await asyncio.wait((task,), timeout=0.05)
+            assert not done
+            assert capture.stdout.path.exists()
+            task.cancel("second")
+        finally:
+            release.set()
+            await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
+        with pytest.raises(BaseException) as error:
+            task.result()
+        if output_failure:
+            assert "output owner failed" in "".join(
+                traceback.format_exception(error.value)
+            )
+        assert not capture.stdout.path.exists()
+        assert not capture.stderr.path.exists()
+
+    asyncio.run(check())

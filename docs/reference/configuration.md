@@ -100,6 +100,13 @@ settings use dotted paths in the left column.
 
 ## `agents.<name>`
 
+Crewplane uses provider aliases in generated invocation filenames. Before a run,
+it checks that each generated invocation file or directory name is at most 180
+characters, including the alias and details such as the provider role and review
+round. If a name is too long, shorten the alias. Unused aliases are unaffected.
+This limit applies to each name separately; the full path may still exceed a
+filesystem's limit.
+
 | Field | Description |
 | --- | --- |
 | `cli_cmd` | Provider command and its arguments, as a non-empty list. |

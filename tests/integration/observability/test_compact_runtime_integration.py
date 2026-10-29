@@ -4,6 +4,8 @@ import asyncio
 import io
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -658,3 +660,91 @@ def test_runtime_scope_cleans_acquired_resources_after_failure(
         thread is not None and not thread.is_alive() for thread in threads
     )
     assert not runtime.session.runtime_lease.root.exists()
+
+
+@pytest.mark.parametrize(
+    ("args", "stdout"),
+    [
+        (
+            [
+                "new-session",
+                "-d",
+                "-P",
+                "-F",
+                "#{pane_id}",
+                "-s",
+                "session",
+                "-n",
+                "dashboard",
+                "render",
+            ],
+            "%10\n",
+        ),
+        (
+            [
+                "split-window",
+                "-d",
+                "-h",
+                "-p",
+                "55",
+                "-P",
+                "-F",
+                "#{pane_id}",
+                "-t",
+                "%10",
+                "render",
+            ],
+            "%20\n",
+        ),
+        (["display-message", "-p", "-t", "%10", "#{pane_width}"], "100\n"),
+        (["display-message", "-p", "-t", "%20", "#{pane_height}"], "30\n"),
+        (["attach", "-t", "session"], ""),
+        (["bind-key", "-T", "root", "q", "if-shell", "-F", "1", "quit"], ""),
+    ],
+)
+def test_executable_tmux_supported_commands(tmp_path, monkeypatch, args, stdout):
+    monkeypatch.setenv("FAKE_TMUX_LOG", str(tmp_path / "tmux.jsonl"))
+    monkeypatch.setenv("FAKE_TMUX_BIND_ARG_THRESHOLD", "800")
+    fixture = Path(__file__).with_name("fixtures") / "fake_tmux.py"
+    result = subprocess.run(
+        [sys.executable, str(fixture), "-L", "socket", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert result.stdout == stdout
+    assert read_fake_tmux_commands(tmp_path / "tmux.jsonl") == [args]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        ([], "Unsupported tmux"),
+        (["unknown-command"], "Unsupported tmux"),
+        (["-L"], "Unsupported tmux socket"),
+        (["display-message", "#{pane_width}"], "Unsupported tmux"),
+        (["display-message", "-p", "-t", "%10", "#{unknown}"], "Unsupported tmux"),
+        (["has-session", "-t"], "Unsupported tmux"),
+        (
+            ["bind-key", "-T", "root", "q", "if-shell", "-F", "1", "x" * 801],
+            "command too long",
+        ),
+    ],
+)
+def test_executable_tmux_rejects_unsupported_commands(
+    tmp_path, monkeypatch, args, message
+):
+    monkeypatch.setenv("FAKE_TMUX_LOG", str(tmp_path / "tmux.jsonl"))
+    monkeypatch.setenv("FAKE_TMUX_BIND_ARG_THRESHOLD", "800")
+    fixture = Path(__file__).with_name("fixtures") / "fake_tmux.py"
+    result = subprocess.run(
+        [sys.executable, str(fixture), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert "Traceback" not in result.stderr

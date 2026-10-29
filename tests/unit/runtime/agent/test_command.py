@@ -8,7 +8,7 @@ import pytest
 
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.runtime.agent.invocation import command
-from crewplane.runtime.agent.process import posix_session, runner, session, streams
+from crewplane.runtime.agent.process import posix_session, runner, session, stream_tasks
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
@@ -83,7 +83,7 @@ def test_windows_finalization_preserves_order_ownership_and_error_precedence(
     monkeypatch.setattr(posix_session, "supports_posix_process_groups", lambda: False)
     monkeypatch.setattr(command, "open_log_handle", Mock(return_value=log))
     monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(stream_tasks, "drain_process_pipes", AsyncMock())
     context = InvocationContext(
         "node", "task", "provider", "executor", process_event_sink=record_event
     )
@@ -206,7 +206,7 @@ def test_posix_finalization_preserves_close_policy_and_error_precedence(
         AsyncMock(return_value=capture, side_effect=failure),
     )
     monkeypatch.setattr(runner, "reap_failed_process", AsyncMock())
-    monkeypatch.setattr(streams, "drain_process_pipes", AsyncMock())
+    monkeypatch.setattr(stream_tasks, "drain_process_pipes", AsyncMock())
     context = InvocationContext(
         "node", "task", "provider", "executor", process_event_sink=receipt
     )

@@ -68,13 +68,21 @@ def resolve_bound_input_nodes(
         return {}
 
     resolved: dict[str, str] = {}
+    origins: dict[str, str] = {}
     for input_name, source_id in bound_inputs.items():
         raw_node_id = workflow_inputs.get(input_name)
         if raw_node_id is None:
             raise ValueError(
                 f"Workflow '{source_path}' does not declare input '{input_name}'."
             )
+        if raw_node_id in resolved and resolved[raw_node_id] != source_id:
+            raise ValueError(
+                f"Workflow '{source_path}' fallback '{raw_node_id}' has conflicting "
+                f"bindings: input '{origins[raw_node_id]}' uses '{resolved[raw_node_id]}', "
+                f"but input '{input_name}' uses '{source_id}'."
+            )
         resolved[raw_node_id] = source_id
+        origins.setdefault(raw_node_id, input_name)
     return resolved
 
 

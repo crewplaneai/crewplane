@@ -13,9 +13,10 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.execution.common import CompiledRuntimeContext
-from crewplane.runtime.execution.input import execute_input_stage
+from crewplane.runtime.execution.input import InputContentError, execute_input_stage
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.platforms import symlink_or_skip
+from tests.helpers.static_resources import static_resource
 
 
 def _plan(
@@ -36,7 +37,15 @@ def _plan(
         execution_order=[node.id],
         nodes=[node],
         render_plans=[],
-        static_resources=[],
+        static_resources=[
+            static_resource(
+                (context_root / "preflight" / node.input_content_ref).read_bytes(),
+                node.input_content_ref,
+            )
+        ]
+        if node.input_content_ref
+        and (context_root / "preflight" / node.input_content_ref).exists()
+        else [],
         workspace_file_locators=list(workspace_file_locators or []),
         token_catalog=[],
         dependency_graph=[],
@@ -177,7 +186,7 @@ def test_input_stage_rejects_path_traversal_content_ref(tmp_path: Path) -> None:
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
     node = _input_node(content_ref="../secret.txt")
 
-    with pytest.raises(ValueError, match="Invalid input content reference"):
+    with pytest.raises(InputContentError, match="exactly one descriptor"):
         execute_input_stage(
             node,
             output,
@@ -197,7 +206,7 @@ def test_input_stage_rejects_symlinked_preflight_content(tmp_path: Path) -> None
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
     node = _input_node(content_ref)
 
-    with pytest.raises(ValueError, match="missing or unsafe"):
+    with pytest.raises(InputContentError, match="missing or unsafe"):
         execute_input_stage(
             node,
             output,

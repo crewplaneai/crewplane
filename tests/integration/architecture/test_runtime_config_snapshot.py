@@ -639,3 +639,45 @@ def test_command_argv_secrets_are_redacted_across_runtime_snapshot_fields() -> N
         "agents.alpha.cli_cmd.2",
         "workspace.setup_profiles.bootstrap.run.0.1",
     ]
+
+
+@pytest.mark.parametrize("sensitive", [False, True])
+def test_initial_snapshot_matches_keyless_refresh_and_preserves_secret_handles(
+    sensitive,
+):
+    agent = AgentConfig(
+        cli_cmd=["mock"],
+        extra_args=["--api-key", "snapshot-secret"] if sensitive else ["--verbose"],
+        model_arg=None,
+        max_retries=0,
+        retry_delay_seconds=123,
+    )
+    snapshot = _snapshot_for_agent(agent)
+    assert (
+        snapshot.redacted_payload()
+        == snapshot.with_sensitive_config_fingerprints(None).redacted_payload()
+    )
+    assert snapshot.raw_agents["alpha"]["extra_args"] == agent.extra_args
+    if sensitive:
+        redacted = snapshot.agents["alpha"].extra_args[1]
+        assert redacted == {
+            "redacted": True,
+            "value_handle": "config:agents.alpha.extra_args.1",
+        }
+        keyed = snapshot.with_sensitive_config_fingerprints(b"a" * 32)
+        assert (
+            keyed.effective_runtime_config_signature
+            != snapshot.effective_runtime_config_signature
+        )
+        assert (
+            keyed.with_sensitive_config_fingerprints(None).redacted_payload()
+            == snapshot.redacted_payload()
+        )
+        assert "snapshot-secret" not in json.dumps(keyed.redacted_payload())
+    changed = _snapshot_for_agent(
+        agent.model_copy(update={"retry_delay_seconds": 999, "default_model": "unused"})
+    )
+    assert (
+        snapshot.effective_runtime_config_signature
+        == changed.effective_runtime_config_signature
+    )

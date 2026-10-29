@@ -22,6 +22,7 @@ from crewplane.observability.types import (
     RunContext,
     RunResult,
 )
+from tests.integration.observability.fixtures.fake_tmux import validate_command
 
 
 class FakeTmuxClient(TmuxCommandClient):
@@ -53,55 +54,40 @@ class FakeTmuxClient(TmuxCommandClient):
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append((args, capture_output, check))
         self.call_sockets.append(self.socket_name)
+        try:
+            validate_command(args)
+        except ValueError as error:
+            return _command_result(args, check, returncode=1, stderr=str(error))
         command = args[0]
         if command == "kill-session" and self.fail_kill_session:
             raise subprocess.SubprocessError("rollback failed")
-        if command == "new-session" and capture_output:
-            return subprocess.CompletedProcess(
-                ["tmux", *args], 0, stdout="%10\n", stderr=""
-            )
-        if command == "split-window" and capture_output:
+        if command == "new-session":
+            return _command_result(args, check, stdout="%10\n")
+        if command == "split-window":
             pane_id = f"%{self._next_pane_id}"
             self._next_pane_id += 1
-            return subprocess.CompletedProcess(
-                ["tmux", *args], 0, stdout=f"{pane_id}\n", stderr=""
-            )
+            return _command_result(args, check, stdout=f"{pane_id}\n")
         if command == "has-session":
             if self.has_session_times_out:
-                return _timeout_result(args)
-            return subprocess.CompletedProcess(
-                ["tmux", *args],
-                0 if self.session_exists_value else 1,
-                stdout="",
-                stderr="",
+                return _timeout_result(args, check)
+            return _command_result(
+                args, check, returncode=0 if self.session_exists_value else 1
             )
         if self._fails_key_table_restore(args):
             self.fail_next_key_table_restore = False
-            return subprocess.CompletedProcess(
-                ["tmux", *args],
-                1,
-                stdout="",
-                stderr="transient key-table failure",
+            return _command_result(
+                args, check, returncode=1, stderr="transient key-table failure"
             )
         if self._fails_status_option(args) or self._fails_pane_title(args):
-            return subprocess.CompletedProcess(
-                ["tmux", *args],
-                1,
-                stdout="",
-                stderr="option write failed",
+            return _command_result(
+                args, check, returncode=1, stderr="option write failed"
             )
-        if self._is_dimension_query(command, args, capture_output):
+        if command == "display-message":
             if self.display_message_times_out:
-                return _timeout_result(args)
-            target = args[args.index("-t") + 1]
-            value = self._dimension_value(target, args[-1])
-            return subprocess.CompletedProcess(
-                ["tmux", *args],
-                0,
-                stdout=f"{value}\n",
-                stderr="",
-            )
-        return subprocess.CompletedProcess(["tmux", *args], 0, stdout="", stderr="")
+                return _timeout_result(args, check)
+            value = self._dimension_value(args[3], args[-1])
+            return _command_result(args, check, stdout=f"{value}\n")
+        return _command_result(args, check)
 
     def _fails_key_table_restore(self, args: list[str]) -> bool:
         return (
@@ -125,18 +111,6 @@ class FakeTmuxClient(TmuxCommandClient):
             and len(args) >= 6
             and args[:3] == ["set-option", "-p", "-t"]
             and args[4] == "@crewplane_title"
-        )
-
-    def _is_dimension_query(
-        self,
-        command: str,
-        args: list[str],
-        capture_output: bool,
-    ) -> bool:
-        return (
-            command == "display-message"
-            and capture_output
-            and args[-1] in {"#{pane_width}", "#{pane_height}"}
         )
 
     def _dimension_value(self, pane_id: str, format_string: str) -> int:
@@ -337,10 +311,22 @@ class SimulatedTmuxRuntime:
         return time()
 
 
-def _timeout_result(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        ["tmux", *args],
-        124,
-        stdout="",
-        stderr="tmux command timed out after 1.00s",
+def _command_result(
+    args: list[str],
+    check: bool,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.CompletedProcess(["tmux", *args], returncode, stdout, stderr)
+    if check:
+        result.check_returncode()
+    return result
+
+
+def _timeout_result(args: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+    if check:
+        raise RuntimeError("tmux command timed out after 1.00s")
+    return _command_result(
+        args, False, 124, stderr="tmux command timed out after 1.00s"
     )

@@ -90,6 +90,13 @@ python scripts/validation_policy.py
 Git fixtures require Git 2.34.1 or newer. Dependent tests skip locally if it is
 unavailable; CI profiles fail. Set `CREWPLANE_REQUIRED_GIT=1` to require it locally.
 
+The test launcher excludes inherited provider settings and credentials, Python
+import overrides, pytest options, and coverage settings. It retains the tool search
+path; `GIT_FLOOR_BIN`, when set, takes precedence. Tests use isolated home,
+configuration, cache, and temporary directories. To prevent Git from discovering
+the source repository from these directories, ensure the system temporary directory
+is outside the checkout, including when setting `TMPDIR`, `TEMP`, or `TMP`.
+
 Select a CI profile with `make test TEST_PROFILE=pr-313`, or force serial execution
 with `make test TEST_ARGS='--workers 0'`. Use `make test TEST_ARGS=--help` for all
 profiles and options.
@@ -97,8 +104,11 @@ profiles and options.
 Each run prints its `test-results/<profile>-<id>/` directory and a reproduction
 command, also saved in `metadata.json`. Check `pytest.log` (or `dots/pytest.log`
 for the plugin suite) for failures. Reproduce with the same Python version,
-locked dependencies, and platform. To recheck coverage, use the
-`make coverage-check` command above with that run's directory name.
+locked dependencies, and platform. For a synthetic nested scenario, rerun its
+containing test to supply the scenario values. Successful runs remove their
+execution directories; failed runs retain them. When available, metadata records
+their locations. To recheck coverage, use the `make coverage-check` command above
+with that run's directory name.
 
 For packaging changes, build and validate the development artifacts:
 
@@ -227,6 +237,17 @@ crewplane/
 Generated templates use `SCHEMA_VERSION`. Ordinary releases and backward-compatible
 changes do not require a schema bump. During public alpha (`0.x`), support only the
 current schema; persisted run artifacts are disposable and need no migrations.
+
+## Provider Model Defaults
+
+The [config template](src/crewplane/example_templates/config.yml) is the source
+of truth for shipped provider models. Verify changes against the provider
+documentation linked there and preserve intentional omissions. Existing project
+configs and workflow overrides retain their values.
+
+Run `make provider-defaults-check`, then `make check`; model changes should
+require no synchronized test edits. Use the [package checks](#local-workflows)
+to validate distributions. These checks do not verify live model access.
 
 ## Release Workflow
 

@@ -351,18 +351,25 @@ def test_live_provider_check_keeps_lock_visible_to_concurrent_acquirer(
     assert "provider process" in str(recovery_errors[0])
 
 
-def test_stale_lock_takeover_allows_dead_provider_process(tmp_path) -> None:
+@pytest.mark.parametrize("pre_fix", [False, True])
+def test_stale_lock_takeover_allows_dead_provider_process(tmp_path, pre_fix) -> None:
+    from tests.helpers.execution_semantics import compiled_execution_signatures
+
+    current, previous = compiled_execution_signatures(tmp_path)
+    signature = previous if pre_fix else current
     stale = acquire_same_context_lock(
         tmp_path,
         WORKFLOW_NAME,
         WORKFLOW_IDENTITY,
-        WORKFLOW_SIGNATURE,
+        signature,
         process_inspector=FakeProcessInspector(100, "old"),
     )
     stale.update_run("source", "workflow--source")
     manifest_path = write_run_manifest(
         tmp_path,
-        make_run_manifest("source", "workflow--source", status="running"),
+        make_run_manifest(
+            "source", "workflow--source", status="running", workflow_signature=signature
+        ),
     )
     _write_provider_process_state(tmp_path)
 
@@ -370,7 +377,7 @@ def test_stale_lock_takeover_allows_dead_provider_process(tmp_path) -> None:
         tmp_path,
         WORKFLOW_NAME,
         WORKFLOW_IDENTITY,
-        WORKFLOW_SIGNATURE,
+        signature,
         process_inspector=FakeProcessInspector(
             200,
             "new",

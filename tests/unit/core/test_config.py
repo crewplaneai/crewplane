@@ -19,6 +19,7 @@ from crewplane.core.config import (
 )
 from crewplane.core.token_budget import TokenBudgetOverride, resolve_token_budget
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.config_secrets import CONFIG_FAILURES, assert_no_secret
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 
@@ -366,7 +367,7 @@ class ConfigTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(
-            ValidationError,
+            ValueError,
             "Extra inputs are not permitted",
         ):
             load_config(path)
@@ -427,7 +428,7 @@ class ConfigTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ValueError, "duplicate YAML key 'version'"):
+        with self.assertRaisesRegex(ValueError, "construction error"):
             load_config(path)
 
     def test_load_config_rejects_nested_duplicate_keys(self) -> None:
@@ -445,7 +446,7 @@ class ConfigTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ValueError, "duplicate YAML key 'cli_cmd'"):
+        with self.assertRaisesRegex(ValueError, "construction error"):
             load_config(path)
 
     def test_load_config_rejects_unknown_top_level_keys(self) -> None:
@@ -464,7 +465,7 @@ class ConfigTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ValueError, "settngs"):
+        with self.assertRaisesRegex(ValueError, "<key>"):
             load_config(path)
 
     def test_load_config_rejects_unsupported_version(self) -> None:
@@ -486,7 +487,7 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError) as exc_info:
             load_config(path)
         message = str(exc_info.exception)
-        self.assertIn(f"Expected '{SCHEMA_VERSION}'", message)
+        self.assertIn("Unsupported config version", message)
         self.assertIn("crewplane init", message)
 
     def test_settings_default_integrations(self) -> None:
@@ -737,5 +738,17 @@ class ConfigTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValueError):
             load_config(path)
+
+
+@pytest.mark.parametrize("case", CONFIG_FAILURES)
+def test_load_config_errors_do_not_echo_rejected_values(tmp_path, case):
+    content, location = CONFIG_FAILURES[case]
+    path = tmp_path / "config.yml"
+    path.write_bytes(content.encode())
+    with pytest.raises(ValueError) as raised:
+        load_config(path)
+    assert_no_secret(str(raised.value))
+    assert location in str(raised.value)
+    assert raised.value.__suppress_context__

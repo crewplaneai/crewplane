@@ -6,7 +6,6 @@ import shlex
 import shutil
 import subprocess
 from collections.abc import Iterator
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Never
@@ -14,6 +13,7 @@ from typing import Never
 import pytest
 
 from crewplane.cli.run.workspace.git_source import GIT_MIN_VERSION, parse_git_version
+from tests.helpers.execution_environment import directory_environment
 
 GIT_COMMAND_TIMEOUT_SECONDS = 30
 GIT_FLOOR_VERSION_TEXT = "git version 2.34.1"
@@ -85,18 +85,16 @@ class IsolatedGit:
 
 @pytest.fixture
 def isolated_git(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    isolated_test_environment: Path,
 ) -> Iterator[IsolatedGit]:
     expected_floor_bin = os.environ.get("GIT_FLOOR_BIN")
-    environment_root = tmp_path.with_name(f"{tmp_path.name}-git-environment")
-    if environment_root.exists():
-        shutil.rmtree(environment_root)
-    with ExitStack() as cleanup:
-        environment_root.mkdir()
-        cleanup.callback(shutil.rmtree, environment_root, ignore_errors=True)
-        environment = configure_isolated_git_environment(monkeypatch, environment_root)
-        required = os.environ.get("CREWPLANE_REQUIRED_GIT") == "1"
+    required = os.environ.get("CREWPLANE_REQUIRED_GIT") == "1"
+    with pytest.MonkeyPatch.context() as environment_patch:
+        environment = configure_isolated_git_environment(
+            environment_patch, isolated_test_environment
+        )
+        if expected_floor_bin is not None:
+            environment_patch.setenv("GIT_FLOOR_BIN", expected_floor_bin)
         yield require_git(environment, required, expected_floor_bin)
 
 
@@ -108,17 +106,14 @@ def configure_isolated_git_environment(
         if key.startswith("GIT_") or key in _NON_GIT_ENVIRONMENT_KEYS_TO_CLEAR:
             monkeypatch.delenv(key, raising=False)
 
-    home = tmp_path / "home"
-    xdg_config_home = tmp_path / "xdg-config"
+    controlled_directories = directory_environment(tmp_path)
     hooks_dir = tmp_path / "disabled-hooks"
-    for directory in (home, xdg_config_home, hooks_dir):
-        directory.mkdir()
+    hooks_dir.mkdir(exist_ok=True)
     global_config = tmp_path / "empty-gitconfig"
     global_config.write_text("", encoding="utf-8")
 
     controlled_environment = {
-        "HOME": home.as_posix().removeprefix("//?/"),
-        "XDG_CONFIG_HOME": xdg_config_home.as_posix().removeprefix("//?/"),
+        **controlled_directories,
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": global_config.as_posix().removeprefix("//?/"),
         "GIT_ATTR_NOSYSTEM": "1",
