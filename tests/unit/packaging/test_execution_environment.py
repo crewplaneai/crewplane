@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -172,7 +173,8 @@ def test_dots_installation_retains_acquisition_settings_but_pytest_isolated(
     ]
 
 
-def test_execution_cleanup_removes_long_artifact_paths(tmp_path):
+@pytest.mark.parametrize("read_only", [False, True])
+def test_execution_cleanup_removes_long_artifact_paths(tmp_path, read_only):
     from tests.helpers.platforms import extended_file_test_root
 
     root = tmp_path / "execution"
@@ -182,11 +184,36 @@ def test_execution_cleanup_removes_long_artifact_paths(tmp_path):
     artifact.mkdir(parents=True)
     receipt = artifact / "receipt.txt"
     receipt.write_bytes(b"owned execution output")
+    if read_only:
+        receipt.chmod(stat.S_IREAD)
 
-    remove_execution_directory(root)
+    try:
+        remove_execution_directory(root)
+    finally:
+        if receipt.exists():
+            receipt.chmod(stat.S_IREAD | stat.S_IWRITE)
 
     assert not root.exists()
     assert not receipt.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Requires Windows file sharing semantics")
+@pytest.mark.parametrize("read_only", [False, True])
+def test_execution_cleanup_reports_locked_files(tmp_path, read_only):
+    root = tmp_path / "execution"
+    root.mkdir()
+    receipt = root / "locked.txt"
+    receipt.write_bytes(b"retained evidence")
+    if read_only:
+        receipt.chmod(stat.S_IREAD)
+
+    try:
+        with receipt.open("rb"), pytest.raises(PermissionError):
+            remove_execution_directory(root)
+        assert receipt.read_bytes() == b"retained evidence"
+    finally:
+        if receipt.exists():
+            receipt.chmod(stat.S_IREAD | stat.S_IWRITE)
 
 
 @pytest.mark.parametrize("test_exit", [0, 7])

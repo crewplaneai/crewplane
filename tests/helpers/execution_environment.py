@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Mapping
+import stat
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 # Keep only interpreter/platform launch requirements; scenario values are explicit.
@@ -56,7 +57,25 @@ def remove_execution_directory(root: Path) -> None:
             if absolute.startswith("\\\\"):
                 absolute = "UNC\\" + absolute[2:]
             root = Path("\\\\?\\" + absolute)
-    shutil.rmtree(root)
+    shutil.rmtree(root, onexc=_remove_readonly_file)
+
+
+def _remove_readonly_file(
+    function: Callable[[str], object], path: str, error: BaseException
+) -> None:
+    if (
+        os.name != "nt"
+        or function is not os.unlink
+        or not isinstance(error, PermissionError)
+    ):
+        raise error
+    file = Path(path)
+    mode = file.lstat().st_mode
+    if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
+        raise error
+    # Git objects are read-only on Windows; deletion requires clearing that bit.
+    file.chmod(mode | stat.S_IWRITE, follow_symlinks=False)
+    function(path)
 
 
 def build_execution_environment(

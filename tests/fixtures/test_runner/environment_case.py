@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,7 @@ def test_environment(case):
     marker = Path(cache) / "test-write"
     assert not marker.exists()
     marker.write_text("owned", encoding="utf-8")
+    marker.chmod(stat.S_IREAD)
     child = subprocess.run(
         [
             sys.executable,
