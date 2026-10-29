@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
 ### Changed
 
 - Refresh the Codex and Copilot defaults used by new provider setups.
