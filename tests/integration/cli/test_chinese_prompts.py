@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from crewplane.cli.app import app
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import extended_file_test_root
 
 
 @pytest.mark.parametrize(
@@ -34,10 +35,12 @@ def test_chinese_workflow_prompt_and_file_contents_survive_artifact_publication(
     filename: str,
     context: str,
 ) -> None:
+    tmp_path = extended_file_test_root(tmp_path)
     state_root = tmp_path / ".crewplane"
     workflow_root = state_root / "workflows"
     workflow_root.mkdir(parents=True)
-    (tmp_path / filename).write_text(context, encoding="utf-8")
+    context_bytes = context.encode("utf-8")
+    (tmp_path / filename).write_bytes(context_bytes)
     (workflow_root / "chinese.task.md").write_text(
         f"""---
 schema_version: '{SCHEMA_VERSION}'
@@ -78,6 +81,6 @@ nodes:
     for path in (provider_output, final_output):
         payload = path.read_bytes()
         assert instruction.encode("utf-8") in payload
-        assert context.encode("utf-8") in payload
+        assert context_bytes in payload
         assert b"{{file:" not in payload
-    assert (tmp_path / filename).read_text(encoding="utf-8") == context
+    assert (tmp_path / filename).read_bytes() == context_bytes

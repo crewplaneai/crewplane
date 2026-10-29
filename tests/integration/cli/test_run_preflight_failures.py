@@ -10,6 +10,7 @@ import crewplane.cli.app as cli
 from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.config_secrets import CONFIG_FAILURES
+from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     cli_process_state,
@@ -489,7 +490,15 @@ class CliRunPreflightFailureTests(unittest.TestCase):
         self.assertNotIn("Dry run mode", output_text)
 
 
-@pytest.mark.parametrize("command", ["validate", "dry-run", "run", "cleanup"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "validate",
+        "dry-run",
+        "run",
+        pytest.param("cleanup", marks=requires_workspace_support),
+    ],
+)
 @pytest.mark.parametrize("case", CONFIG_FAILURES)
 def test_config_failure_is_safe_across_cli_entry_points(
     tmp_path, monkeypatch, command, case

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -45,6 +46,17 @@ def directory_environment(root: Path) -> dict[str, str]:
         home = Path(values["HOME"])
         values.update(HOMEDRIVE=home.drive, HOMEPATH=str(home)[len(home.drive) :])
     return values
+
+
+def remove_execution_directory(root: Path) -> None:
+    """Remove owned artifacts, including paths beyond Windows' legacy limit."""
+    if os.name == "nt":
+        absolute = str(root.resolve())
+        if not absolute.startswith("\\\\?\\"):
+            if absolute.startswith("\\\\"):
+                absolute = "UNC\\" + absolute[2:]
+            root = Path("\\\\?\\" + absolute)
+    shutil.rmtree(root)
 
 
 def build_execution_environment(

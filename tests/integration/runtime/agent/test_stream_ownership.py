@@ -167,8 +167,9 @@ def test_exited_leader_descendant_drains_before_completed_capture_log_worker(
 @pytest.mark.race
 def test_reader_eof_does_not_complete_a_live_invocation():
     async def check():
+        # The Windows venv redirector retains pipe handles after its child closes them.
         process = await asyncio.create_subprocess_exec(
-            sys.executable,
+            vars(sys)["_base_executable"],
             "-c",
             "import os,sys; os.close(1); os.close(2); sys.stdin.read()",
             stdin=asyncio.subprocess.PIPE,

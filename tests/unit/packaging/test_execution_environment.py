@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from scripts import run_tests
 from tests.helpers.execution_environment import (
     build_execution_environment,
     directory_environment,
+    remove_execution_directory,
 )
 from tests.helpers.isolated_git import configure_isolated_git_environment
 
@@ -120,6 +122,29 @@ def test_function_scoped_home_and_cache_are_fresh(isolated_test_environment, ite
         marker.write_text(str(iteration), encoding="utf-8")
 
 
+def test_per_test_environments_do_not_expand_the_numbered_directory_namespace(
+    tmp_path_factory,
+):
+    from tests import conftest
+
+    basetemp = tmp_path_factory.getbasetemp()
+    original_entries = set(basetemp.iterdir())
+    roots = []
+    environment_scope = contextmanager(conftest.isolated_test_environment.__wrapped__)
+    for iteration in range(8):
+        with environment_scope(tmp_path_factory) as root:
+            (root / "receipt").write_text(str(iteration), encoding="utf-8")
+            roots.append(root)
+            assert Path(os.environ["HOME"]).is_relative_to(root)
+
+    assert len(set(roots)) == 8
+    assert [(root / "receipt").read_text() for root in roots] == list(
+        map(str, range(8))
+    )
+    assert all(root.is_dir() and root.is_relative_to(basetemp) for root in roots)
+    assert len(set(basetemp.iterdir()) - original_entries) <= 1
+
+
 def test_dots_installation_retains_acquisition_settings_but_pytest_isolated(
     tmp_path, monkeypatch
 ):
@@ -147,6 +172,23 @@ def test_dots_installation_retains_acquisition_settings_but_pytest_isolated(
     ]
 
 
+def test_execution_cleanup_removes_long_artifact_paths(tmp_path):
+    from tests.helpers.platforms import extended_file_test_root
+
+    root = tmp_path / "execution"
+    artifact = extended_file_test_root(root)
+    while len(str(artifact)) < 300:
+        artifact /= "nested-artifact-directory"
+    artifact.mkdir(parents=True)
+    receipt = artifact / "receipt.txt"
+    receipt.write_bytes(b"owned execution output")
+
+    remove_execution_directory(root)
+
+    assert not root.exists()
+    assert not receipt.exists()
+
+
 @pytest.mark.parametrize("test_exit", [0, 7])
 def test_cleanup_preserves_test_outcome_and_reports_its_own_failure(
     tmp_path, monkeypatch, test_exit
@@ -172,7 +214,9 @@ def test_cleanup_preserves_test_outcome_and_reports_its_own_failure(
     monkeypatch.setattr(run_tests, "ROOT", tmp_path)
     monkeypatch.setattr(run_tests, "run_logged", run)
     monkeypatch.setattr(run_tests, "metadata", metadata)
-    monkeypatch.setattr(run_tests.shutil, "rmtree", fail_cleanup)
+    monkeypatch.setattr(
+        run_tests.execution_environment, "remove_execution_directory", fail_cleanup
+    )
     result = run_tests.main(["--profile", "nightly", "--hash-seed", "42"])
     assert result == (test_exit or 1)
     (diagnostics,) = (tmp_path / "test-results").iterdir()

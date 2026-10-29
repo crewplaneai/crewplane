@@ -11,7 +11,6 @@ import os
 import platform
 import secrets
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -154,7 +153,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def pytest_command(
-    args: argparse.Namespace, diagnostics: Path, root: Path = ROOT
+    args: argparse.Namespace,
+    diagnostics: Path,
+    environment_root: Path,
+    root: Path = ROOT,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -163,6 +165,7 @@ def pytest_command(
         "-q",
         "-c",
         str(root / "pyproject.toml"),
+        f"--basetemp={environment_root / 'pytest'}",
         f"--junitxml={diagnostics / 'junit.xml'}",
         f"--durations={POLICY.runner.duration_count}",
     ]
@@ -478,7 +481,7 @@ def run_dots(
             "-e",
             "plugins/crewplane-dots-host",
         ],
-        pytest_command(plugin_args, diagnostics),
+        pytest_command(plugin_args, diagnostics, environment_root),
     ]
     outcomes = []
     for name, command in zip(("install", "pytest"), commands, strict=True):
@@ -515,6 +518,7 @@ def main(
         command = pytest_command(
             execution_args,
             diagnostics / "dots" if args.suite == "dots" else diagnostics,
+            suite_environment,
         )
         environment = environment_for(
             execution_args, diagnostics, suite_environment, scenario
@@ -584,7 +588,7 @@ def main(
             )
         if exit_code == 0:
             try:
-                shutil.rmtree(environment_root)
+                execution_environment.remove_execution_directory(environment_root)
             except OSError as error:
                 outcome["cleanup_error"] = f"{type(error).__name__}: {error}"
                 print(outcome["cleanup_error"], file=sys.stderr)

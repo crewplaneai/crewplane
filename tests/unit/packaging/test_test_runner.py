@@ -184,8 +184,9 @@ def test_profiles_preserve_selection_and_explicit_plugins(
     assert args.coverage is coverage
     assert args.shuffle_seed == shuffle_seed
     assert (args.statement_floor, args.branch_floor) == (96, 90)
-    command = run_tests.pytest_command(args, tmp_path)
+    command = run_tests.pytest_command(args, tmp_path, tmp_path / "environment")
     assert command[:3] == [sys.executable, "-m", "pytest"]
+    assert f"--basetemp={tmp_path / 'environment' / 'pytest'}" in command
     assert args.selection == []
     assert args.marker_expression == ("race" if profile == "race" else "")
     assert command.count("-m") == (2 if profile == "race" else 1)
@@ -205,7 +206,7 @@ def test_workers_override_uses_standard_scheduler(workers, tmp_path) -> None:
     args = run_tests.parse_args(
         ["--workers", str(workers), "--coverage", "off", "tests/unit/core"]
     )
-    command = run_tests.pytest_command(args, tmp_path)
+    command = run_tests.pytest_command(args, tmp_path, tmp_path / "environment")
     if workers:
         start = command.index("xdist.plugin") - 1
         assert command[start : start + 6] == [
@@ -231,7 +232,7 @@ def test_marker_expression_override_preserves_path_and_keyword_filters(
         ["--profile", profile, "-m", "race and not slow", "-k", "cleanup", "tests/unit"]
     )
 
-    command = run_tests.pytest_command(args, tmp_path)
+    command = run_tests.pytest_command(args, tmp_path, tmp_path / "environment")
 
     assert command[-5:] == ["-k", "cleanup", "-m", "race and not slow", "tests/unit"]
     assert args.marker_expression == "race and not slow"

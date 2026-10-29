@@ -1,5 +1,4 @@
 import os
-import shutil
 import tempfile
 import time
 from collections.abc import Iterator
@@ -8,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers.execution_environment import directory_environment
+from tests.helpers.execution_environment import (
+    directory_environment,
+    remove_execution_directory,
+)
 
 _STANDALONE_ROOT = pytest.StashKey[Path]()
 
@@ -67,14 +69,17 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if exitstatus == 0 and _STANDALONE_ROOT in session.config.stash:
         root = session.config.stash[_STANDALONE_ROOT]
-        session.config.add_cleanup(partial(shutil.rmtree, root))
+        session.config.add_cleanup(partial(remove_execution_directory, root))
 
 
 @pytest.fixture(autouse=True)
 def isolated_test_environment(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Path]:
-    root = tmp_path_factory.mktemp("environment")
+    # Numbered pytest directories scan all siblings; keep per-test homes separate.
+    environments = tmp_path_factory.getbasetemp() / "env"
+    environments.mkdir(exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix="", dir=environments))
     with pytest.MonkeyPatch.context() as environment:
         for key, value in directory_environment(root).items():
             environment.setenv(key, value)
