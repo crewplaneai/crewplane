@@ -25,12 +25,12 @@ from crewplane.core.preflight import (
     load_workflow_source_for_preflight,
 )
 from crewplane.core.preflight.compile_state import CompileState
+from crewplane.core.preflight.compiled_records import StaticResource
 from crewplane.core.preflight.diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
-from crewplane.core.preflight.models import StaticResource
 from crewplane.core.preflight.static_resources import (
     append_static_resource,
     resolve_static_file,

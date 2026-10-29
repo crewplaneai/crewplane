@@ -11,9 +11,9 @@ from crewplane.artifacts.run_history import (
     RunHistoryRecord,
     find_same_context_runs,
 )
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
-    ProviderRecord,
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.runtime_config.workspace import (

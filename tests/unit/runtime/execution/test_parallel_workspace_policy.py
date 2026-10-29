@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.architecture.contracts import ArtifactContract
+from crewplane.core.preflight.compiled_records import (
     ExecutionPolicy,
     PreflightExecutionNode,
     ProviderRecord,
-    WorkspaceSelectionRecord,
 )
+from crewplane.core.preflight.models import WorkspaceSelectionRecord
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution import NodeExecutionError

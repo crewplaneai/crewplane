@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Literal, TypeGuard
 
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
     WorkspaceFileTarget,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.state_selection import (

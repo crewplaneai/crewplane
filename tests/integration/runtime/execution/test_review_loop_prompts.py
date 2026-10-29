@@ -1,7 +1,5 @@
-from crewplane.core.preflight.models import (
-    ArtifactContract,
-    PreflightExecutionNode,
-)
+from crewplane.architecture.contracts import ArtifactContract
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.prompts import (
     build_executor_prompt,

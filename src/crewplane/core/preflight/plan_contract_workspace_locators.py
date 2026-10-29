@@ -7,14 +7,13 @@ from typing import TYPE_CHECKING
 from . import plan_contract_records
 
 if TYPE_CHECKING:
-    from .models import (
+    from .compiled_records import (
         PreflightExecutionNode,
-        PreflightExecutionPlan,
         RenderPlan,
         RenderStream,
         WorkspaceFileLocator,
-        WorkspaceSelectionRecord,
     )
+    from .models import PreflightExecutionPlan, WorkspaceSelectionRecord
 
 
 def validate_workspace_locator_relationships(

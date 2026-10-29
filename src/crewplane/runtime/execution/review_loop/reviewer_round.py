@@ -11,7 +11,7 @@ from pathlib import Path
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.artifacts.atomic import atomic_write_text
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.review_checkpoint_state import CheckpointReviewerFailure
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup

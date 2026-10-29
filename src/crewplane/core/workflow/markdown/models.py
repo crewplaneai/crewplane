@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.token_budget import TokenBudgetOverride
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeDeclaration
@@ -33,7 +34,23 @@ ALLOWED_PROMPT_MARKER_ROLE_SET = frozenset(ALLOWED_PROMPT_MARKER_ROLES)
 
 
 class WorkflowNodeConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    workflow: str | None = None
+    item_input: str | None = None
+    items: list[JsonObject] | str | None = None
+    max_items: int | None = Field(default=None, strict=True, gt=0)
+    inputs: dict[str, str] = Field(default_factory=dict)
+    with_params: dict[str, str] = Field(default_factory=dict, alias="with")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_foreach(cls, value: object) -> object:
+        from crewplane.core.workflow.validation.foreach import (
+            validate_foreach_declaration,
+        )
+
+        return validate_foreach_declaration(value)
 
     id: str
     mode: NodeMode

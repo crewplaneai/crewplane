@@ -64,6 +64,33 @@ def test_read_verified_node_artifact_rejects_missing_state_descriptor(
         read_verified_node_artifact(tmp_path, tmp_path / "results", request, "output")
 
 
+@pytest.mark.parametrize("growth", [False, True])
+def test_bounded_artifact_reads_reject_descriptor_overflow_and_file_growth(
+    tmp_path: Path, growth: bool
+) -> None:
+    stages = tmp_path / "stages"
+    results = tmp_path / "results"
+    request = _request("build-result.md")
+    descriptor = _write_artifact(results, request.contract.output_path, b"[]", "output")
+    _write_node_state(stages, request, [descriptor])
+    if growth:
+        (results / request.contract.output_path).write_bytes(b"[]" * 100)
+    with pytest.raises(ValueError, match="byte limit|unavailable"):
+        read_verified_node_artifact(
+            stages, results, request, "output", 2 if growth else 1
+        )
+
+
+def test_raw_output_uses_compiled_locator_and_preserves_bytes(tmp_path: Path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    request = _request("custom/index.json")
+    data = b'[{"text":"line\\r\\nline"}]'
+    finalized = output.publish_raw_output(request, data)
+    assert finalized.result_file == output.results_dir / "custom/index.json"
+    assert finalized.result_file.read_bytes() == data
+    assert finalized.findings_file is None
+
+
 def test_read_verified_node_artifact_rejects_corrupt_state_descriptor(
     tmp_path: Path,
 ) -> None:

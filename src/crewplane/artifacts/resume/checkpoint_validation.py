@@ -9,10 +9,8 @@ from crewplane.architecture.contracts.artifacts import (
     candidate_identity_path,
     review_raw_output_path,
 )
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import (
     OpenReviewCheckpoint,
     ReviewLoopCheckpoint,

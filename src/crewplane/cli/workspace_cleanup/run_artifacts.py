@@ -8,6 +8,7 @@ from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
 )
+from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.naming import run_manifest_relative_path
 from crewplane.artifacts.workspace.node_state import refresh_node_workspace_descriptor
 from crewplane.core.execution_state import RunManifest
@@ -88,9 +89,13 @@ def _load_cleanup_preflight_plan_file(
     if plan_path is None:
         raise RuntimeError(f"Preflight plan is missing for run '{run_key_name}'.")
     try:
-        return PreflightExecutionPlan.model_validate_json(
+        plan = PreflightExecutionPlan.model_validate_json(
             plan_path.read_text(encoding="utf-8")
         )
+        reconstruction = reconstruct_expansions(plan, run_dir)
+        if reconstruction.invalid_groups:
+            raise ValueError("Incomplete expansion evidence prevents workspace cleanup")
+        return reconstruction.plan
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             f"Preflight plan is invalid for run '{run_key_name}'."

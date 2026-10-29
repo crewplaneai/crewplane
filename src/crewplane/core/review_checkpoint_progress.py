@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.review_checkpoint_state import (
     CheckpointCandidate,
     CheckpointProgress,

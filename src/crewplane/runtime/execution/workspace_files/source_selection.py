@@ -4,11 +4,11 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceFileLocator,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.state_selection import (
     latest_executor_lineage_state_path,

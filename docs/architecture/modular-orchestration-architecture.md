@@ -174,6 +174,13 @@ Workflow composition is intentionally implemented in `core/workflow/` so adapter
 - `{{file:...}}`, `{{env:...}}`, `{{var:...}}`, and file-backed `mode: input` sources are compiled by core preflight into ordered prompt fragments, static resources, fingerprints, and runtime locators.
 - Imported workflows must match the root workflow `schema_version`; mismatches fail during core parsing/composition.
 
+For bounded iteration, preflight compiles a fixed child procedure and runtime
+adds its instances to the existing scheduler when the collection is available.
+The artifact layer records and verifies expansions so later operations can
+reconstruct the effective plan. Observers receive topology updates; event logs
+are not the authority for reconstruction. See
+[ADR 0020](adr/0020-bounded-workflow-iteration.md) for the decision and tradeoffs.
+
 ## Extending This Architecture
 ### LLM API invoker adapter (future)
 Implement `InvokerAdapterPort.create_invoker(...)` and return an `AgentInvoker` compatible object.

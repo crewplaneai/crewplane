@@ -11,7 +11,7 @@ from crewplane.architecture.ports import (
     ProviderProcessPublication,
 )
 from crewplane.core.file_hashing import ContentSignature
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..activity.telemetry import ExecutionTelemetry

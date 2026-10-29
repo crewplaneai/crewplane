@@ -4,15 +4,15 @@ from crewplane.architecture.contracts import JsonObject, JsonValue
 from crewplane.core.workflow.models import WorkflowNode
 
 from .compile_state import PreflightCompileOptions
-from .models import (
+from .compiled_records import (
     DependencyEdge,
     PreflightExecutionNode,
     RenderPlan,
     StaticResource,
     TokenCatalogEntry,
     WorkspaceFileLocator,
-    WorkspaceSourceSnapshot,
 )
+from .models import WorkspaceSourceSnapshot
 from .runtime_config import (
     RuntimeConfigSnapshot,
     runtime_config_signature,

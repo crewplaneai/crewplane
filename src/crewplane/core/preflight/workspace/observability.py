@@ -5,13 +5,15 @@ from collections.abc import Mapping
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.workflow.keywords import ProviderRole
 
-from ..models import (
-    PreflightCompilationPreview,
+from ..compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
     WorkspaceFileTarget,
+)
+from ..models import (
+    PreflightCompilationPreview,
+    PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )

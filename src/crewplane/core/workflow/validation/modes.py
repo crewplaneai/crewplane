@@ -25,6 +25,8 @@ REFERENCE_PHASE = "reference"
 def collect_node_mode_diagnostics(
     node: WorkflowNode,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    if node.mode == "foreach":
+        return ()
     if node.mode == "input":
         return _input_node_diagnostics(node)
     diagnostics: list[WorkflowValidationDiagnostic] = []

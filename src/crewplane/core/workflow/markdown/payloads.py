@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from crewplane.core.prompt_segments import PromptSegmentPayload
@@ -49,10 +50,19 @@ def build_workflow_payload(
             normalize_provider_spec(provider, source) for provider in node.providers
         ]
 
-        if node.mode == "input":
+        prompt_segments: list[PromptSegmentPayload]
+        prompt_segment_spans: list[SourceSpan]
+        if node.mode == "foreach":
+            if re.sub(r"<!--.*?-->", "", section_text, flags=re.DOTALL).strip():
+                raise ValueError(
+                    f"Foreach '{node.id}' section must be empty or comment-only"
+                )
+            prompt_segments = []
+            prompt_segment_spans = []
+        elif node.mode == "input":
             validate_input_node_section(section_text, source, node.id)
-            prompt_segments: list[PromptSegmentPayload] = []
-            prompt_segment_spans: list[SourceSpan] = []
+            prompt_segments = []
+            prompt_segment_spans = []
         else:
             prompt_segments, prompt_segment_spans = extract_prompt_segment_payloads(
                 section_text,

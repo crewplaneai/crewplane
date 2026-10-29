@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
-from crewplane.core.preflight.models import PreflightExecutionPlan, WorkspaceFileLocator
+from crewplane.core.preflight.compiled_records import WorkspaceFileLocator
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workspace.git_reads import GitTreeRecord
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.workspace_files import read_dynamic_locator_blob

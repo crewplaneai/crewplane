@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from crewplane.core.preflight.models import ExecutionPolicy, TokenBudgetPolicy
+from crewplane.core.preflight.compiled_records import ExecutionPolicy, TokenBudgetPolicy
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution import prompt_budgeting

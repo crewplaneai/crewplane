@@ -23,7 +23,7 @@ from crewplane.core.review_policy import (
 from crewplane.core.workflow.keywords import ProviderRole
 
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode, ProviderRecord
+    from .compiled_records import PreflightExecutionNode, ProviderRecord
 
 
 def validate_invocation_names(node: PreflightExecutionNode) -> None:

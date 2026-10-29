@@ -7,6 +7,7 @@ from typing import Never
 import typer
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.bootstrap import RuntimeConfigSnapshotBuildResult
 from crewplane.core.config import Config
@@ -148,6 +149,7 @@ def fulfill_historical_branch_exports(
             manifest_root=(source_run.run_dir / "manifests").as_posix(),
             created_at=datetime.now(),
         )
+        plan = reconstruct_expansions(plan, source_run.run_dir).plan
         branch_export_records = fulfill_branch_exports_from_history(
             plan,
             source_run,

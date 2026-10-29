@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .compile_state import CompileState
-from .models import DependencyEdge
+from .compiled_records import DependencyEdge
 from .signatures import signature_for_payload
 
 

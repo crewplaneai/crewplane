@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.architecture.contracts import (
+    ArtifactContract,
     NodeArtifactRequest,
     build_findings_filename,
     build_result_filename,
@@ -19,14 +20,13 @@ from crewplane.core.execution_state import (
     RunManifest,
 )
 from crewplane.core.platform import is_native_windows
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     ExecutionPolicy,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request

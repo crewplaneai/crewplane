@@ -7,15 +7,16 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts import ArtifactContract, InvocationContext
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.manager import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
+)
+from crewplane.core.preflight.models import (
+    PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )

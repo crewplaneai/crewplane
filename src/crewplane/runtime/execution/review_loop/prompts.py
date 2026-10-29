@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.review_contract import REVIEW_RESPONSE_INSTRUCTION
 
 from ..common import ExecutionTelemetry

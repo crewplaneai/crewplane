@@ -4,10 +4,8 @@ from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..results.review_loop_status import (

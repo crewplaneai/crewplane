@@ -60,6 +60,8 @@ def workflow_node_from_frontmatter(
             "valid for input nodes."
         )
     node_data = node.model_dump(exclude={"providers", "source"}, exclude_unset=True)
+    if node.mode == "foreach":
+        return WorkflowNode.model_validate(node_data)
     node_data["providers"] = providers
     if node.mode == "input":
         node_data["source"] = node.source or ""

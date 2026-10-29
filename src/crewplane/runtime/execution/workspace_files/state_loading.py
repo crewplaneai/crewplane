@@ -8,7 +8,7 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.runtime.workspace.state_selection import (
     latest_executor_lineage_state_path,
     required_lineage_state_path,

@@ -9,7 +9,7 @@ from typing import get_protocol_members
 import pytest
 
 from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
-from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.contracts import ArtifactContract, NodeArtifactRequest
 from crewplane.architecture.errors import AdapterContractError
 from crewplane.architecture.loader import require_artifact_store
 from crewplane.architecture.ports.artifacts import (
@@ -26,13 +26,12 @@ from crewplane.core.execution_state import (
     ArtifactKind,
     NodeState,
 )
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowPlan

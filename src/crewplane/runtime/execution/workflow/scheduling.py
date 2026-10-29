@@ -11,7 +11,7 @@ from crewplane.architecture.contracts import (
     LogLevel,
 )
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from ..common import (
@@ -25,8 +25,14 @@ from ..common import (
     safe_error_message,
     should_print_console,
 )
-from ..errors import WorkflowExecutionError, is_expected_execution_failure
+from ..errors import (
+    NodeExecutionError,
+    WorkflowExecutionError,
+    is_expected_execution_failure,
+)
 from .execution_session import WorkflowExecutionSession
+from .expansion import expand_group
+from .join import join_group
 from .node import (
     execute_node,
     mark_node_finished_activity,
@@ -70,6 +76,7 @@ def _schedule_ready_nodes(
     invoker: AgentInvoker,
 ) -> None:
     state = session.state
+    _run_ready_groups(session, output)
     while state.ready and (
         session.max_concurrent_nodes is None
         or len(state.running) < session.max_concurrent_nodes
@@ -85,6 +92,39 @@ def _schedule_ready_nodes(
             invoker,
             session,
         )
+
+
+def _run_ready_groups(
+    session: WorkflowExecutionSession, output: ArtifactStorePort
+) -> None:
+    state = session.state
+    while True:
+        group_id = next(
+            (
+                node_id
+                for node_id in state.ready
+                if session.nodes_by_id[node_id].mode == "foreach"
+            ),
+            None,
+        )
+        if group_id is None:
+            return
+        state.ready.remove(group_id)
+        try:
+            if group_id not in session.runtime_context.plan.expansions:
+                expand_group(session, group_id, output)
+                continue
+            mark_node_running_activity(session.telemetry, group_id)
+            emit_workflow_event(
+                session.telemetry, EventType.NODE_STARTED, node_id=group_id
+            )
+            join_group(session, group_id, output)
+        except (OSError, ValueError) as exc:
+            _mark_node_failed(
+                group_id, NodeExecutionError(str(exc)), state, session.telemetry
+            )
+        else:
+            _mark_node_succeeded(group_id, state, session.telemetry)
 
 
 def _completed_node_ids(

@@ -13,6 +13,7 @@ from crewplane.core.preflight import (
     PreflightCompilationPreview,
     load_workflow_source_for_preflight,
 )
+from crewplane.core.preflight.foreach.compilation import inventory_workflow
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.core.workflow.validation.workspace import (
@@ -75,7 +76,7 @@ def load_cli_workflow_context(
         project_root=paths.project_root,
     )
     if require_project_root or source.workflow.repeat_force_run_count is not None:
-        validate_repeat_force_run_workspace(source.workflow, config)
+        validate_repeat_force_run_workspace(inventory_workflow(source), config)
     return CliWorkflowContext(
         paths=paths,
         config=config,

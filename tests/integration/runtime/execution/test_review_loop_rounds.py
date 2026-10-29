@@ -5,9 +5,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
-    ExecutionPolicy,
-)
+from crewplane.core.preflight.compiled_records import ExecutionPolicy
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import (
     InvocationFailureError,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.safe_files import is_safe_relative_path
+from crewplane.core.expansion_state import ExpansionProvenance
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
@@ -111,6 +112,7 @@ class NodeState(BaseModel):
     run_id: str
     run_key_name: str
     node_id: str
+    expansion: ExpansionProvenance | None = None
     status: Literal["succeeded"] = "succeeded"
     completed_at: str
     artifacts: list[ArtifactDescriptor] = Field(default_factory=list)
@@ -155,6 +157,8 @@ class NodeState(BaseModel):
 
     @model_validator(mode="after")
     def _validate_artifact_descriptor_sets(self) -> NodeState:
+        if self.expansion is not None:
+            self.expansion.validate_node(self.node_id)
         artifact_kinds = [descriptor.kind for descriptor in self.artifacts]
         if len(artifact_kinds) != len(set(artifact_kinds)):
             raise ValueError("Node state artifact kinds must be unique.")

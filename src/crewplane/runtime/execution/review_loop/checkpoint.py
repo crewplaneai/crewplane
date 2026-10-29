@@ -23,7 +23,7 @@ from crewplane.core.execution_state import (
     ReviewCheckpointResumeSummary,
 )
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.review_checkpoint import (
     CheckpointIdentity,
     ClosedReviewCheckpoint,
@@ -76,6 +76,7 @@ def checkpoint_identity(context: ReviewLoopRunContext) -> CheckpointIdentity:
         run_id=context.output.run_id,
         run_key_name=context.output.run_key_name,
         node_id=context.stage.id,
+        expansion=context.stage.expansion,
         tasks=[
             CheckpointTask(task_id=p.task_id, role=p.role)
             for p in context.stage.provider_records

@@ -9,7 +9,7 @@ from crewplane.core.workspace.selection import latest_lineage_source
 from .workspace.models import is_lineage_worktree
 
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode
+    from .compiled_records import PreflightExecutionNode
 
 
 def validate_workspace_source_lineage(

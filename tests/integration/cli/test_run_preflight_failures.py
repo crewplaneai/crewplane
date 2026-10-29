@@ -2,14 +2,22 @@ import io
 import unittest
 from pathlib import Path
 from tempfile import mkdtemp
+from unittest.mock import AsyncMock
 
 import pytest
 import typer
+import yaml
+from typer.testing import CliRunner
 
 import crewplane.cli.app as cli
 from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.config_secrets import CONFIG_FAILURES
+from tests.helpers.foreach import (
+    copy_foreach_fixture,
+    workflow_document,
+    write_workflow_document,
+)
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
@@ -20,6 +28,56 @@ from tests.integration.cli.cli_workflow_helpers import (
 )
 
 pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
+
+@pytest.mark.parametrize("items", [[], [{"chunk": "a"}]])
+@pytest.mark.parametrize("failure", ["unavailable", "request"])
+def test_run_preflight_checks_child_only_providers_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    items: list[dict[str, str]],
+    failure: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workflow = copy_foreach_fixture(tmp_path)
+    payload, body = workflow_document(workflow)
+    payload["nodes"][2]["items"] = items
+    write_workflow_document(workflow, payload, body)
+    child = tmp_path / "analyze.md"
+    payload, body = workflow_document(child)
+    provider = {"provider": "beta"}
+    if failure == "request":
+        provider["reasoning"] = "high"
+    payload["nodes"][-1]["providers"] = [provider]
+    write_workflow_document(child, payload, body)
+    config = tmp_path / "config.yml"
+    write_basic_config(config)
+    settings = yaml.safe_load(config.read_bytes())
+    settings["settings"] = {"max_concurrent_nodes": 1}
+    if failure == "unavailable":
+        settings["agents"]["beta"]["cli_cmd"] = ["definitely-not-installed-cli"]
+    config.write_text(yaml.safe_dump(settings), encoding="utf-8", newline="\n")
+    execute = AsyncMock()
+    monkeypatch.setattr(cli, "execute_workflow", execute)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["run", "--tasks", str(workflow), "--config", str(config), "--no-live"],
+    )
+
+    assert result.exit_code == 1, (result.output, result.exception)
+    message = " ".join(result.output.split())
+    assert "beta" in message
+    expected = (
+        "not found in PATH"
+        if failure == "unavailable"
+        else "First-class reasoning requires"
+    )
+    assert expected in message
+    execute.assert_not_called()
+    assert not list(
+        (tmp_path / ".crewplane/execution-stages").glob("*/manifests/run.json")
+    )
 
 
 class CliRunPreflightFailureTests(unittest.TestCase):
@@ -405,6 +463,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
+                return plan
 
             with cli_process_state(stream) as process_state:
                 process_state.setattr(

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.artifacts.naming import workspace_export_relative_path
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,

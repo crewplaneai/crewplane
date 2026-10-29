@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from crewplane.architecture.contracts import ExecutionStatus
-from crewplane.core.preflight.models import (
-    DependencyEdge,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import DependencyEdge
+from crewplane.core.preflight.models import PreflightExecutionPlan
 
 from ..common import WorkflowExecutionState
 

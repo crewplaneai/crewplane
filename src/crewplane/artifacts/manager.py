@@ -163,6 +163,14 @@ class OutputManager:
             generated_file_workspace_roots=generated_file_workspace_roots,
         )
 
+    def publish_raw_output(
+        self, request: NodeArtifactRequest, payload: bytes
+    ) -> StageFinalizeResult:
+        self.create_node_dir(request)
+        return self._result_writer.publish_raw_output(
+            request.node_id, self.get_node_output_path(request), payload
+        )
+
     def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
         return self._compiled_path(
             self.results_dir,
@@ -207,6 +215,7 @@ class OutputManager:
         self,
         request: NodeArtifactRequest,
         kind: str,
+        max_bytes: int | None = None,
     ) -> VerifiedNodeArtifact:
         if kind == "output":
             self.get_node_output_path(request)
@@ -217,6 +226,7 @@ class OutputManager:
             self.results_dir,
             request,
             kind,
+            max_bytes,
         )
 
     def get_run_log_dir(self) -> Path:

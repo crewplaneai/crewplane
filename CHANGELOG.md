@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Run a fixed child workflow for each item in a bounded collection with `foreach`, ordered result indexes, and artifact-backed resume of completed work and review phases.
+
 ## [0.4.0] - 2026-10-28
 
 ### Changed

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.architecture.contracts import ArtifactContract
+from crewplane.core.preflight.compiled_records import (
     ExecutionPolicy,
     PreflightExecutionNode,
 )

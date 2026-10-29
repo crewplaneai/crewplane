@@ -211,3 +211,45 @@ Workflow prompts can reference upstream artifacts with:
 - `{{node.findings_size}}`
 - `{{node.output_sha256}}`
 - `{{node.findings_sha256}}`
+
+## Foreach Expansions
+
+Each `foreach` group records its collection and expansion under:
+
+```text
+.crewplane/execution-stages/<run-key>/preflight/expansions/<safe-group>/
+  items.json
+  items/0.json
+  items/1.json
+  expansion.json
+```
+
+`items.json` contains the collection; each numbered file contains one item.
+`expansion.json` marks a completed expansion. A partial bundle cannot authorize
+child execution.
+
+A successful group writes raw JSON at its compiled result locator, normally
+`.crewplane/execution-results/<run-key>/<group>-result.md`. Each array entry has
+`index`, the original `item`, and terminal `results` in child order. Each result
+has `local_node_id`, concrete `node_id`, and `output` plus optional `findings`
+descriptors. A descriptor contains `path` relative to the group result file's directory,
+`size_bytes`, and `sha256`. An empty collection produces exactly `[]`. The group
+index is an output artifact, never a findings artifact. Normal downstream prompt
+budgets still apply.
+
+Skip, resume, summaries, workspace export, and cleanup use the recorded expansion.
+Invalid expansion evidence can prevent reuse or cause cleanup to refuse removal.
+
+Resume copies eligible bundles into a fresh run before successes and selected
+review checkpoints. Reuse requires valid original group prerequisites and
+matching collection/shared caller artifacts. A prerequisite rerun invalidates
+the group's expansion, successes, and open checkpoints. Corrupt child-only
+results invalidate their dependency closure while eligible siblings remain
+reusable. Missing group output can be rejoined from completed children. Skipping
+a successful run requires the entire effective graph, including empty-group
+completion, to remain valid.
+
+Generated checkpoints retain normal phase recovery and evidence checks. If a
+selected checkpoint cannot be restored, the fresh run fails before provider
+calls. `--force` bypasses expansion, success, and checkpoint reuse and
+regenerates the collection and all children.

@@ -13,7 +13,8 @@ from crewplane.artifacts.workspace.state.invocations import (
     expected_workspace_invocations,
 )
 from crewplane.core.config import AgentConfig, Config
-from crewplane.core.preflight.models import ExecutionPolicy, PreflightExecutionPlan
+from crewplane.core.preflight.compiled_records import ExecutionPolicy
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,

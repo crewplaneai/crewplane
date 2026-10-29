@@ -11,8 +11,8 @@ from crewplane.architecture.contracts import (
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
 )
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )

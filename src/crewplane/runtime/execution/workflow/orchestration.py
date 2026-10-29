@@ -25,7 +25,7 @@ async def execute_workflow(
     suppress_progress_output: bool = False,
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
-) -> None:
+) -> PreflightExecutionPlan:
     """Execute a compiled preflight plan with optional live observability hooks."""
     session = initialize_workflow_execution(
         plan=plan,
@@ -54,3 +54,5 @@ async def execute_workflow(
         scheduler_succeeded=scheduler_succeeded,
         postcondition_errors=postcondition_errors,
     )
+
+    return session.runtime_context.plan

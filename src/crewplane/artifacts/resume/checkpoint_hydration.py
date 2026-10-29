@@ -16,10 +16,8 @@ from crewplane.architecture.safe_files import (
 )
 from crewplane.core.execution_state import ResumeOrigin, ReviewCheckpointResumeSummary
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from crewplane.core.review_checkpoint_state import CheckpointFile, CheckpointWorkspace
 

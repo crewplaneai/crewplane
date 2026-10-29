@@ -19,6 +19,7 @@ from crewplane.core.workflow.graph import (
 
 __all__ = [
     "print_dry_run_plan",
+    "print_foreach_summary",
     "preview_topological_waves",
 ]
 
@@ -26,6 +27,7 @@ __all__ = [
 def print_dry_run_plan(preview: PreflightCompilationPreview, console: Console) -> None:
     console.print("[yellow]Dry run mode[/] — showing DAG execution plan:")
     _print_workspace_summary(preview, console)
+    print_foreach_summary(preview, console)
     waves = preview_topological_waves(preview)
     node_index = {node.id: node for node in preview.nodes}
 
@@ -37,11 +39,56 @@ def print_dry_run_plan(preview: PreflightCompilationPreview, console: Console) -
             console.print(f"  Node: {node.id} ({node.mode})")
             console.print(f"    needs: {needs}")
             _print_node_workspace_summary(node, console)
+            if node.mode == "foreach":
+                template = next(
+                    template
+                    for template in preview.foreach_templates
+                    if template.group_id == node.id
+                )
+                console.print(
+                    f"      - child: {template.workflow} ({len(template.nodes)} compiled nodes)",
+                    markup=False,
+                )
+                for child in template.nodes:
+                    console.print(
+                        f"        {child.id.removeprefix(template.namespace + '.')}: {child.mode}",
+                        markup=False,
+                    )
+                continue
             if node.mode == "input":
                 console.print(f"      - source: {_input_source_label(preview, node)}")
                 continue
             for provider in node.provider_records:
                 console.print(_format_provider_dry_run_line(provider), markup=False)
+
+
+def print_foreach_summary(
+    preview: PreflightCompilationPreview, console: Console
+) -> None:
+    if not preview.foreach_templates:
+        return
+    snapshot = preview.runtime_config_snapshot
+    if snapshot is None:
+        raise ValueError("Foreach preview requires a runtime snapshot")
+    console.print(
+        f"Foreach: {len(preview.foreach_templates)} frozen child template(s)",
+        markup=False,
+    )
+    for template in preview.foreach_templates:
+        count = (
+            str(len(template.items))
+            if isinstance(template.items, list)
+            else f"0..{template.max_items}"
+        )
+        console.print(
+            f"  {template.group_id}: items={count}, generated-node bound={template.node_bound}",
+            markup=False,
+        )
+    console.print(
+        f"  total generated-node bound={sum(template.node_bound for template in preview.foreach_templates)}; "
+        f"budget={snapshot.execution.max_expanded_nodes}; concurrency={snapshot.execution.max_concurrent_nodes}",
+        markup=False,
+    )
 
 
 def preview_topological_waves(

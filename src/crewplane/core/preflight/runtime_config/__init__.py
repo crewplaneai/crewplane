@@ -41,7 +41,7 @@ from .redaction import (
 )
 
 if TYPE_CHECKING:
-    from ..models import PreflightExecutionNode
+    from ..compiled_records import PreflightExecutionNode
 
 
 class RuntimeConfigSnapshotOptions(BaseModel):
@@ -56,6 +56,7 @@ class RuntimeExecutionSnapshot(BaseModel):
 
     log_level: str
     max_audit_rounds: int
+    max_expanded_nodes: int = Field(default=10_000, strict=True, gt=0)
     max_concurrent_nodes: int | None = None
     max_parallel_invocations: int | None = None
     sequential_consensus_on_exhaustion: SequentialConsensusPolicy
@@ -300,6 +301,7 @@ class RuntimeConfigSnapshot(BaseModel):
         execution = RuntimeExecutionSnapshot(
             log_level=settings.log_level,
             max_audit_rounds=settings.max_audit_rounds,
+            max_expanded_nodes=settings.max_expanded_nodes,
             max_concurrent_nodes=settings.max_concurrent_nodes,
             max_parallel_invocations=settings.max_parallel_invocations,
             sequential_consensus_on_exhaustion=settings.sequential_consensus_on_exhaustion,

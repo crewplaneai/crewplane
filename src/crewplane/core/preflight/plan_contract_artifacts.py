@@ -11,7 +11,7 @@ from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 from . import plan_contract_records
 
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode
+    from .compiled_records import PreflightExecutionNode
 
 RESERVED_STAGE_ROOTS = frozenset((*RESERVED_RUN_ROOT_NAMES, "preflight"))
 
@@ -19,7 +19,7 @@ RESERVED_STAGE_ROOTS = frozenset((*RESERVED_RUN_ROOT_NAMES, "preflight"))
 def validate_artifact_contract_uniqueness(
     nodes: Sequence[PreflightExecutionNode],
 ) -> None:
-    occupied: dict[tuple[str, str], str] = {}
+    occupied: list[tuple[str, tuple[str, ...], str, str]] = []
     for node in nodes:
         contract = node.artifact_contract
         if contract.stage_path is None:
@@ -57,33 +57,14 @@ def validate_artifact_contract_uniqueness(
             path = getattr(contract, field_name)
             if path is None:
                 continue
-            existing = _find_overlapping_artifact(occupied, root, path)
-            if existing is not None:
-                existing_node, existing_path = existing
-                raise ValueError(
-                    f"Persisted nodes '{existing_node}' and "
-                    f"'{plan_contract_records.node_id(node)}' have overlapping "
-                    f"{root} artifact locators: '{existing_path}' and '{path}'."
-                )
-            occupied[(root, path)] = plan_contract_records.node_id(node)
+            occupied.append((root, PurePosixPath(path.casefold()).parts, path, node.id))
 
-
-def _find_overlapping_artifact(
-    occupied: dict[tuple[str, str], str],
-    root: str,
-    path: str,
-) -> tuple[str, str] | None:
-    for (existing_root, existing_path), existing_node in occupied.items():
-        if existing_root == root and _paths_overlap(existing_path, path):
-            return existing_node, existing_path
-    return None
-
-
-def _paths_overlap(left: str, right: str) -> bool:
-    left_path = PurePosixPath(left.casefold())
-    right_path = PurePosixPath(right.casefold())
-    return (
-        left_path == right_path
-        or left_path.is_relative_to(right_path)
-        or right_path.is_relative_to(left_path)
-    )
+    occupied.sort()
+    for previous, current in zip(occupied, occupied[1:], strict=False):
+        root, parts, path, node_id = current
+        previous_root, previous_parts, previous_path, previous_node = previous
+        if root == previous_root and parts[: len(previous_parts)] == previous_parts:
+            raise ValueError(
+                f"Persisted nodes '{previous_node}' and '{node_id}' have overlapping "
+                f"{root} artifact locators: '{previous_path}' and '{path}'."
+            )

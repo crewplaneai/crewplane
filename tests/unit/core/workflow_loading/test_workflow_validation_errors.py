@@ -83,7 +83,7 @@ def test_validation_preserves_independent_errors() -> None:
     assert message.count("design.task.md:") == 4
     assert len(message.split("\n\n")) == 4
     assert (
-        "mode:\n    Invalid value 'serial'.\n    Allowed values: parallel, sequential, input."
+        "mode:\n    Invalid value 'serial'.\n    Allowed values: parallel, sequential, input, foreach."
         in message
     )
     assert (

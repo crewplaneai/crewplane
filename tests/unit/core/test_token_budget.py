@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from crewplane.core.preflight.models import TokenBudgetPolicy
+from crewplane.core.preflight.compiled_records import TokenBudgetPolicy
 from crewplane.core.token_budget import (
     TokenBudgetOverride,
     TokenBudgetSettings,

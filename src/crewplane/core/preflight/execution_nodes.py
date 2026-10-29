@@ -18,9 +18,7 @@ from .compile_state import (
     source_file,
     source_root,
 )
-from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
-from .invocation_names import validate_invocation_names
-from .models import (
+from .compiled_records import (
     ConcurrencyPolicy,
     DependencyEdge,
     ExecutionPolicy,
@@ -28,8 +26,10 @@ from .models import (
     ProviderRecord,
     RenderPlan,
     TokenBudgetPolicy,
-    WorkspaceSelectionRecord,
 )
+from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
+from .invocation_names import validate_invocation_names
+from .models import WorkspaceSelectionRecord
 from .runtime_config import RuntimeConfigSnapshot, runtime_agent_signature_payload
 from .signatures import signature_for_payload
 
@@ -82,6 +82,7 @@ def compile_execution_node(
             node.id,
             findings_enabled=node.findings,
         ),
+        input_item_slot=node.id in options.item_input_ids,
         input_content_ref=state.input_content_refs.get(node.id),
         input_workspace_file_locator_id=state.input_workspace_file_locator_ids.get(
             node.id
@@ -178,7 +179,7 @@ def resolved_token_budget_payload(
     node: WorkflowNode,
     config: Config,
 ) -> TokenBudgetPolicy | None:
-    if node.mode == "input":
+    if node.mode in {"input", "foreach"}:
         return None
     try:
         budget = resolve_token_budget(

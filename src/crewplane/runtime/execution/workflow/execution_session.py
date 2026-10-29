@@ -5,10 +5,8 @@ from dataclasses import dataclass
 
 from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.observability.events import (
     EventSink,

@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.version import SCHEMA_VERSION
 
 

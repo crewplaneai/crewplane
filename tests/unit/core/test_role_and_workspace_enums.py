@@ -10,7 +10,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.core.preflight import render_plans
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     RenderStream,
     TokenCatalogEntry,
     WorkspaceFileLocator,

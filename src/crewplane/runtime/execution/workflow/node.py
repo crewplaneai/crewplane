@@ -13,7 +13,7 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.results.findings import FindingsExtractionError
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 
 from ..common import (
     CompiledRuntimeContext,
@@ -88,7 +88,7 @@ async def execute_node(
             invoker=invoker,
             telemetry=telemetry,
         )
-    else:
+    elif node.mode == "sequential":
         await execute_sequential_stage(
             node,
             output,
@@ -96,6 +96,8 @@ async def execute_node(
             invoker=invoker,
             telemetry=telemetry,
         )
+    else:
+        raise ValueError("Foreach control nodes must execute in the workflow scheduler")
     publications = runtime_context.runtime_publications
     with publications.transaction():
         try:

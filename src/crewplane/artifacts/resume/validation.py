@@ -19,19 +19,17 @@ from crewplane.core.execution_state import (
     NodeState,
 )
 from crewplane.core.file_hashing import sha256_file
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.foreach.models import ExpansionBatch
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import (
-    ClosedReviewCheckpoint,
     OpenReviewCheckpoint,
-    validate_checkpoint_node,
 )
 from crewplane.core.review_checkpoint_state import CheckpointProjectObservation
 from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
+from ..expansions import reconstruct_expansions, verify_caller_artifacts
 from ..generated_files.paths import generated_file_path_belongs_to_node
 from ..naming import node_state_relative_path
 from ..run_history import RunHistoryRecord
@@ -40,12 +38,8 @@ from ..workspace.node_state import (
     build_node_workspace_descriptor,
 )
 from ..workspace.state.validation import workspace_node_state_is_valid
-from .checkpoint_store import read_review_checkpoint
-from .checkpoint_validation import (
-    checkpoint_matches_source,
-    require_checkpoint_dependencies,
-    require_checkpoint_project,
-)
+from .checkpoint_selection import select_resume_checkpoints
+from .expansions import eligible_expansion_plan
 
 
 @dataclass(frozen=True)
@@ -66,6 +60,8 @@ class ValidatedResumeFrontier:
     node_states: dict[str, NodeState]
     checkpoints: dict[str, OpenReviewCheckpoint] = field(default_factory=dict)
     closed_checkpoint_ids: frozenset[str] = frozenset()
+    effective_plan: PreflightExecutionPlan | None = None
+    expansion_batches: dict[str, ExpansionBatch] = field(default_factory=dict)
 
     @property
     def resumed_node_ids(self) -> tuple[str, ...]:
@@ -101,18 +97,52 @@ def validate_resume_frontier(
     workspace validators may reject state. Checkpoint ValueError, OSError, and
     RuntimeError failures reject only that marker; other exceptions propagate.
     """
+    base_plan = plan
+    reconstruction = reconstruct_expansions(base_plan, source.run_dir)
+    plan = reconstruction.plan
     nodes_by_id = {node.id: node for node in plan.nodes}
     dependencies = _dependencies_by_node(plan)
     closed_states = _select_resume_states(source, plan, dependencies, nodes_by_id)
-    checkpoints, closed_ids = _select_resume_checkpoints(
+    eligible_groups: set[str] = set()
+    templates = {template.group_id: template for template in plan.foreach_templates}
+    for group_id, batch in reconstruction.batches.items():
+        template = templates[group_id]
+        eligible = set(template.original_dependencies).issubset(closed_states)
+        if eligible:
+            try:
+                verify_caller_artifacts(plan, batch, source.run_dir, source.results_dir)
+            except (OSError, ValueError):
+                eligible = False
+        if eligible:
+            eligible_groups.add(group_id)
+        else:
+            for node in plan.nodes:
+                if node.expansion is not None and node.expansion.group_id == group_id:
+                    closed_states.pop(node.id, None)
+            closed_states = _dependency_closed_states(
+                closed_states, dependencies, nodes_by_id
+            )
+    plan = eligible_expansion_plan(base_plan, reconstruction.batches, eligible_groups)
+    checkpoints, closed_ids = select_resume_checkpoints(
         source,
-        plan,
-        dependencies,
+        reconstruction.plan,
+        _dependencies_by_node(reconstruction.plan),
         closed_states,
         project_observation,
         fenced_checkpoint_ids,
     )
-    return ValidatedResumeFrontier(source, closed_states, checkpoints, closed_ids)
+    return ValidatedResumeFrontier(
+        source,
+        closed_states,
+        checkpoints,
+        closed_ids,
+        plan,
+        {
+            group: batch
+            for group, batch in reconstruction.batches.items()
+            if group in eligible_groups
+        },
+    )
 
 
 def _select_resume_states(
@@ -141,58 +171,6 @@ def _select_resume_states(
     return _dependency_closed_states(valid_states, dependencies, nodes_by_id)
 
 
-def _select_resume_checkpoints(
-    source: RunHistoryRecord,
-    plan: PreflightExecutionPlan,
-    dependencies: dict[str, set[str]],
-    closed_states: dict[str, NodeState],
-    project_observation: CheckpointProjectObservation | None,
-    fenced_checkpoint_ids: frozenset[str],
-) -> tuple[dict[str, OpenReviewCheckpoint], frozenset[str]]:
-    checkpoints: dict[str, OpenReviewCheckpoint] = {}
-    closed_ids = set[str]()
-    for node in plan.nodes:
-        try:
-            checkpoint = read_review_checkpoint(source.run_dir, node.id)
-            if checkpoint is None or not checkpoint_matches_source(
-                checkpoint, source, plan
-            ):
-                continue
-            validate_checkpoint_node(checkpoint, node)
-            if isinstance(checkpoint, ClosedReviewCheckpoint):
-                closed_ids.add(node.id)
-                continue
-            if (
-                node.id in closed_states
-                or node.id in fenced_checkpoint_ids
-                or not dependencies[node.id].issubset(closed_states)
-            ):
-                continue
-            _require_checkpoint_provenance(source, checkpoint)
-            require_checkpoint_dependencies(source.run_dir, plan, node, checkpoint)
-            require_checkpoint_project(checkpoint, node, project_observation)
-        except (ValueError, OSError, RuntimeError):
-            continue
-        checkpoints[node.id] = checkpoint
-    return checkpoints, frozenset(closed_ids)
-
-
-def _require_checkpoint_provenance(
-    source: RunHistoryRecord, checkpoint: OpenReviewCheckpoint
-) -> None:
-    summary = next(
-        (
-            item
-            for item in source.manifest.resumed_review_checkpoints
-            if item.node_id == checkpoint.node_id
-        ),
-        None,
-    )
-    origin = None if summary is None else summary.resume_origin
-    if checkpoint.resume_origin != origin:
-        raise ValueError("Checkpoint marker and manifest hydration origin disagree.")
-
-
 def _read_node_state(source: RunHistoryRecord, node_id: str) -> NodeState | None:
     node_state_path = contained_regular_file(
         source.run_dir,
@@ -218,6 +196,10 @@ def _node_state_is_valid(
     node: PreflightExecutionNode,
     node_state: NodeState,
 ) -> bool:
+    if node_state.expansion != node.expansion or (
+        node.mode == "foreach" and node.expansion is None
+    ):
+        return False
     if not _node_state_matches_context(source, plan, node.id, node_state):
         return False
     descriptors = _artifact_descriptors(node_state)

@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     Fragment,
-    PreflightExecutionPlan,
     RenderPlan,
     RenderStream,
     WorkspaceFileLocator,
+)
+from crewplane.core.preflight.models import (
+    PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.secrets import SecretContext

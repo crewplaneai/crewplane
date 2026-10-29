@@ -8,7 +8,7 @@ from crewplane.architecture.safe_files import (
     contained_regular_file,
 )
 from crewplane.core.file_hashing import ContentSignature
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details

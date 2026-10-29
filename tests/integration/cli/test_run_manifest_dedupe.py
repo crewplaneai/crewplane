@@ -45,6 +45,7 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     output,
                     kwargs["workflow_identity"],
                 )
+                return plan
 
             with cli_process_state(stream) as process_state:
                 process_state.setattr(cli, "execute_workflow", fake_execute_workflow)
@@ -82,7 +83,7 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             stream = io.StringIO()
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
-                return None
+                return plan
 
             with cli_process_state(stream) as process_state:
                 process_state.setattr(cli, "execute_workflow", fake_execute_workflow)

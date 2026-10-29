@@ -4,11 +4,11 @@ import hashlib
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.file_text import decode_utf8_without_nul, valid_utf8_without_nul
-from crewplane.core.preflight.models import (
-    PreflightExecutionPlan,
+from crewplane.core.preflight.compiled_records import (
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
 from crewplane.core.workspace.git_reads import (
     GitTreeRecord,

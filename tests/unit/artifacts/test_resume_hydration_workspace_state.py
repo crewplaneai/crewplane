@@ -9,6 +9,7 @@ import crewplane.artifacts.resume.hydration as hydration_module
 from crewplane.artifacts.naming import (
     build_node_state_filename,
 )
+from crewplane.artifacts.resume import workspace_hydration
 from crewplane.artifacts.resume.validation import (
     validate_resume_frontier,
 )
@@ -128,7 +129,7 @@ def test_hydrate_rechecks_rewritten_workspace_state_before_node_success(
     write_snapshot_workspace_state(source, plan)
     frontier = validate_resume_frontier(source, plan)
     output = hydration_output(tmp_path)
-    write_bytes = hydration_module.atomic_write_bytes
+    write_bytes = workspace_hydration.atomic_write_bytes
 
     def corrupt_workspace_state(path: Path, payload: bytes) -> None:
         write_bytes(path, payload)
@@ -136,7 +137,7 @@ def test_hydrate_rechecks_rewritten_workspace_state_before_node_success(
             path.write_bytes(b"x" + payload[1:])
 
     monkeypatch.setattr(
-        hydration_module,
+        workspace_hydration,
         "atomic_write_bytes",
         corrupt_workspace_state,
     )

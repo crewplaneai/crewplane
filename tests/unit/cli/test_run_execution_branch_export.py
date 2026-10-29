@@ -87,7 +87,7 @@ def test_successful_run_prints_branch_export_fulfillment(
         del args
         on_scheduler_succeeded = kwargs["on_scheduler_succeeded"]
         assert callable(on_scheduler_succeeded)
-        on_scheduler_succeeded()
+        on_scheduler_succeeded(plan)
 
     async def noop_execute_workflow(*args: object, **kwargs: object) -> None:
         del args, kwargs

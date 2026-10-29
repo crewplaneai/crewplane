@@ -12,6 +12,7 @@ from crewplane.core.workspace.policy import (
 from ..markdown import parse_workflow_markdown_document
 from ..models import WorkflowPayload, workflow_node_payload_dict
 from ..source_locations import SourceSpan
+from .foreach import resolve_foreach_inputs
 from .imports import (
     attach_import_prerequisites,
     bind_import_params,
@@ -19,6 +20,7 @@ from .imports import (
     validate_import_params_consumed,
 )
 from .models import (
+    ComposedForeach,
     ComposedNode,
     ComposedWorkflowDocument,
     CompositionContext,
@@ -45,6 +47,8 @@ class WorkflowComposer:
         self._node_source_spans: dict[str, SourceSpan] = {}
         self._prompt_segment_spans: dict[str, list[SourceSpan]] = {}
         self._root_schema_version: str | None = None
+        self._foreach_templates: dict[str, ComposedForeach] = {}
+        self._active_foreach: str | None = None
 
     def compose(self, path: Path) -> ComposedWorkflowDocument:
         root_path = path.resolve(strict=False)
@@ -96,6 +100,7 @@ class WorkflowComposer:
             node_source_paths=dict(self._node_sources),
             node_source_spans=dict(self._node_source_spans),
             prompt_segment_spans=dict(self._prompt_segment_spans),
+            foreach_templates=dict(self._foreach_templates),
         )
 
     def _compose_file(
@@ -209,12 +214,64 @@ class WorkflowComposer:
             composed_node, consumed_here = compose_local_node(context, node)
             consumed_param_bindings.update(consumed_here)
             self._append_node(composed_nodes, composed_node)
+            if composed_node.payload.mode == "foreach":
+                consumed_param_bindings.update(
+                    self._compose_foreach(context, composed_node)
+                )
 
         return CompositionResult(
             nodes=composed_nodes,
             worktrees=_compose_worktree_declarations(context),
             consumed_param_bindings=consumed_param_bindings,
         )
+
+    def _compose_foreach(
+        self, context: CompositionContext, group: ComposedNode
+    ) -> set[str]:
+        node = group.payload
+        if self._active_foreach is not None:
+            raise ValueError(
+                f"Foreach '{self._active_foreach}' cannot contain nested foreach '{node.id}'"
+            )
+        if node.workflow is None or node.item_input is None:
+            raise ValueError(f"Incomplete foreach '{node.id}'")
+        spec = ImportSpec(
+            node.id, node.workflow, node.with_params, node.inputs, group.source_path
+        )
+        path = self._resolve_import_file(spec)
+        child = self._load_workflow_file(path)
+        item_id, shared = resolve_foreach_inputs(
+            child, node.item_input, node.inputs, node.id
+        )
+        namespace = f"{node.id}.template"
+        params = bind_import_params(
+            context.inherited_params, namespace, node.with_params
+        )
+        self._active_foreach = node.id
+        try:
+            result = self._compose_file(
+                path, namespace, params, node.inputs, None, context.import_stack
+            )
+        finally:
+            self._active_foreach = None
+        validate_import_params_consumed(spec, namespace, result)
+        nodes = _materialize_implicit_worktree_selectors(
+            result.nodes, len(result.worktrees), len(child.worktrees)
+        )
+        self._foreach_templates[node.id] = ComposedForeach(
+            node.id,
+            namespace,
+            qualify_id(namespace, item_id),
+            nodes,
+            result.worktrees,
+            shared,
+            {
+                key: binding.value
+                for key, binding in params.items()
+                if binding.binding_id in result.consumed_param_bindings
+            },
+        )
+        return result.consumed_param_bindings
 
     def _resolve_import_file(self, import_spec: ImportSpec) -> Path:
         resolved_import_path = resolve_import_path(
@@ -350,7 +407,7 @@ def _needs_materialized_selector(
     composed_worktree_count: int,
     root_worktree_count: int,
 ) -> bool:
-    if node.payload.mode == "input":
+    if node.payload.mode in {"input", "foreach"}:
         return False
     if node.payload.worktree is not None:
         return False

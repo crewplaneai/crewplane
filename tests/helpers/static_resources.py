@@ -1,6 +1,6 @@
 from hashlib import sha256
 
-from crewplane.core.preflight.models import StaticResource
+from crewplane.core.preflight.compiled_records import StaticResource
 
 
 def static_resource(payload: bytes, content_ref: str | None = None) -> StaticResource:

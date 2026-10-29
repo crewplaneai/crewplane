@@ -369,3 +369,8 @@ Negative consequences:
   amends the no-provider validation guarantee: validation and real-run preflight
   may perform adapter-owned diagnostic inference probes. Dry-run and registration
   canonicalization remain probe-free; validation and dry-run remain artifact-free.
+
+## Bounded Iteration Update
+
+[ADR 0020](0020-bounded-workflow-iteration.md) extends this decision to allow
+runtime instances of a child procedure compiled during preflight.

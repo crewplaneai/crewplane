@@ -16,8 +16,8 @@ from crewplane.artifacts.workspace.state.validation import (
     workspace_state_identity_matches,
 )
 from crewplane.core.file_hashing import file_size_and_sha256
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,

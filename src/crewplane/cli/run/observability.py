@@ -57,7 +57,7 @@ class ExecuteWorkflowCallable(Protocol):
         suppress_progress_output: bool = False,
         workflow_identity: str | None = None,
         resumed_node_ids: tuple[str, ...] = (),
-    ) -> None: ...
+    ) -> PreflightExecutionPlan: ...
 
 
 @dataclass
@@ -189,10 +189,10 @@ async def wait_for_stop_request(hub: ObservabilityHubInstance) -> None:
         await asyncio.sleep(UI_STOP_POLL_INTERVAL_SECONDS)
 
 
-async def await_workflow_or_stop_request(
-    workflow_call: Coroutine[object, object, None],
+async def await_workflow_or_stop_request[ResultT](
+    workflow_call: Coroutine[object, object, ResultT],
     hub: ObservabilityHubInstance,
-) -> None:
+) -> ResultT:
     workflow_task = asyncio.create_task(workflow_call)
     stop_task = asyncio.create_task(wait_for_stop_request(hub))
     try:
@@ -207,7 +207,7 @@ async def await_workflow_or_stop_request(
             except asyncio.CancelledError as exc:
                 raise WorkflowCancelledByUser(WORKFLOW_CANCELLED_MESSAGE) from exc
             raise WorkflowCancelledByUser(WORKFLOW_CANCELLED_MESSAGE)
-        await workflow_task
+        return await workflow_task
     except asyncio.CancelledError as cancellation:
         if not workflow_task.done():
             workflow_task.cancel()
@@ -236,8 +236,8 @@ async def call_execute_workflow(
     suppress_progress_output: bool = False,
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
-) -> None:
-    await execute_workflow_impl(
+) -> PreflightExecutionPlan:
+    return await execute_workflow_impl(
         plan,
         output,
         invoker=invoker,
@@ -309,9 +309,9 @@ async def _execute_observed_workflow(
     resumed_node_ids: tuple[str, ...],
     suppress_progress_output: bool,
     terminalization: TerminalizationCoordinatorProtocol,
-) -> BaseException | None:
+) -> PreflightExecutionPlan | BaseException:
     try:
-        await await_workflow_or_stop_request(
+        return await await_workflow_or_stop_request(
             call_execute_workflow(
                 execute_workflow_impl,
                 plan,
@@ -350,16 +350,16 @@ async def _execute_observed_workflow(
             str(exc),
         )
         return exc
-    return None
 
 
 def _run_scheduler_post_hook(
-    on_scheduler_succeeded: Callable[[], None],
+    plan: PreflightExecutionPlan,
+    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], None],
     terminalization: TerminalizationCoordinatorProtocol,
     hub: ObservabilityHubInstance,
 ) -> BaseException | None:
     try:
-        on_scheduler_succeeded()
+        on_scheduler_succeeded(plan)
     except Exception as exc:
         commit_terminalization_with_retry(
             terminalization,
@@ -396,7 +396,7 @@ async def execute_workflow_with_observability(
     persistent_logger: PersistentRunLogger,
     warning_recorder: WorkflowWarningRecorder,
     observability_hub_cls: ObservabilityHubFactory | None,
-    on_scheduler_succeeded: Callable[[], None],
+    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], None],
     terminalization: TerminalizationCoordinatorProtocol,
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
@@ -421,7 +421,7 @@ async def execute_workflow_with_observability(
                 components,
                 has_live_dashboard,
             )
-            terminal_error = await _execute_observed_workflow(
+            completion = await _execute_observed_workflow(
                 execute_workflow_impl=execute_workflow_impl,
                 plan=plan,
                 output=output,
@@ -433,8 +433,11 @@ async def execute_workflow_with_observability(
                 suppress_progress_output=selected_suppress_progress_output,
                 terminalization=terminalization,
             )
-            if terminal_error is None:
+            if isinstance(completion, BaseException):
+                terminal_error = completion
+            else:
                 terminal_error = _run_scheduler_post_hook(
+                    completion,
                     on_scheduler_succeeded,
                     terminalization,
                     hub,

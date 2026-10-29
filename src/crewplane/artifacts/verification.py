@@ -15,6 +15,7 @@ def read_verified_node_artifact(
     results_dir: Path,
     request: NodeArtifactRequest,
     kind: str,
+    max_bytes: int | None = None,
 ) -> VerifiedNodeArtifact:
     """Read a compiled result after verifying its persisted descriptor."""
 
@@ -24,6 +25,10 @@ def read_verified_node_artifact(
     if descriptor is None:
         raise ValueError(
             f"Node '{request.node_id}' {kind} descriptor does not match its plan."
+        )
+    if max_bytes is not None and descriptor.size_bytes > max_bytes:
+        raise ValueError(
+            f"Node '{request.node_id}' {kind} descriptor exceeds byte limit {max_bytes}"
         )
     artifact_path = contained_regular_file(results_dir, descriptor.relative_path)
     if artifact_path is None:

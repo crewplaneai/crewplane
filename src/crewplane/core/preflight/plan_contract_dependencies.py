@@ -7,12 +7,8 @@ from typing import TYPE_CHECKING
 from crewplane.core.workflow.keywords import ALLOWED_NODE_ARTIFACT_NAME_SET
 
 if TYPE_CHECKING:
-    from .models import (
-        DependencyEdge,
-        PreflightExecutionNode,
-        PreflightExecutionPlan,
-        RenderPlan,
-    )
+    from .compiled_records import DependencyEdge, PreflightExecutionNode, RenderPlan
+    from .models import PreflightExecutionPlan
 
 
 def validate_dependency_graph(

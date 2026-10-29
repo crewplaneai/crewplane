@@ -14,7 +14,7 @@ from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup

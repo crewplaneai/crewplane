@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum, unique
 from time import monotonic
 from types import MappingProxyType
-from typing import Literal, Protocol, TypeIs, cast, get_args, override
+from typing import TYPE_CHECKING, Literal, Protocol, TypeIs, cast, get_args, override
 
 from crewplane.architecture.contracts.invocation import (
     OutputExtractionStatus,
@@ -18,6 +18,9 @@ from crewplane.core.workflow.keywords import ProviderRole
 from .json import JsonObject
 from .logging import LogLevel
 
+if TYPE_CHECKING:
+    from .observer import TopologyNode
+
 
 @unique
 class EventType(StrEnum):
@@ -25,6 +28,8 @@ class EventType(StrEnum):
     WORKFLOW_FINISHED = "workflow_finished"
     WORKFLOW_FAILED = "workflow_failed"
     WORKFLOW_CANCELLED = "workflow_cancelled"
+
+    TOPOLOGY_EXPANDED = "topology_expanded"
 
     NODE_STARTED = "node_started"
     NODE_FINISHED = "node_finished"
@@ -125,6 +130,46 @@ class NodeEventPayload(EventPayload):
     @override
     def as_event_fields(self) -> JsonObject:
         return {"error": self.error}
+
+
+@dataclass(frozen=True)
+class TopologyExpansionPayload(EventPayload):
+    group_id: str
+    item_count: int
+    additions: tuple[TopologyNode, ...]
+    group_dependencies: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.group_id or type(self.item_count) is not int or self.item_count < 0:
+            raise ValueError(
+                "Expansion events require group identity and nonnegative item count"
+            )
+        if len({node.id for node in self.additions}) != len(self.additions):
+            raise ValueError("Expansion event contains duplicate nodes")
+
+    @override
+    def as_event_fields(self) -> JsonObject:
+        return {
+            "group_id": self.group_id,
+            "item_count": self.item_count,
+            "group_dependencies": list(self.group_dependencies),
+            "additions": [
+                {
+                    "id": node.id,
+                    "mode": node.mode,
+                    "dependencies": list(node.dependencies),
+                    "providers": [
+                        {
+                            "provider": provider.provider,
+                            "model": provider.model,
+                            "role": provider.role,
+                        }
+                        for provider in node.providers
+                    ],
+                }
+                for node in self.additions
+            ],
+        }
 
 
 @dataclass(frozen=True)
@@ -392,6 +437,8 @@ def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
             expected_payload = InvocationEventPayload
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             expected_payload = WorkspaceEventPayload
+        case EventType.TOPOLOGY_EXPANDED:
+            expected_payload = TopologyExpansionPayload
         case EventType.RUNTIME_LOG:
             expected_payload = RuntimeLogEventPayload
         case _:

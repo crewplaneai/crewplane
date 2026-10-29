@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from crewplane.core.preflight.models import WorkspaceFileLocator
+from crewplane.core.preflight.compiled_records import WorkspaceFileLocator
 from crewplane.runtime.workspace.worktree import WorktreeSourceRef
 
 

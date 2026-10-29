@@ -25,12 +25,12 @@ from ...compile_state import (
     source_root,
     token_source_span,
 )
-from ...diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
-from ...models import (
+from ...compiled_records import (
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
     WorkspaceFileTarget,
 )
+from ...diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from ...references import TemplateReference
 from ...signatures import signature_for_payload
 from .paths import (

@@ -20,7 +20,7 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     render_plans,
 )
-from crewplane.core.preflight.models import WorkspaceFileTarget
+from crewplane.core.preflight.compiled_records import WorkspaceFileTarget
 from crewplane.core.preflight.references import (
     TemplateReference,
     iter_template_references,

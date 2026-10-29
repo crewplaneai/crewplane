@@ -7,7 +7,7 @@ from crewplane.architecture.contracts import LogLevel, RuntimeLogValue
 from crewplane.artifacts.failure_artifacts import (
     is_synthetic_invocation_failure,
 )
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ExecutionTelemetry, RuntimeEventContext, emit_runtime_log

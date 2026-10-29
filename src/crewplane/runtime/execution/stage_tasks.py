@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
     ProviderRecord,
 )

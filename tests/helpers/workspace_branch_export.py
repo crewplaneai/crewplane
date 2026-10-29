@@ -17,8 +17,8 @@ from crewplane.core.execution_state import (
     NodeState,
     RunManifest,
 )
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceBranchExportRecord,
 )

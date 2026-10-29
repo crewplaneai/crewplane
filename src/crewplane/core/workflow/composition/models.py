@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from crewplane.core.workspace.policy import WorktreeDeclaration
@@ -22,6 +22,18 @@ class ComposedWorkflowDocument:
     node_source_paths: dict[str, Path]
     node_source_spans: dict[str, SourceSpan]
     prompt_segment_spans: dict[str, list[SourceSpan]]
+    foreach_templates: dict[str, ComposedForeach] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ComposedForeach:
+    group_id: str
+    namespace: str
+    item_node_id: str
+    nodes: list[ComposedNode]
+    worktrees: dict[str, WorktreeDeclaration]
+    shared_bindings: dict[str, str]
+    parameters: dict[str, str]
 
 
 @dataclass(frozen=True)

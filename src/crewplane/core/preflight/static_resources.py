@@ -24,12 +24,12 @@ from .compile_state import (
     ResolvedStaticFileReference,
     extend_diagnostics,
 )
+from .compiled_records import StaticResource
 from .diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
-from .models import StaticResource
 from .signatures import signature_for_payload
 
 

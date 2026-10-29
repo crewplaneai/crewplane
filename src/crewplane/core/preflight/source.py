@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from crewplane.core.workflow.composition.models import (
+    ComposedForeach,
     WorkflowSourceRecord,
 )
 from crewplane.core.workflow.loading import load_tasks_with_sources
@@ -27,6 +28,7 @@ class PreflightWorkflowSource:
     node_source_spans: dict[str, SourceSpan]
     prompt_segment_spans: dict[str, list[SourceSpan]]
     root_workflow_path: Path | None = None
+    foreach_templates: dict[str, ComposedForeach] = field(default_factory=dict)
 
     @classmethod
     def from_workflow(
@@ -77,4 +79,5 @@ def load_workflow_source_for_preflight(
         node_source_spans=loaded.node_source_spans,
         prompt_segment_spans=loaded.prompt_segment_spans,
         root_workflow_path=tasks_file.resolve(strict=False),
+        foreach_templates=loaded.foreach_templates,
     )

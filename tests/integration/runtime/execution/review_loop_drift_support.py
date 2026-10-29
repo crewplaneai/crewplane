@@ -6,15 +6,15 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole

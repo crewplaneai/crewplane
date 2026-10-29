@@ -160,6 +160,23 @@ Packaged composition templates:
 - [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
 - [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
 
+## Repeat a child for bounded data
+
+Use `foreach` when the procedure is fixed and the number of items comes from a
+literal collection or an upstream artifact. Declare ordinary inputs in the
+child, bind one as `item_input`, and bind shared context with `inputs`. Static
+imports inside that child continue to compose before execution.
+
+A downstream node depends on the group ID and reads its ordered result index.
+It can follow result descriptors to individual terminal outputs. A second
+foreach group can consume that index as its collection. The parent remains the
+run boundary, including when the child declares repetition metadata.
+
+Start with the [folder and chunk examples](../examples/composition.md#iterate-over-folders).
+The [syntax reference](../reference/workflow-syntax.md#foreach-nodes) defines the
+limits and binding rules; the [artifact reference](../reference/artifacts.md#foreach-expansions)
+explains checkpoint recovery and force reruns.
+
 ## Next
 
 Optionally continue to [Workspace Isolation](workspace-isolation.md)

@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     Fragment,
     RenderPlan,
     RenderStream,
     WorkspaceFileLocator,
-    WorkspaceSourceSnapshot,
 )
+from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole

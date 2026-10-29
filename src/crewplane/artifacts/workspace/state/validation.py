@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
     requires_controlled_child_environment,

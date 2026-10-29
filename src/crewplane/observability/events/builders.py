@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import NotRequired, TypedDict
 
 from crewplane.architecture.contracts import OutputExtractionStatus
+from crewplane.architecture.contracts.execution_event import TopologyExpansionPayload
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
     ExecutionEventContext,
@@ -226,3 +227,19 @@ def _build_event(
     if timestamp_utc is not None:
         kwargs["timestamp_utc"] = timestamp_utc
     return ExecutionEvent(**kwargs)
+
+
+def topology_expansion_event(
+    workflow_name: str,
+    run_id: str,
+    payload: TopologyExpansionPayload,
+) -> ExecutionEvent:
+    return _build_event(
+        EventType.TOPOLOGY_EXPANDED,
+        workflow_name,
+        run_id,
+        ExecutionEventContext(workflow_name, run_id, node_id=payload.group_id),
+        payload,
+        None,
+        None,
+    )

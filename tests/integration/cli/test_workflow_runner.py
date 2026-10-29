@@ -31,6 +31,7 @@ from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight import (
     signature_for_payload,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -479,10 +480,11 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=False,  # noqa: ARG001 - Required by callback signature.
                 workflow_identity=None,  # noqa: ARG001 - Required by callback signature.
                 resumed_node_ids=(),  # noqa: ARG001 - Required by callback signature.
-            ) -> None:
+            ) -> PreflightExecutionPlan:
                 captured_command.extend(
                     plan.runtime_config_snapshot["agents"]["alpha"]["cli_cmd"]
                 )
+                return plan
 
             await run_workflow(
                 workflow,

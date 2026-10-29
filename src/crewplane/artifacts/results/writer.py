@@ -42,6 +42,12 @@ class ResultWriter:
             else None
         )
 
+    def publish_raw_output(
+        self, node_id: str, result_file: Path, payload: bytes
+    ) -> StageFinalizeResult:
+        atomic_write_bytes(result_file, payload)
+        return StageFinalizeResult(node_id, result_file, None, (), (), ())
+
     def finalize_stage(
         self,
         stage_name: str,

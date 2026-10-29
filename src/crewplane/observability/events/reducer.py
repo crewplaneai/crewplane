@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from crewplane.architecture.contracts import (
     ExecutionStatus,
     LogLevel,
     validate_log_presentation_format,
 )
+from crewplane.architecture.contracts.execution_event import TopologyExpansionPayload
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.dashboard_state import (
     InvocationRuntimeState,
@@ -36,6 +39,9 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             f"expected '{state.run_id}', got '{event.run_id}'."
         )
 
+    if isinstance(event.payload, TopologyExpansionPayload):
+        apply_topology_expansion(state, event.payload)
+        return
     match event.event_type:
         case EventType.WORKFLOW_STARTED:
             state.workflow_status = ExecutionStatus.RUNNING
@@ -248,3 +254,29 @@ def _node_payload(event: ExecutionEvent) -> NodeEventPayload:
     if not isinstance(payload, NodeEventPayload):
         raise ValueError("Node event must carry NodeEventPayload.")
     return payload
+
+
+def apply_topology_expansion(
+    state: RunDashboardState, payload: TopologyExpansionPayload
+) -> None:
+    group = state.topology_nodes.get(payload.group_id)
+    if group is None:
+        raise ValueError(f"Unknown expansion group '{payload.group_id}'")
+    additions = {node.id: node for node in payload.additions}
+    ordered = {}
+    for node_id, node in state.topology_nodes.items():
+        if node_id == payload.group_id:
+            ordered.update(additions)
+            node = replace(node, dependencies=payload.group_dependencies)
+        ordered[node_id] = node
+    state.topology_nodes = ordered
+    state.node_order = {node_id: index for index, node_id in enumerate(ordered)}
+    for node in payload.additions:
+        state.nodes.setdefault(
+            node.id,
+            NodeRuntimeState(
+                node.id,
+                node.mode,
+                tuple(provider.provider for provider in node.providers),
+            ),
+        )

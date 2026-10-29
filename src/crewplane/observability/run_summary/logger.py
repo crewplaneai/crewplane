@@ -186,6 +186,7 @@ class PersistentRunLogger:
             if self._lifecycle != PersistentLoggerLifecycle.RUNNING:
                 return
             self._latest_snapshot = cast(DashboardSnapshot, snapshot)
+            self._node_ids = tuple(self._latest_snapshot.state.node_order)
             if event is None:
                 return
             event_log_path = ensure_single_link_regular_file(self._event_log_path)

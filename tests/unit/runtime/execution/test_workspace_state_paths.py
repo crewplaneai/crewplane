@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.artifacts.manager import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
     ProviderRecord,
+)
+from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,

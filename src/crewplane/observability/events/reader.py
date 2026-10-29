@@ -6,8 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeGuard, get_args
 
+from pydantic import TypeAdapter, ValidationError
+
 from crewplane.architecture.contracts import OutputExtractionStatus
-from crewplane.architecture.contracts.execution_event import context_from_record
+from crewplane.architecture.contracts.execution_event import (
+    TopologyExpansionPayload,
+    context_from_record,
+)
+from crewplane.architecture.contracts.observer import TopologyNode
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.value_checks import optional_strict_int
 from crewplane.observability.events.execution_event import (
@@ -105,6 +111,28 @@ def _payload_from_record(
             return _invocation_payload_from_record(record)
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             return _workspace_payload_from_record(record)
+        case EventType.TOPOLOGY_EXPANDED:
+            try:
+                return TopologyExpansionPayload(
+                    group_id=TypeAdapter(str).validate_python(
+                        record.get("group_id"), strict=True
+                    ),
+                    item_count=TypeAdapter(int).validate_python(
+                        record.get("item_count"), strict=True
+                    ),
+                    additions=tuple(
+                        TypeAdapter(list[TopologyNode]).validate_python(
+                            record.get("additions")
+                        )
+                    ),
+                    group_dependencies=tuple(
+                        TypeAdapter(list[str]).validate_python(
+                            record.get("group_dependencies"), strict=True
+                        )
+                    ),
+                )
+            except (ValidationError, ValueError, TypeError):
+                return None
         case EventType.RUNTIME_LOG:
             return _runtime_log_payload_from_record(record)
     return None

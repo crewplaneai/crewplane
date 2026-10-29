@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.artifacts.manager import OutputManager
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    ArtifactContract,
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,

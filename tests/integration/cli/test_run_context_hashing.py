@@ -72,6 +72,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                 calls["count"] += 1
                 if calls["count"] == 1:
                     raise RuntimeError("simulated failure")
+                return plan
 
             with cli_process_state(stream) as process_state:
                 process_state.setattr(cli, "execute_workflow", flaky_execute_workflow)
@@ -127,6 +128,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                     output,
                     kwargs["workflow_identity"],
                 )
+                return plan
 
             with cli_process_state(stream) as process_state:
                 process_state.setattr(cli, "execute_workflow", fake_execute_workflow)

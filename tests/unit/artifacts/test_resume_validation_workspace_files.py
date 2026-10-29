@@ -15,7 +15,8 @@ from crewplane.artifacts.run_history import find_same_context_runs
 from crewplane.artifacts.workspace.rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
-from crewplane.core.preflight.models import PreflightExecutionPlan, WorkspaceFileLocator
+from crewplane.core.preflight.compiled_records import WorkspaceFileLocator
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.execution.workflow.cleanup import (
     cleanup_successful_workspace_run_refs,
 )

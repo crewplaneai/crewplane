@@ -17,6 +17,7 @@ from .compile_state import (
     source_file,
     source_root,
 )
+from .compiled_records import Fragment, RenderPlan, RenderStream, WorkspaceFileTarget
 from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .fragment_handlers import (
     file_reference_fragment,
@@ -27,7 +28,6 @@ from .fragment_handlers import (
     try_resolve_terminal_file_reference,
 )
 from .input_sources import append_input_source_token_catalog, resolve_input_source
-from .models import Fragment, RenderPlan, RenderStream, WorkspaceFileTarget
 from .plan_signatures import template_hash
 from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
@@ -44,7 +44,7 @@ def apply_file_policy(
     state: CompileState,
 ) -> None:
     for node in workflow.nodes:
-        if node.mode == "input":
+        if node.mode == "input" and node.id not in options.item_input_ids:
             resolve_input_source(workflow, node, options, state)
     for occurrence in iter_render_token_occurrences(workflow):
         if occurrence.reference.kind != "file":
@@ -235,7 +235,11 @@ def compile_render_plan(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> RenderPlan | None:
+    if node.mode == "foreach":
+        return None
     if node.mode == "input":
+        if node.id in options.item_input_ids:
+            return None
         append_input_source_token_catalog(node, options, state)
         return None
     compiled_template_hash = template_hash(node)

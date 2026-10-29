@@ -53,6 +53,17 @@ def validate_current_execution_plan_shape(
 def validate_execution_plan_semantics(plan: PreflightExecutionPlan) -> None:
     """Reject persisted plans whose cross-record relationships are impossible."""
 
+    from .foreach.reconstruction import (
+        validate_expansion_provenance,
+        validate_frozen_templates,
+    )
+
+    validate_expansion_provenance(plan)
+    validate_frozen_templates(plan)
+    validate_execution_graph_semantics(plan)
+
+
+def validate_execution_graph_semantics(plan: PreflightExecutionPlan) -> None:
     nodes_by_id = plan_contract_records.unique_records(plan.nodes, "id", "node")
     plan_contract_records.validate_execution_order(plan.execution_order, nodes_by_id)
     render_plans_by_id = plan_contract_records.unique_records(
