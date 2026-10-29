@@ -1,16 +1,14 @@
+"""Traverse Markdown imports and foreach templates while collecting source metadata."""
+
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
-from crewplane.core.workspace.policy import (
-    PROJECT_ROOT_WORKTREE_SELECTOR,
-    WorktreeDeclaration,
-    worktree_declarations_payload,
-)
+from crewplane.core.workspace.policy import WorktreeDeclaration
 
 from ..markdown import parse_workflow_markdown_document
-from ..models import WorkflowPayload, workflow_node_payload_dict
+from ..models import WorkflowNode
 from ..source_locations import SourceSpan
 from .foreach import resolve_foreach_inputs
 from .imports import (
@@ -18,6 +16,10 @@ from .imports import (
     bind_import_params,
     resolve_import_path,
     validate_import_params_consumed,
+)
+from .materialization import (
+    materialize_foreach_template,
+    materialize_workflow_payload,
 )
 from .models import (
     ComposedForeach,
@@ -38,6 +40,15 @@ from .rewrites import qualify_id, resolve_dependency_id
 
 
 class WorkflowComposer:
+    """Compose one workflow graph within a resolved project root.
+
+    Use a fresh instance for each independent composition. Parsed files, hashes,
+    discovery order, schema, node collisions, and templates persist across calls,
+    including failed calls; failures do not roll back collected state. Traversal
+    is synchronous, and instances are not safe for concurrent or reentrant use.
+    Files are read without newline translation and are never written.
+    """
+
     def __init__(self, project_root: Path) -> None:
         self._project_root = project_root.resolve()
         self._parsed_cache: dict[Path, ParsedWorkflow] = {}
@@ -51,6 +62,19 @@ class WorkflowComposer:
         self._active_foreach: str | None = None
 
     def compose(self, path: Path) -> ComposedWorkflowDocument:
+        """Return a composed payload and collected source metadata.
+
+        Resolve the root against the working directory; imported and foreach
+        files must stay within the project root. Visit imports depth first in
+        declaration order before local nodes, and record sources on first read.
+        Root metadata and repetition settings govern the returned payload.
+
+        Workflow validation errors raise ValueError. Malformed YAML can propagate
+        yaml.YAMLError subclasses, including ParserError and ScannerError.
+        Filesystem errors also propagate. State collected before failure remains,
+        but the active foreach guard is cleared when child traversal exits.
+        Returned metadata mappings are shallow copies.
+        """
         root_path = path.resolve(strict=False)
         self._assert_file_exists(root_path, "Workflow file")
 
@@ -65,29 +89,12 @@ class WorkflowComposer:
             inherited_implicit_worktree_selector=None,
             import_stack=(),
         )
-        composed_nodes = _materialize_implicit_worktree_selectors(
-            composition.nodes,
-            composed_worktree_count=len(composition.worktrees),
-            root_worktree_count=len(root_workflow.worktrees),
-        )
+        return self._build_document(root_workflow, composition)
 
-        workflow_payload: WorkflowPayload = {
-            "schema_version": root_workflow.schema_version,
-            "name": root_workflow.name,
-            "description": root_workflow.description,
-            "inputs": dict(root_workflow.inputs),
-            "nodes": [
-                workflow_node_payload_dict(node.payload) for node in composed_nodes
-            ],
-        }
-        if root_workflow.repeat_force_run_count is not None:
-            workflow_payload["repeat_force_run_count"] = (
-                root_workflow.repeat_force_run_count
-            )
-        if composition.worktrees:
-            workflow_payload["worktrees"] = worktree_declarations_payload(
-                composition.worktrees
-            )
+    def _build_document(
+        self, root_workflow: ParsedWorkflow, composition: CompositionResult
+    ) -> ComposedWorkflowDocument:
+        workflow_payload = materialize_workflow_payload(root_workflow, composition)
         source_records = [
             WorkflowSourceRecord(
                 path=source_path, sha256=self._source_hashes[source_path]
@@ -116,9 +123,37 @@ class WorkflowComposer:
             chain = " -> ".join(str(segment) for segment in (*import_stack, path))
             raise ValueError(f"Workflow import cycle detected: {chain}")
 
+        context = self._build_context(
+            path,
+            namespace_prefix,
+            inherited_params,
+            bound_inputs,
+            inherited_implicit_worktree_selector,
+            import_stack,
+        )
+        import_result = self._compose_imports(context)
+        local_result = self.compose_local_nodes(context)
+        return CompositionResult(
+            nodes=[*import_result.nodes, *local_result.nodes],
+            worktrees=_merge_worktrees(import_result.worktrees, local_result.worktrees),
+            consumed_param_bindings=(
+                import_result.consumed_param_bindings
+                | local_result.consumed_param_bindings
+            ),
+        )
+
+    def _build_context(
+        self,
+        path: Path,
+        namespace_prefix: str,
+        inherited_params: dict[str, ParamBinding],
+        bound_inputs: dict[str, str],
+        inherited_implicit_worktree_selector: str | None,
+        import_stack: tuple[Path, ...],
+    ) -> CompositionContext:
         workflow = self._load_workflow_file(path)
         self._set_or_validate_root_schema(path, workflow.schema_version)
-        context = CompositionContext(
+        return CompositionContext(
             workflow=workflow,
             namespace_prefix=namespace_prefix,
             inherited_params=inherited_params,
@@ -132,17 +167,6 @@ class WorkflowComposer:
                 namespace_prefix,
                 workflow.worktrees,
                 inherited_implicit_worktree_selector,
-            ),
-        )
-
-        import_result = self._compose_imports(context)
-        local_result = self.compose_local_nodes(context)
-        return CompositionResult(
-            nodes=[*import_result.nodes, *local_result.nodes],
-            worktrees=_merge_worktrees(import_result.worktrees, local_result.worktrees),
-            consumed_param_bindings=(
-                import_result.consumed_param_bindings
-                | local_result.consumed_param_bindings
             ),
         )
 
@@ -173,14 +197,7 @@ class WorkflowComposer:
     ) -> CompositionResult:
         resolved_import_path = self._resolve_import_file(import_spec)
         child_namespace = qualify_id(context.namespace_prefix, import_spec.alias)
-        prerequisites = tuple(
-            resolve_dependency_id(
-                dependency,
-                namespace_prefix=context.namespace_prefix,
-                bound_input_nodes=context.bound_input_nodes,
-            )
-            for dependency in import_spec.needs
-        )
+        prerequisites = _resolve_import_prerequisites(context, import_spec)
         child_result = self._compose_file(
             path=resolved_import_path,
             namespace_prefix=child_namespace,
@@ -189,14 +206,7 @@ class WorkflowComposer:
                 child_namespace,
                 import_spec.with_params,
             ),
-            bound_inputs={
-                key: resolve_dependency_id(
-                    source_id,
-                    namespace_prefix=context.namespace_prefix,
-                    bound_input_nodes=context.bound_input_nodes,
-                )
-                for key, source_id in import_spec.inputs.items()
-            },
+            bound_inputs=_resolve_import_inputs(context, import_spec),
             inherited_implicit_worktree_selector=context.implicit_worktree_selector,
             import_stack=context.import_stack,
         )
@@ -204,6 +214,15 @@ class WorkflowComposer:
         return attach_import_prerequisites(child_result, prerequisites, import_spec)
 
     def compose_local_nodes(self, context: CompositionContext) -> CompositionResult:
+        """Compose this context's unbound nodes in declaration order.
+
+        The caller handles this context's imports and schema validation. Register
+        node IDs and copied source spans on this composer, and compile foreach
+        children immediately after their group. Bound input fallbacks are omitted.
+        Return local worktrees and consumed parameter binding IDs; foreach template
+        nodes remain separate from the returned nodes. Validation errors propagate
+        without rolling back registrations or completed templates.
+        """
         composed_nodes: list[ComposedNode] = []
         consumed_param_bindings: set[str] = set()
 
@@ -229,10 +248,7 @@ class WorkflowComposer:
         self, context: CompositionContext, group: ComposedNode
     ) -> set[str]:
         node = group.payload
-        if self._active_foreach is not None:
-            raise ValueError(
-                f"Foreach '{self._active_foreach}' cannot contain nested foreach '{node.id}'"
-            )
+        self._assert_no_active_foreach(node.id)
         if node.workflow is None or node.item_input is None:
             raise ValueError(f"Incomplete foreach '{node.id}'")
         spec = ImportSpec(
@@ -247,31 +263,38 @@ class WorkflowComposer:
         params = bind_import_params(
             context.inherited_params, namespace, node.with_params
         )
+        result = self._traverse_foreach_template(context, node, path, params)
+        validate_import_params_consumed(spec, namespace, result)
+        self._foreach_templates[node.id] = materialize_foreach_template(
+            node.id, item_id, child, params, shared, result
+        )
+        return result.consumed_param_bindings
+
+    def _assert_no_active_foreach(self, group_id: str) -> None:
+        if self._active_foreach is not None:
+            raise ValueError(
+                f"Foreach '{self._active_foreach}' cannot contain nested foreach '{group_id}'"
+            )
+
+    def _traverse_foreach_template(
+        self,
+        context: CompositionContext,
+        node: WorkflowNode,
+        path: Path,
+        params: dict[str, ParamBinding],
+    ) -> CompositionResult:
         self._active_foreach = node.id
         try:
-            result = self._compose_file(
-                path, namespace, params, node.inputs, None, context.import_stack
+            return self._compose_file(
+                path,
+                f"{node.id}.template",
+                params,
+                node.inputs,
+                None,
+                context.import_stack,
             )
         finally:
             self._active_foreach = None
-        validate_import_params_consumed(spec, namespace, result)
-        nodes = _materialize_implicit_worktree_selectors(
-            result.nodes, len(result.worktrees), len(child.worktrees)
-        )
-        self._foreach_templates[node.id] = ComposedForeach(
-            node.id,
-            namespace,
-            qualify_id(namespace, item_id),
-            nodes,
-            result.worktrees,
-            shared,
-            {
-                key: binding.value
-                for key, binding in params.items()
-                if binding.binding_id in result.consumed_param_bindings
-            },
-        )
-        return result.consumed_param_bindings
 
     def _resolve_import_file(self, import_spec: ImportSpec) -> Path:
         resolved_import_path = resolve_import_path(
@@ -383,57 +406,6 @@ def _context_implicit_worktree_selector(
     return None
 
 
-def _materialize_implicit_worktree_selectors(
-    nodes: list[ComposedNode],
-    composed_worktree_count: int,
-    root_worktree_count: int,
-) -> list[ComposedNode]:
-    if composed_worktree_count == 0:
-        return nodes
-    return [
-        _materialize_worktree_selector(node)
-        if _needs_materialized_selector(
-            node,
-            composed_worktree_count,
-            root_worktree_count,
-        )
-        else node
-        for node in nodes
-    ]
-
-
-def _needs_materialized_selector(
-    node: ComposedNode,
-    composed_worktree_count: int,
-    root_worktree_count: int,
-) -> bool:
-    if node.payload.mode in {"input", "foreach"}:
-        return False
-    if node.payload.worktree is not None:
-        return False
-    if node.local_worktree_count == 0:
-        if node.implicit_worktree_selector is not None:
-            return composed_worktree_count > 1
-        return root_worktree_count != 1 or composed_worktree_count > 1
-    return node.implicit_worktree_selector is not None and composed_worktree_count > 1
-
-
-def _materialize_worktree_selector(node: ComposedNode) -> ComposedNode:
-    return ComposedNode(
-        payload=node.payload.model_copy(
-            update={
-                "worktree": node.implicit_worktree_selector
-                or PROJECT_ROOT_WORKTREE_SELECTOR
-            }
-        ),
-        source_path=node.source_path,
-        source_span=node.source_span,
-        prompt_segment_spans=node.prompt_segment_spans,
-        local_worktree_count=node.local_worktree_count,
-        implicit_worktree_selector=node.implicit_worktree_selector,
-    )
-
-
 def _merge_worktrees(
     first: dict[str, WorktreeDeclaration],
     second: dict[str, WorktreeDeclaration],
@@ -443,3 +415,25 @@ def _merge_worktrees(
         joined = ", ".join(collisions)
         raise ValueError(f"Worktree declaration collision after composition: {joined}")
     return {**first, **second}
+
+
+def _resolve_import_prerequisites(
+    context: CompositionContext, import_spec: ImportSpec
+) -> tuple[str, ...]:
+    return tuple(
+        resolve_dependency_id(
+            dependency, context.namespace_prefix, context.bound_input_nodes
+        )
+        for dependency in import_spec.needs
+    )
+
+
+def _resolve_import_inputs(
+    context: CompositionContext, import_spec: ImportSpec
+) -> dict[str, str]:
+    return {
+        key: resolve_dependency_id(
+            source_id, context.namespace_prefix, context.bound_input_nodes
+        )
+        for key, source_id in import_spec.inputs.items()
+    }

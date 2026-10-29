@@ -1,4 +1,8 @@
+"""Validate foreach node declarations before workflow model coercion."""
+
 from __future__ import annotations
+
+from typing import cast
 
 from crewplane.core.workflow.collections import (
     collection_reference,
@@ -26,16 +30,51 @@ FOREACH_ONLY_FIELDS = FOREACH_FIELDS - {"id", "mode", "needs"}
 def validate_foreach_declaration(
     value: object, internal_parameters: bool = False
 ) -> object:
+    """Validate a node declaration and normalize foreach bindings.
+
+    Args:
+        value: Raw node input. Non-dicts and non-foreach dicts without
+            foreach-only fields pass through unchanged.
+        internal_parameters: Allow the internal ``with_params`` spelling in
+            addition to ``with``. Other field restrictions still apply.
+
+    Returns:
+        A shallow copy for foreach declarations, with ``item_input`` and binding
+        keys stripped. Binding maps are copied and ``inputs`` node IDs are
+        stripped; parameter values and other fields are unchanged, retaining
+        references to items and dependencies. The input is never modified.
+
+    Raises:
+        ValueError: If a non-foreach node has foreach-only fields, or a foreach
+            declaration has forbidden fields, invalid required strings, a
+            non-fixed .md workflow path, a max_items that is not a strict
+            positive integer, invalid collection data or reference, or invalid
+            bindings. Checks run in field-policy, scalar, collection, then binding order;
+            bindings are checked in ``inputs``, ``with``, ``with_params`` order.
+    """
     if not isinstance(value, dict):
         return value
     if value.get("mode") != "foreach":
-        unexpected = FOREACH_ONLY_FIELDS.intersection(value)
-        if unexpected:
-            raise ValueError(
-                f"Fields only valid for foreach: {', '.join(sorted(unexpected))}"
-            )
+        _reject_foreach_only_fields(value)
         return value
     group = str(value.get("id", "<unknown>"))
+    _validate_foreach_fields(value, group, internal_parameters)
+    limit = _validate_foreach_scalars(value, group)
+    _validate_foreach_items(value.get("items"), limit, group)
+    return _normalize_foreach_declaration(value, group)
+
+
+def _reject_foreach_only_fields(value: dict[str, object]) -> None:
+    unexpected = FOREACH_ONLY_FIELDS.intersection(value)
+    if unexpected:
+        raise ValueError(
+            f"Fields only valid for foreach: {', '.join(sorted(unexpected))}"
+        )
+
+
+def _validate_foreach_fields(
+    value: dict[str, object], group: str, internal_parameters: bool
+) -> None:
     forbidden = value.keys() - FOREACH_FIELDS
     if not internal_parameters and "with_params" in value:
         forbidden.add("with_params")
@@ -43,24 +82,36 @@ def validate_foreach_declaration(
         raise ValueError(
             f"Foreach '{group}' cannot declare: {', '.join(sorted(forbidden))}"
         )
+
+
+def _validate_foreach_scalars(value: dict[str, object], group: str) -> int:
     for field in ("workflow", "item_input"):
         text = value.get(field)
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Foreach '{group}' requires a non-empty {field}")
-    if "{{" in value["workflow"] or not value["workflow"].endswith(".md"):
+    workflow = cast(str, value["workflow"])
+    if "{{" in workflow or not workflow.endswith(".md"):
         raise ValueError(f"Foreach '{group}' workflow must be a fixed .md path")
     limit = value.get("max_items")
     if type(limit) is not int or limit <= 0:
         raise ValueError(
             f"Foreach '{group}' max_items must be a strict positive integer"
         )
-    items = value.get("items")
+    return limit
+
+
+def _validate_foreach_items(items: object, limit: int, group: str) -> None:
     if isinstance(items, str):
         collection_reference(items)
     else:
         validate_collection(items, limit, group)
+
+
+def _normalize_foreach_declaration(
+    value: dict[str, object], group: str
+) -> dict[str, object]:
     result = dict(value)
-    result["item_input"] = value["item_input"].strip()
+    result["item_input"] = cast(str, value["item_input"]).strip()
     for field in ("inputs", "with", "with_params"):
         if field in result:
             result[field] = _bindings(result[field], group, field)

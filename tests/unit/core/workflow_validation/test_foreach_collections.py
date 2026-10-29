@@ -77,3 +77,83 @@ def test_depth_and_cycles() -> None:
     cycle.append(cycle)
     with pytest.raises(ValueError, match="cycle"):
         validate_collection([{"x": cycle}], 1, "chunks")
+
+
+def test_validation_preserves_identity_and_shared_containers() -> None:
+    shared = {"values": [1, True, None, "text"]}
+    item = {"second": shared, "first": shared}
+    items = [item, item]
+
+    assert validate_collection(items, 2, "chunks") is items
+    assert items[0] is items[1] is item
+    assert item["second"] is item["first"] is shared
+    assert list(item) == ["second", "first"]
+    assert shared == {"values": [1, True, None, "text"]}
+
+
+@pytest.mark.parametrize(
+    "value,message",
+    [
+        (
+            [{"second": [{"bad": math.inf}], "first": b"bad"}],
+            "Foreach 'chunks' planner.findings[0].second[0].bad: numbers must be finite",
+        ),
+        (
+            [{"nested": {1: b"bad"}}],
+            "Foreach 'chunks' planner.findings[0].nested: object keys must be strings",
+        ),
+        (
+            [{"nested": {"\ud800": b"bad"}}],
+            "Foreach 'chunks' planner.findings[0].nested: invalid UTF-8 string",
+        ),
+        (
+            [{"nested": [{"key": b"bad"}, math.nan]}],
+            "Foreach 'chunks' planner.findings[0].nested[0].key: unsupported JSON value bytes",
+        ),
+        (
+            [{"bad": math.inf}, 0],
+            "Foreach 'chunks' planner.findings[1]: expected an object",
+        ),
+    ],
+)
+def test_validation_preserves_first_error_and_label(
+    value: object, message: str
+) -> None:
+    with pytest.raises(ValueError) as error:
+        validate_collection(value, 2, "chunks", "planner.findings")
+
+    assert str(error.value) == message
+
+
+@pytest.mark.parametrize("container_kind", ["dict", "list"])
+def test_nested_cycles_report_the_repeated_container(container_kind: str) -> None:
+    container: dict[str, object] | list[object]
+    if container_kind == "dict":
+        container = {}
+        container["self"] = container
+        path = ".self"
+    else:
+        container = []
+        container.append(container)
+        path = "[0]"
+
+    with pytest.raises(ValueError) as error:
+        validate_collection([{"nested": container}], 1, "chunks")
+
+    assert str(error.value) == (
+        f"Foreach 'chunks' items[0].nested{path}: collection contains a cycle"
+    )
+
+
+@pytest.mark.parametrize("value", [[math.nan], {1: 0}])
+def test_failed_validation_leaves_shared_collection_reusable(value: object) -> None:
+    item = {"nested": value}
+    items = [item, item]
+
+    with pytest.raises(ValueError):
+        validate_collection(items, 2, "chunks")
+
+    assert items[0] is items[1] is item
+    assert item["nested"] is value
+    item["nested"] = {"valid": [1]}
+    assert validate_collection(items, 2, "chunks") is items

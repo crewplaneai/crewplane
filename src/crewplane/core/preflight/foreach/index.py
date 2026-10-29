@@ -6,18 +6,14 @@ from crewplane.architecture.contracts import JsonObject, JsonValue
 from crewplane.core.workflow.collections import collection_bytes
 
 from ..models import CompiledForeach, PreflightExecutionPlan
-from .expansion import generated_id
+from .expansion import generated_id, terminal_node_ids
 
 MAX_INDEX_SIZE = (1 << 64) - 1
 
 
 def terminal_nodes(template: CompiledForeach) -> list[str]:
-    nonterminals = {edge.source_node for edge in template.dependency_graph}
-    if len(template.nodes) > 1:
-        nonterminals.add(template.item_node_id)
-    return [
-        node_id for node_id in template.execution_order if node_id not in nonterminals
-    ]
+    terminals = terminal_node_ids(template)
+    return [node_id for node_id in template.execution_order if node_id in terminals]
 
 
 def projected_index(
