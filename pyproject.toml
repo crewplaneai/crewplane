@@ -138,7 +138,8 @@ local_workers = 0
 local_parallel_python = []
 
 [tool.crewplane.validation.platforms.win32]
-test_seconds = 2100
+# The serial Python 3.14 suite exceeded 35 minutes on hosted Windows.
+test_seconds = 2700
 job_overhead_seconds = 600
 local_workers = 0
 local_parallel_python = []
