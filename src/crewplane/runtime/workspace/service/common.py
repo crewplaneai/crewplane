@@ -15,17 +15,19 @@ from crewplane.core.workspace.cache import workspace_invocation_path
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.filesystem import (
     remove_workspace_path,
+    runtime_workspace_cache_root,
     workspace_run_hierarchy,
 )
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.state import (
+    WorkspaceStateMaterializationRequest,
     WorkspaceStateRetention,
     WorkspaceStateUpdateRequest,
     WorkspaceStateWriteRequest,
     update_workspace_state,
 )
 
-from .types import WorkspaceInvocationRequest
+from .types import WorkspaceInvocationRequest, WorktreePreparationPlan
 
 
 def workspace_state_request(
@@ -49,6 +51,22 @@ def workspace_state_request(
         audit_round_num=request.audit_round_num,
         invoker=invoker,
         rendered_workspace_files=request.rendered_workspace_files,
+    )
+
+
+def worktree_state_materialization_request(
+    request: WorkspaceInvocationRequest,
+    plan: WorktreePreparationPlan,
+    workspace_path: Path,
+) -> WorkspaceStateMaterializationRequest:
+    return WorkspaceStateMaterializationRequest(
+        workspace_path=workspace_path,
+        child_environment_required=plan.child_environment_required,
+        cache_root=runtime_workspace_cache_root(request.plan),
+        source_ref=plan.source_ref,
+        materialization=plan.policy.materialization,
+        writable=True,
+        lineage_producer=plan.lineage_producer,
     )
 
 

@@ -28,6 +28,20 @@ FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_OPEN = 1
 FILE_CREATE = 2
 FILE_OPEN_IF = 3
+OBJ_CASE_INSENSITIVE = 0x40
+FILE_SYNCHRONOUS_IO_NONALERT = 0x20
+FILE_OPEN_FOR_BACKUP_INTENT = 0x4000
+FILE_OPEN_REPARSE_POINT = 0x200000
+FILE_DIRECTORY_FILE = 1
+FILE_NON_DIRECTORY_FILE = 0x40
+SYNCHRONIZE = 0x100000
+FILE_ID_BOTH_DIRECTORY_RESTART_INFO = 11
+FILE_ID_BOTH_DIRECTORY_INFO = 10
+ERROR_NO_MORE_FILES = 18
+FILE_RENAME_INFORMATION = 10
+FILE_LINK_INFORMATION = 11
+FILE_TYPE_DISK = 1
+FILE_DISPOSITION_INFO = 4
 
 
 class UnicodeString(ctypes.Structure):
@@ -234,18 +248,22 @@ class FileHandle:
             ctypes.sizeof(ObjectAttributes),
             self.value,
             ctypes.pointer(text),
-            0x40,
+            OBJ_CASE_INSENSITIVE,
             None,
             None,
         )
         value, io = wintypes.HANDLE(), IoStatusBlock()
         # Relative single-component lookup never reparses the validated parent.
-        options = 0x20 | 0x4000 | 0x200000
+        options = (
+            FILE_SYNCHRONOUS_IO_NONALERT
+            | FILE_OPEN_FOR_BACKUP_INTENT
+            | FILE_OPEN_REPARSE_POINT
+        )
         if directory is not None:
-            options |= 1 if directory else 0x40
+            options |= FILE_DIRECTORY_FILE if directory else FILE_NON_DIRECTORY_FILE
         status = ntdll().NtCreateFile(
             ctypes.byref(value),
-            access | 0x100000,
+            access | SYNCHRONIZE,
             ctypes.byref(attributes),
             ctypes.byref(io),
             None,
@@ -262,11 +280,11 @@ class FileHandle:
 
     def entry_names(self) -> Iterator[str]:
         buffer = ctypes.create_string_buffer(65536)
-        information_class = 11  # FileIdBothDirectoryRestartInfo, then continuation.
+        information_class = FILE_ID_BOTH_DIRECTORY_RESTART_INFO
         while kernel32().GetFileInformationByHandleEx(
             self.value, information_class, buffer, len(buffer)
         ):
-            information_class = 10
+            information_class = FILE_ID_BOTH_DIRECTORY_INFO
             offset = 0
             while True:
                 info = DirectoryInformation.from_buffer(buffer, offset)
@@ -277,7 +295,7 @@ class FileHandle:
                 if not info.next_offset:
                     break
                 offset += info.next_offset
-        if int(vars(ctypes)["get_last_error"]()) != 18:  # ERROR_NO_MORE_FILES.
+        if int(vars(ctypes)["get_last_error"]()) != ERROR_NO_MORE_FILES:
             raise path_error(self.path)
 
     def publish_entry(
@@ -302,7 +320,7 @@ class FileHandle:
             ctypes.byref(IoStatusBlock()),
             buffer,
             len(buffer),
-            10 if rename else 11,
+            FILE_RENAME_INFORMATION if rename else FILE_LINK_INFORMATION,
         )
         if status < 0:
             raise _status_error(status, parent.path / name)
@@ -328,7 +346,7 @@ class FileHandle:
         if bool(info.attributes & FILE_ATTRIBUTE_DIRECTORY) != directory:
             raise ValueError(f"Unexpected file type in protected path: {self.path}")
         if not directory and (
-            kernel32().GetFileType(self.value) != 1 or info.links != links
+            kernel32().GetFileType(self.value) != FILE_TYPE_DISK or info.links != links
         ):
             raise ValueError(
                 f"Protected source must be a regular file with {links} link(s): {self.path}"
@@ -367,7 +385,10 @@ class FileHandle:
         # FileDispositionInfo removes the opened entry, never a competing pathname.
         disposition = wintypes.BOOL(True)
         if not kernel32().SetFileInformationByHandle(
-            self.value, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)
+            self.value,
+            FILE_DISPOSITION_INFO,
+            ctypes.byref(disposition),
+            ctypes.sizeof(disposition),
         ):
             raise path_error(self.path)
 

@@ -146,29 +146,31 @@ def locate_review_loop_status(stage_dir: Path) -> Path | None:
         stage_dir,
         REVIEW_LOOP_STATUS_RELATIVE_PATH.as_posix(),
     )
-    if status_path is None:
-        try:
-            status_candidate.lstat()
-        except FileNotFoundError:
-            try:
-                status_candidate.parent.lstat()
-            except FileNotFoundError:
-                return None
-            except OSError as exc:
-                raise status_error(
-                    "review-loop status directory could not be inspected"
-                ) from exc
-            if status_candidate.parent.is_symlink():
-                raise status_error(
-                    "review-loop status directory must not be a symlink"
-                ) from None
-            return None
-        except OSError as exc:
-            raise status_error(
-                "review-loop status path could not be inspected"
-            ) from exc
-        raise status_error("review-loop status path must be a safe regular file")
-    return status_path
+    if status_path is not None:
+        return status_path
+    try:
+        status_candidate.lstat()
+    except FileNotFoundError:
+        _inspect_missing_status_parent(status_candidate.parent)
+        return None
+    except OSError as exc:
+        raise status_error("review-loop status path could not be inspected") from exc
+    raise status_error("review-loop status path must be a safe regular file")
+
+
+def _inspect_missing_status_parent(parent: Path) -> None:
+    try:
+        parent.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise status_error(
+            "review-loop status directory could not be inspected"
+        ) from exc
+    if parent.is_symlink():
+        raise status_error(
+            "review-loop status directory must not be a symlink"
+        ) from None
 
 
 def validate_status_metadata(

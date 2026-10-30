@@ -16,6 +16,7 @@ from crewplane.observability.tmux.session import TmuxSessionTargets
 from crewplane.observability.tmux.shell_commands import (
     pane_render_args,
     pane_render_command,
+    tmux_argv_prefix,
     tmux_bash_array,
     tmux_command_string,
     write_runtime_shell_script,
@@ -82,9 +83,7 @@ def build_attach_command(
 
     resolved_env = dict(os.environ) if env is None else dict(env)
     resolved_platform = sys.platform if platform_name is None else platform_name
-    command = [tmux_executable]
-    if socket_name:
-        command.extend(["-L", socket_name])
+    command = tmux_argv_prefix(tmux_executable, socket_name)
     if (
         resolved_platform == "darwin"
         and resolved_env.get("TERM_PROGRAM") == "iTerm.app"

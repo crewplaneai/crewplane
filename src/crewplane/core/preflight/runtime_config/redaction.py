@@ -239,26 +239,24 @@ def _redacted_sensitive_list(
     fingerprints: list[_FingerprintRecord] = []
     redacted_list: list[JsonValue] = []
     sensitive_indices = _sensitive_argv_indices(value, path)
+    child_value: JsonValue
     for index, child in enumerate(value):
         child_path = (*path, str(index))
         if index in sensitive_indices:
-            sensitive_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
+            child_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
                 child,
                 child_path,
                 fingerprint_key,
                 output,
             )
-            redacted_list.append(sensitive_value)
-            paths.extend(child_paths)
-            fingerprints.extend(child_fingerprints)
-            continue
-        child_value, child_paths, child_fingerprints = _redact_sensitive_value(
-            child,
-            child_path,
-            fingerprint_key,
-            output,
-            path[-1] if path else None,
-        )
+        else:
+            child_value, child_paths, child_fingerprints = _redact_sensitive_value(
+                child,
+                child_path,
+                fingerprint_key,
+                output,
+                path[-1] if path else None,
+            )
         redacted_list.append(child_value)
         paths.extend(child_paths)
         fingerprints.extend(child_fingerprints)

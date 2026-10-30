@@ -5,6 +5,7 @@ import posixpath
 from crewplane.architecture.contracts import JsonObject, JsonValue
 from crewplane.core.workflow.collections import collection_bytes
 
+from ..compiled_records import PreflightExecutionNode
 from ..models import CompiledForeach, PreflightExecutionPlan
 from .expansion import generated_id, terminal_node_ids
 
@@ -26,24 +27,7 @@ def projected_index(
         results: list[JsonValue] = []
         for local_id in terminal_nodes(template):
             node = nodes[generated_id(template, local_id, index)]
-            result: JsonObject = {
-                "local_node_id": local_id.removeprefix(f"{template.namespace}."),
-                "node_id": node.id,
-            }
-            for kind, path in (
-                ("output", node.artifact_contract.output_path),
-                ("findings", node.artifact_contract.findings_path),
-            ):
-                if path is not None:
-                    result[kind] = {
-                        "path": posixpath.relpath(
-                            path,
-                            posixpath.dirname(group.artifact_contract.output_path)
-                            or ".",
-                        ),
-                        "size_bytes": MAX_INDEX_SIZE,
-                        "sha256": "0" * 64,
-                    }
+            result = _projected_terminal_result(template, local_id, node, group)
             results.append(result)
         entries.append({"index": index, "item": item, "results": results})
     try:
@@ -52,3 +36,29 @@ def projected_index(
         )
     except ValueError as exc:
         raise ValueError(f"{exc}; use smaller items or artifact references") from exc
+
+
+def _projected_terminal_result(
+    template: CompiledForeach,
+    local_id: str,
+    node: PreflightExecutionNode,
+    group: PreflightExecutionNode,
+) -> JsonObject:
+    result: JsonObject = {
+        "local_node_id": local_id.removeprefix(f"{template.namespace}."),
+        "node_id": node.id,
+    }
+    for kind, path in (
+        ("output", node.artifact_contract.output_path),
+        ("findings", node.artifact_contract.findings_path),
+    ):
+        if path is not None:
+            result[kind] = {
+                "path": posixpath.relpath(
+                    path,
+                    posixpath.dirname(group.artifact_contract.output_path) or ".",
+                ),
+                "size_bytes": MAX_INDEX_SIZE,
+                "sha256": "0" * 64,
+            }
+    return result

@@ -8,6 +8,11 @@ from crewplane.core.preflight import (
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
+from crewplane.core.preflight.compile_state import (
+    CompileState,
+    append_diagnostic,
+    extend_diagnostics,
+)
 from crewplane.core.preflight.fragment_handlers import static_value_phase
 
 
@@ -81,3 +86,38 @@ def test_static_value_phase_rejects_unsupported_token_kind() -> None:
 
     with pytest.raises(ValueError, match="Unsupported static value token kind"):
         static_value_phase("param")
+
+
+def test_diagnostic_collection_retains_first_occurrence_across_append_and_extend() -> (
+    None
+):
+    state = CompileState()
+    append_diagnostic(
+        state,
+        PreflightDiagnosticCode.TEMPLATE_PLAN,
+        PreflightDiagnosticPhase.TEMPLATE_PLAN,
+        "First issue",
+        node_id="build",
+        severity="warning",
+    )
+    first = state.diagnostics[0]
+    second = first.model_copy(update={"message": "Second issue"})
+    extend_diagnostics(
+        state,
+        (first.model_copy(update={"severity": "error"}), second, second),
+    )
+    append_diagnostic(
+        state,
+        PreflightDiagnosticCode.TEMPLATE_PLAN,
+        PreflightDiagnosticPhase.TEMPLATE_PLAN,
+        "Second issue",
+        node_id="build",
+    )
+
+    assert state.diagnostics == [first, second]
+    assert state.diagnostics[0] is first
+    assert state.diagnostics[1] is second
+    assert [diagnostic.severity for diagnostic in state.diagnostics] == [
+        "warning",
+        "warning",
+    ]

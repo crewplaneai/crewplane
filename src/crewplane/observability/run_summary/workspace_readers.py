@@ -159,7 +159,7 @@ def workspace_state_summary(
     stages_dir: Path,
     state_path: Path,
     payload: Mapping[str, object],
-) -> WorkspaceInvocationSummary | None:
+) -> WorkspaceInvocationSummary:
     source_section = mapping_or_none(
         payload.get("invocation_source")
     ) or mapping_or_none(payload.get("source"))

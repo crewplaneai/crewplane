@@ -99,34 +99,42 @@ def validate_resume_frontier(
     """
     base_plan = plan
     reconstruction = reconstruct_expansions(base_plan, source.run_dir)
-    plan = reconstruction.plan
-    nodes_by_id = {node.id: node for node in plan.nodes}
-    dependencies = _dependencies_by_node(plan)
-    closed_states = _select_resume_states(source, plan, dependencies, nodes_by_id)
+    reconstructed_plan = reconstruction.plan
+    nodes_by_id = {node.id: node for node in reconstructed_plan.nodes}
+    dependencies = _dependencies_by_node(reconstructed_plan)
+    closed_states = _select_resume_states(
+        source, reconstructed_plan, dependencies, nodes_by_id
+    )
     eligible_groups: set[str] = set()
-    templates = {template.group_id: template for template in plan.foreach_templates}
+    templates = {
+        template.group_id: template for template in reconstructed_plan.foreach_templates
+    }
     for group_id, batch in reconstruction.batches.items():
         template = templates[group_id]
         eligible = set(template.original_dependencies).issubset(closed_states)
         if eligible:
             try:
-                verify_caller_artifacts(plan, batch, source.run_dir, source.results_dir)
+                verify_caller_artifacts(
+                    reconstructed_plan, batch, source.run_dir, source.results_dir
+                )
             except (OSError, ValueError):
                 eligible = False
         if eligible:
             eligible_groups.add(group_id)
         else:
-            for node in plan.nodes:
+            for node in reconstructed_plan.nodes:
                 if node.expansion is not None and node.expansion.group_id == group_id:
                     closed_states.pop(node.id, None)
             closed_states = _dependency_closed_states(
                 closed_states, dependencies, nodes_by_id
             )
-    plan = eligible_expansion_plan(base_plan, reconstruction.batches, eligible_groups)
+    eligible_plan = eligible_expansion_plan(
+        base_plan, reconstruction.batches, eligible_groups
+    )
     checkpoints, closed_ids = select_resume_checkpoints(
         source,
-        reconstruction.plan,
-        _dependencies_by_node(reconstruction.plan),
+        reconstructed_plan,
+        _dependencies_by_node(reconstructed_plan),
         closed_states,
         project_observation,
         fenced_checkpoint_ids,
@@ -136,7 +144,7 @@ def validate_resume_frontier(
         closed_states,
         checkpoints,
         closed_ids,
-        plan,
+        eligible_plan,
         {
             group: batch
             for group, batch in reconstruction.batches.items()

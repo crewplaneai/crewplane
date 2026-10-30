@@ -26,6 +26,7 @@ from crewplane.observability.tmux.session import (
     TmuxSessionIdentity,
     TmuxSessionTargets,
 )
+from crewplane.observability.tmux.shell_commands import tmux_argv_prefix
 from crewplane.observability.tmux.warnings import dispatch_tmux_warning
 from crewplane.observability.types import RunContext
 
@@ -292,9 +293,7 @@ class TmuxCompactSessionLifecycle:
         candidates: list[tuple[list[str], dict[str, str] | None]] = [
             (attach_command, None)
         ]
-        plain_attach = [self._tmux_executable]
-        if targets.socket_name:
-            plain_attach.extend(["-L", targets.socket_name])
+        plain_attach = tmux_argv_prefix(self._tmux_executable, targets.socket_name)
         plain_attach.extend(["attach", "-t", targets.session_name])
         if attach_command != plain_attach:
             candidates.append((plain_attach, None))

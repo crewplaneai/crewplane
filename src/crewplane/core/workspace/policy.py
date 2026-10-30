@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, NotRequired, TypedDict
 
 from pydantic import (
     BaseModel,
@@ -136,12 +136,19 @@ def generated_branch_name(
     )
 
 
+class WorktreeDeclarationPayload(TypedDict):
+    kind: WorktreeKind
+    setup_profile: NotRequired[str]
+    create_branch: NotRequired[bool]
+    branch_name: NotRequired[str]
+
+
 def worktree_declarations_payload(
     declarations: dict[str, WorktreeDeclaration],
-) -> dict[str, dict[str, str | bool]]:
-    payload: dict[str, dict[str, str | bool]] = {}
+) -> dict[str, WorktreeDeclarationPayload]:
+    payload: dict[str, WorktreeDeclarationPayload] = {}
     for name, declaration in declarations.items():
-        item: dict[str, str | bool] = {"kind": declaration.kind}
+        item: WorktreeDeclarationPayload = {"kind": declaration.kind}
         if declaration.setup_profile is not None:
             item["setup_profile"] = declaration.setup_profile
         if declaration.create_branch:

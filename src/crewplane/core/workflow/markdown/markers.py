@@ -100,21 +100,22 @@ def extract_prompt_segment_payloads(
     active_role: PromptMarkerRole | None = None
     cursor_line = 0
 
-    for event in events:
-        block_text = "".join(lines[cursor_line : event.start_line])
+    def append_segment(
+        start_line: int, end_line: int, role: PromptMarkerRole | None
+    ) -> str:
+        block_text = "".join(lines[start_line:end_line])
         if block_text:
-            prompt_segments.append(
-                {
-                    "role": segment_role(active_role),
-                    "content": block_text,
-                }
-            )
+            prompt_segments.append({"role": segment_role(role), "content": block_text})
             prompt_segment_spans.append(
                 {
-                    "start_line": content_start_line + cursor_line,
-                    "end_line": content_start_line + event.start_line,
+                    "start_line": content_start_line + start_line,
+                    "end_line": content_start_line + end_line,
                 }
             )
+        return block_text
+
+    for event in events:
+        block_text = append_segment(cursor_line, event.start_line, active_role)
 
         if event.marker_kind == "open":
             if active_role is not None:
@@ -148,20 +149,7 @@ def extract_prompt_segment_payloads(
 
         assert_never(event.marker_kind)
 
-    tail_text = "".join(lines[cursor_line:])
-    if tail_text:
-        prompt_segments.append(
-            {
-                "role": segment_role(active_role),
-                "content": tail_text,
-            }
-        )
-        prompt_segment_spans.append(
-            {
-                "start_line": content_start_line + cursor_line,
-                "end_line": content_start_line + len(lines),
-            }
-        )
+    append_segment(cursor_line, len(lines), active_role)
     if active_role is not None:
         raise ValueError(
             f"{source} node '{node_id}' has an unclosed '{active_role}' "

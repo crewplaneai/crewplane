@@ -40,26 +40,32 @@ def print_dry_run_plan(preview: PreflightCompilationPreview, console: Console) -
             console.print(f"    needs: {needs}")
             _print_node_workspace_summary(node, console)
             if node.mode == "foreach":
-                template = next(
-                    template
-                    for template in preview.foreach_templates
-                    if template.group_id == node.id
-                )
-                console.print(
-                    f"      - child: {template.workflow} ({len(template.nodes)} compiled nodes)",
-                    markup=False,
-                )
-                for child in template.nodes:
-                    console.print(
-                        f"        {child.id.removeprefix(template.namespace + '.')}: {child.mode}",
-                        markup=False,
-                    )
+                _print_foreach_details(preview, node, console)
                 continue
             if node.mode == "input":
                 console.print(f"      - source: {_input_source_label(preview, node)}")
                 continue
             for provider in node.provider_records:
                 console.print(_format_provider_dry_run_line(provider), markup=False)
+
+
+def _print_foreach_details(
+    preview: PreflightCompilationPreview, node: PreflightExecutionNode, console: Console
+) -> None:
+    template = next(
+        template
+        for template in preview.foreach_templates
+        if template.group_id == node.id
+    )
+    console.print(
+        f"      - child: {template.workflow} ({len(template.nodes)} compiled nodes)",
+        markup=False,
+    )
+    for child in template.nodes:
+        console.print(
+            f"        {child.id.removeprefix(template.namespace + '.')}: {child.mode}",
+            markup=False,
+        )
 
 
 def print_foreach_summary(

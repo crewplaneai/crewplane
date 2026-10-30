@@ -18,9 +18,6 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.cache import worktree_cache_family
-from crewplane.runtime.workspace.filesystem import (
-    runtime_workspace_cache_root,
-)
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -34,7 +31,6 @@ from crewplane.runtime.workspace.setup import (
 )
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
-    WorkspaceStateMaterializationRequest,
     write_running_workspace_state,
 )
 from crewplane.runtime.workspace.state_evidence import update_workspace_setup
@@ -57,6 +53,7 @@ from .common import (
     planned_workspace_path,
     refresh_trusted_workspace_state_payload,
     workspace_state_request,
+    worktree_state_materialization_request,
 )
 from .retry_reset import (
     worktree_retry_reset_canceller,
@@ -182,15 +179,11 @@ def write_running_worktree_workspace_state(
         plan.node,
         plan.source,
         plan.policy,
-        WorkspaceStateMaterializationRequest(
-            workspace_path=plan.planned_workspace_path,
-            child_environment_required=plan.child_environment_required,
-            cache_root=runtime_workspace_cache_root(request.plan),
+        replace(
+            worktree_state_materialization_request(
+                request, plan, plan.planned_workspace_path
+            ),
             checkout_root=plan.planned_workspace_path / "checkout",
-            source_ref=plan.source_ref,
-            materialization=plan.policy.materialization,
-            writable=True,
-            lineage_producer=plan.lineage_producer,
         ),
     )
 
@@ -409,10 +402,10 @@ def write_materialized_worktree_state(
         plan.node,
         plan.source,
         plan.policy,
-        WorkspaceStateMaterializationRequest(
-            workspace_path=worktree.workspace_path,
-            child_environment_required=plan.child_environment_required,
-            cache_root=runtime_workspace_cache_root(request.plan),
+        replace(
+            worktree_state_materialization_request(
+                request, plan, worktree.workspace_path
+            ),
             effective_cwd=worktree.cwd,
             checkout_root=worktree.checkout_root,
             worktree_git_dir=worktree.git_dir,
@@ -420,10 +413,6 @@ def write_materialized_worktree_state(
                 checkout_size_bytes=materialized_workspace.checkout_size_bytes,
                 duration_seconds=materialized_workspace.provisioning_duration_seconds,
             ),
-            source_ref=plan.source_ref,
-            materialization=plan.policy.materialization,
-            writable=True,
-            lineage_producer=plan.lineage_producer,
             worktree_lock_mode=worktree.lock_mode,
             reuse=materialized_workspace.materialized.reuse,
             reuse_generation=materialized_workspace.materialized.reuse_generation,

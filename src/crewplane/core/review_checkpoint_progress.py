@@ -174,17 +174,21 @@ def _validate_executor_cursor(checkpoint: OpenReviewCheckpoint) -> None:
             item.audit != checkpoint.audit for item in active.previous_executor_outputs
         )
         or active.previous_unresolved_fingerprints
-        != tuple(
-            sorted(
-                {
-                    fingerprint
-                    for review in active.latest_reviewer_outputs
-                    for fingerprint in review.evaluation.unresolved_fingerprints
-                }
-            )
-        )
+        != _unresolved_fingerprints(active.latest_reviewer_outputs)
     ):
         raise ValueError("Remediation cursor disagrees with settled active progress.")
+
+
+def _unresolved_fingerprints(reviews: list[CheckpointReview]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                fingerprint
+                for review in reviews
+                for fingerprint in review.evaluation.unresolved_fingerprints
+            }
+        )
+    )
 
 
 def _validate_finalization(

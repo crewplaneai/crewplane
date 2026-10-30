@@ -24,6 +24,7 @@ from crewplane.core.token_budget import (
 from crewplane.core.workspace.policy import (
     PROJECT_ROOT_WORKTREE_SELECTOR,
     WorktreeDeclaration,
+    WorktreeDeclarationPayload,
     worktree_declarations_payload,
 )
 from crewplane.version import SCHEMA_VERSION
@@ -136,7 +137,7 @@ class WorkflowPayload(TypedDict):
     description: str
     repeat_force_run_count: NotRequired[int]
     inputs: dict[str, str]
-    worktrees: NotRequired[dict[str, dict[str, str | bool]]]
+    worktrees: NotRequired[dict[str, WorktreeDeclarationPayload]]
     nodes: list[WorkflowNodePayload]
     imports: NotRequired[list[WorkflowImportPayload]]
 

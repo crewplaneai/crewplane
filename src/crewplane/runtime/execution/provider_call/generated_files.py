@@ -138,11 +138,10 @@ def _run_generated_file_change_baseline(
         worker_fence.finish()
 
 
-async def mark_workspace_succeeded(
+def _prepare_success_finalization(
     prepared_workspace: PreparedWorkspace,
     child_environment_applied: bool | None,
-    cleanup_registry: DeferredAsyncCleanupRegistry,
-) -> None:
+) -> tuple[Event, WorkspaceWorkerFence, asyncio.Task[None]]:
     cancel_requested = Event()
     worker_fence = WorkspaceWorkerFence(
         getattr(prepared_workspace, "state_path", None),
@@ -153,6 +152,17 @@ async def mark_workspace_succeeded(
         child_environment_applied,
         cancel_requested,
         worker_fence,
+    )
+    return cancel_requested, worker_fence, finalization
+
+
+async def mark_workspace_succeeded(
+    prepared_workspace: PreparedWorkspace,
+    child_environment_applied: bool | None,
+    cleanup_registry: DeferredAsyncCleanupRegistry,
+) -> None:
+    cancel_requested, worker_fence, finalization = _prepare_success_finalization(
+        prepared_workspace, child_environment_applied
     )
     await _workspace_worker_cancellation(cleanup_registry).wait(
         finalization,
@@ -168,16 +178,8 @@ async def finalize_successful_workspace(
     child_environment_applied: bool | None,
     generated_file_workspace: Path | None,
 ) -> None:
-    cancel_requested = Event()
-    worker_fence = WorkspaceWorkerFence(
-        getattr(prepared_workspace, "state_path", None),
-        "success_finalizer",
-    )
-    finalization = _success_finalization_task(
-        prepared_workspace,
-        child_environment_applied,
-        cancel_requested,
-        worker_fence,
+    cancel_requested, worker_fence, finalization = _prepare_success_finalization(
+        prepared_workspace, child_environment_applied
     )
     try:
         await asyncio.shield(finalization)

@@ -171,11 +171,7 @@ def append_diagnostic(
         message=message,
         severity=severity,
     )
-    key = diagnostic_key(diagnostic)
-    if key in state.diagnostic_keys:
-        return
-    state.diagnostic_keys.add(key)
-    state.diagnostics.append(diagnostic)
+    _append_new_diagnostic(state, diagnostic)
 
 
 def extend_diagnostics(
@@ -183,11 +179,17 @@ def extend_diagnostics(
     diagnostics: tuple[PreflightDiagnostic, ...],
 ) -> None:
     for diagnostic in diagnostics:
-        key = diagnostic_key(diagnostic)
-        if key in state.diagnostic_keys:
-            continue
-        state.diagnostic_keys.add(key)
-        state.diagnostics.append(diagnostic)
+        _append_new_diagnostic(state, diagnostic)
+
+
+def _append_new_diagnostic(
+    state: CompileState, diagnostic: PreflightDiagnostic
+) -> None:
+    key = diagnostic_key(diagnostic)
+    if key in state.diagnostic_keys:
+        return
+    state.diagnostic_keys.add(key)
+    state.diagnostics.append(diagnostic)
 
 
 def diagnostic_key(

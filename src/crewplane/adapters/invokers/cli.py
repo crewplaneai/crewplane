@@ -28,6 +28,7 @@ from .cli_invoker import (
 from .cli_invoker.capabilities import get_cli_provider_capability
 from .cli_invoker.capability import CliInvocationRequest, CliProviderCapability
 from .cli_invoker.command_types import CommandAvailability, request_validation_targets
+from .cli_invoker.environment import rebase_search_path
 from .cli_invoker.provider_registrations import (
     canonicalize_provider_options,
     verify_provider_options,
@@ -51,10 +52,7 @@ def collect_cli_availability_errors(
 
 
 def _executable_lookup(project_root: Path) -> Callable[[str], str | None]:
-    search_path = os.pathsep.join(
-        str(project_root / entry)
-        for entry in os.environ.get("PATH", os.defpath).split(os.pathsep)
-    )
+    search_path = rebase_search_path(os.environ.get("PATH", os.defpath), project_root)
     return partial(shutil.which, path=search_path)
 
 

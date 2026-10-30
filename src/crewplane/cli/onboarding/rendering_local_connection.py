@@ -32,16 +32,16 @@ def render_local_connection(text: str, agent: AgentConfig) -> str:
         yaml.YAMLError: An intermediate edit leaves YAML that cannot be composed,
             such as removing an anchor that is still referenced.
     """
-    config = load_config_mapping(text, "existing config")
-    registrations, recipe = _prepare_plugin_registration(
-        config.settings.integrations.invoker.options
+    expected_config = load_config_mapping(text, "existing config")
+    registrations, recipe = _prepare_plugin_registration_in_place(
+        expected_config.settings.integrations.invoker.options
     )
-    text = _render_connection_agent(text, agent, config.agents.get("local"))
-    if "invoker" not in config.settings.integrations.model_fields_set:
+    text = _render_connection_agent(text, agent, expected_config.agents.get("local"))
+    if "invoker" not in expected_config.settings.integrations.model_fields_set:
         text = replace_mapping_entry(
             text,
             ("settings", "integrations", "invoker", "implementation"),
-            config.settings.integrations.invoker.implementation,
+            expected_config.settings.integrations.invoker.implementation,
         )
     if "ollama" not in registrations:
         text = replace_mapping_entry(
@@ -50,15 +50,18 @@ def render_local_connection(text: str, agent: AgentConfig) -> str:
             recipe["ollama"],
         )
     registrations["ollama"] = recipe["ollama"]
-    config.agents["local"] = agent
-    if load_config_mapping(text, "updated config") != config:
+    expected_config.agents["local"] = agent
+    if load_config_mapping(text, "updated config") != expected_config:
         raise OnboardingRenderingError(
             "Cannot update the Ollama connection without changing other settings."
         )
     return text
 
 
-def _prepare_plugin_registration(options: JsonObject) -> tuple[JsonObject, JsonObject]:
+def _prepare_plugin_registration_in_place(
+    options: JsonObject,
+) -> tuple[JsonObject, JsonObject]:
+    """Prepare options in place and return its live registrations mapping plus defaults."""
     registrations = options.setdefault("providers", {})
     recipe = ollama_provider_options()["providers"]
     assert isinstance(recipe, dict)

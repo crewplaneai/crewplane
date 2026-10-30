@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+from typing import Protocol
 
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -25,6 +26,12 @@ from crewplane.runtime.workspace.worktree.types import WorktreeCaptureRequest
 from .common import refresh_trusted_workspace_state_payload
 
 
+class CancellableWorktreeRetryReset(Protocol):
+    def __call__(self) -> None: ...
+
+    def cancel(self) -> None: ...
+
+
 def worktree_retry_reset_with_setup(
     capture_request: WorktreeCaptureRequest,
     plan: PreflightExecutionPlan,
@@ -34,7 +41,7 @@ def worktree_retry_reset_with_setup(
     checkout_root: Path,
     trusted_state_payload: dict[str, object],
     secret_context: SecretContext,
-) -> Callable[[], None]:
+) -> CancellableWorktreeRetryReset:
     return _WorktreeRetryReset(
         capture_request=capture_request,
         plan=plan,

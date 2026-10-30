@@ -101,8 +101,8 @@ def collect_quota_context_lines(
 ) -> list[str]:
     context_lines: dict[int, str] = {}
     buffered_next_indices: set[int] = set()
-    previous_line: str | None = None
-    previous_index: int | None = None
+    previous_context_line: str | None = None
+    previous_context_index: int | None = None
 
     for index, raw_line in enumerate(output_lines):
         stripped = raw_line.strip()
@@ -114,12 +114,12 @@ def collect_quota_context_lines(
         if not _is_reset_context_line(stripped.lower(), family_hints, configured_hints):
             continue
 
-        if previous_index is not None and previous_line is not None:
-            context_lines[previous_index] = previous_line
+        if previous_context_index is not None and previous_context_line is not None:
+            context_lines[previous_context_index] = previous_context_line
         context_lines[index] = raw_line
         buffered_next_indices.add(index + 1)
 
-        previous_line = raw_line
-        previous_index = index
+        previous_context_line = raw_line
+        previous_context_index = index
 
     return [context_lines[index] for index in sorted(context_lines.keys())]

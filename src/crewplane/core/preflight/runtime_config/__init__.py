@@ -307,24 +307,11 @@ class RuntimeConfigSnapshot(BaseModel):
             sequential_consensus_on_exhaustion=settings.sequential_consensus_on_exhaustion,
             token_budget=settings.token_budget,
         )
-        raw_agents: JsonObject = {
-            name: agent_config_input_payload(agent)
-            for name, agent in sorted(config.agents.items())
-        }
-        _, sensitive_agent_paths = redact_sensitive_config(raw_agents)
-        agents, _ = redact_sensitive_config_with_fingerprints(raw_agents, None)
-        agent_snapshots = runtime_agent_snapshots(agents)
-        raw_workspace: JsonObject = {
-            "setup_profiles": settings.workspace.model_dump(mode="json")[
-                "setup_profiles"
-            ]
-        }
-        _, sensitive_workspace_paths = redact_sensitive_config(
-            raw_workspace,
-            ("workspace",),
+        raw_agents, sensitive_agent_paths, agent_snapshots = _prepare_agent_snapshots(
+            config
         )
-        redacted_workspace, _ = redact_sensitive_config_with_fingerprints(
-            raw_workspace, None, ("workspace",)
+        raw_workspace, sensitive_workspace_paths, redacted_workspace = (
+            _prepare_workspace_config(settings.workspace)
         )
         integrations = (("invoker", invoker), ("artifacts", artifacts), ("ui", ui))
         sensitive_paths = sorted(
@@ -470,6 +457,35 @@ class RuntimeConfigSnapshot(BaseModel):
                 ),
             }
         )
+
+
+def _prepare_agent_snapshots(
+    config: Config,
+) -> tuple[JsonObject, list[str], dict[str, RuntimeAgentConfigSnapshot]]:
+    raw_agents: JsonObject = {
+        name: agent_config_input_payload(agent)
+        for name, agent in sorted(config.agents.items())
+    }
+    _, sensitive_agent_paths = redact_sensitive_config(raw_agents)
+    agents, _ = redact_sensitive_config_with_fingerprints(raw_agents, None)
+    agent_snapshots = runtime_agent_snapshots(agents)
+    return raw_agents, sensitive_agent_paths, agent_snapshots
+
+
+def _prepare_workspace_config(
+    settings: WorkspaceSettings,
+) -> tuple[JsonObject, list[str], JsonObject]:
+    raw_workspace: JsonObject = {
+        "setup_profiles": settings.model_dump(mode="json")["setup_profiles"]
+    }
+    _, sensitive_workspace_paths = redact_sensitive_config(
+        raw_workspace,
+        ("workspace",),
+    )
+    redacted_workspace, _ = redact_sensitive_config_with_fingerprints(
+        raw_workspace, None, ("workspace",)
+    )
+    return raw_workspace, sensitive_workspace_paths, redacted_workspace
 
 
 def _effective_signature(

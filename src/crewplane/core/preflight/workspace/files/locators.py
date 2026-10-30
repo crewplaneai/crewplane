@@ -295,12 +295,7 @@ def workspace_locator_resolved_payload(
         "workspace_relative_path": locator.workspace_relative_path,
         "git_top_relative_path": locator.git_top_relative_path,
     }
-    if locator.git_blob is not None:
-        payload["git_blob"] = locator.git_blob
-    if locator.canonical_blob_sha256 is not None:
-        payload["canonical_blob_sha256"] = locator.canonical_blob_sha256
-    if locator.content_ref is not None:
-        payload["content_ref"] = locator.content_ref
+    payload.update(_optional_workspace_locator_fields(locator))
     return payload
 
 
@@ -310,13 +305,19 @@ def workspace_locator_metadata(locator: WorkspaceFileLocator) -> dict[str, str]:
         "source_class": locator.source_class,
         "workspace_relative_path": locator.workspace_relative_path,
     }
-    if locator.git_blob is not None:
-        metadata["git_blob"] = locator.git_blob
-    if locator.canonical_blob_sha256 is not None:
-        metadata["canonical_blob_sha256"] = locator.canonical_blob_sha256
-    if locator.content_ref is not None:
-        metadata["content_ref"] = locator.content_ref
+    metadata.update(_optional_workspace_locator_fields(locator))
     return metadata
+
+
+def _optional_workspace_locator_fields(locator: WorkspaceFileLocator) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    if locator.git_blob is not None:
+        fields["git_blob"] = locator.git_blob
+    if locator.canonical_blob_sha256 is not None:
+        fields["canonical_blob_sha256"] = locator.canonical_blob_sha256
+    if locator.content_ref is not None:
+        fields["content_ref"] = locator.content_ref
+    return fields
 
 
 def resolve_project_blob(

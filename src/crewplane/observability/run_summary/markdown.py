@@ -241,7 +241,7 @@ def workspace_invocation_line(invocation: WorkspaceInvocationSummary) -> str:
     return f"- {label}: {'; '.join(compact(details))}\n"
 
 
-def workspace_source_label(invocation: WorkspaceInvocationSummary) -> str | None:
+def workspace_source_label(invocation: WorkspaceInvocationSummary) -> str:
     source = invocation.source
     parts = [
         source.kind,
@@ -346,7 +346,7 @@ def workspace_branch_export_label(
     return comma_optional(parts)
 
 
-def workspace_result_label(invocation: WorkspaceInvocationSummary) -> str | None:
+def workspace_result_label(invocation: WorkspaceInvocationSummary) -> str:
     parts = [
         detail("candidate", invocation.candidate_commit),
         detail("result", invocation.result_commit),
@@ -357,7 +357,7 @@ def workspace_result_label(invocation: WorkspaceInvocationSummary) -> str | None
     return ", ".join(compact(parts))
 
 
-def workspace_bundle_label(invocation: WorkspaceInvocationSummary) -> str | None:
+def workspace_bundle_label(invocation: WorkspaceInvocationSummary) -> str:
     parts = [
         invocation.bundle_path,
         detail("bytes", invocation.bundle_size_bytes),

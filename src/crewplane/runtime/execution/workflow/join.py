@@ -10,7 +10,6 @@ from crewplane.artifacts.expansions import (
     read_expansion_artifact,
     verify_node_expansion,
 )
-from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.foreach.expansion import generated_id
 from crewplane.core.preflight.foreach.index import MAX_INDEX_SIZE, terminal_nodes
@@ -23,6 +22,7 @@ from crewplane.core.workflow.collections import (
 
 from ..resume import write_successful_node_state
 from .execution_session import WorkflowExecutionSession
+from .publications import register_recoverable_publication
 
 
 def join_group(
@@ -121,14 +121,10 @@ def _publish_join_result(
         finalized = output.publish_raw_output(
             NodeArtifactRequest(group.id, group.artifact_contract), data
         )
-        context.runtime_publications.publish(
-            finalized.result_file,
-            file_size_and_sha256(finalized.result_file),
-            recovery_source=finalized.result_file,
+        register_recoverable_publication(
+            context.runtime_publications, finalized.result_file
         )
         path = write_successful_node_state(
             group, plan, output, session.workflow_identity, finalized
         )
-        context.runtime_publications.publish(
-            path, file_size_and_sha256(path), recovery_source=path
-        )
+        register_recoverable_publication(context.runtime_publications, path)

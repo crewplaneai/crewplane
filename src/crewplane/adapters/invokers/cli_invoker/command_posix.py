@@ -13,7 +13,7 @@ from crewplane.core.workflow.models import WorkflowPlan
 
 from .command_types import CommandAvailability, ResolvedCommand, contains_path_separator
 from .env_command import EnvCommandContext, parse_env_command_context
-from .environment import environment_executable_lookup
+from .environment import environment_executable_lookup, rebase_search_path
 
 if TYPE_CHECKING:
     from .capability import CliInvocationRequest
@@ -221,10 +221,7 @@ def resolve_command(
     if lookup is not None:
         resolved = lookup(executable)
     else:
-        search_path = os.pathsep.join(
-            str(cwd / entry)
-            for entry in environment.get("PATH", os.defpath).split(os.pathsep)
-        )
+        search_path = rebase_search_path(environment.get("PATH", os.defpath), cwd)
         resolved = shutil.which(executable, path=search_path)
     if resolved is None:
         raise ValueError(f"CLI '{executable}' not found in PATH.")
