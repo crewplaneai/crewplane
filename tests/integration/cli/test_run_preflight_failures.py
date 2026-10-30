@@ -18,6 +18,7 @@ from tests.helpers.foreach import (
     workflow_document,
     write_workflow_document,
 )
+from tests.helpers.mock_resume import write_mock_config
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
@@ -28,6 +29,61 @@ from tests.integration.cli.cli_workflow_helpers import (
 )
 
 pytestmark = pytest.mark.usefixtures("posix_cli_plans")
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        ("undefined_provider", "Unknown provider 'missing'"),
+        ("invalid_reasoning", "reasoning must be"),
+        ("unknown_option", "Unsupported mock invoker options"),
+        ("invalid_option", "observation_delay_seconds"),
+    ],
+)
+def test_mock_reasoning_preserves_workflow_and_config_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    expected: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / ".crewplane/config.yml"
+    write_mock_config(config, tmp_path / "outputs")
+    payload = yaml.safe_load(config.read_bytes())
+    payload["agents"]["alpha"]["cli_cmd"] = ["definitely-not-installed-cli"]
+    options = payload["settings"]["integrations"]["invoker"]["options"]
+    if failure == "unknown_option":
+        options["unsupported"] = True
+    elif failure == "invalid_option":
+        options["observation_delay_seconds"] = -1
+    config.write_text(yaml.safe_dump(payload), encoding="utf-8", newline="\n")
+    workflow = tmp_path / "workflow.task.md"
+    write_basic_workflow(workflow)
+    payload, body = workflow_document(workflow)
+    payload["nodes"][0]["providers"] = [
+        {
+            "provider": "missing" if failure == "undefined_provider" else "alpha",
+            "reasoning": "not a token" if failure == "invalid_reasoning" else "xhigh",
+        }
+    ]
+    write_workflow_document(workflow, payload, body)
+    execute = AsyncMock()
+    monkeypatch.setattr(cli, "execute_workflow", execute)
+    runner = CliRunner()
+    arguments = ["--tasks", str(workflow), "--config", str(config)]
+
+    for command in (
+        ["validate", str(workflow), "--config", str(config)],
+        ["run", *arguments, "--dry-run"],
+        ["run", *arguments, "--no-live"],
+    ):
+        result = runner.invoke(cli.app, command)
+        assert result.exit_code == 1, (result.output, result.exception)
+        assert expected in " ".join(result.output.split())
+    execute.assert_not_called()
+    assert not list(
+        (tmp_path / ".crewplane/execution-stages").glob("*/manifests/run.json")
+    )
 
 
 @pytest.mark.parametrize("items", [[], [{"chunk": "a"}]])

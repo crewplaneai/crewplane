@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.cli.run.invoker_preflight import run_request_validation_errors
 from crewplane.cli.run.preflight import (
@@ -322,7 +324,18 @@ def test_preflight_records_reasoning_and_changes_execution_identity(
     assert reasoning_preview.workflow_signature != default_preview.workflow_signature
 
 
-def test_reasoning_control_rejects_non_cli_invoker() -> None:
+@pytest.mark.parametrize(
+    ("implementation", "accepted"),
+    [
+        ("mock", True),
+        ("crewplane.adapters.invokers.mock:MockInvokerAdapter", True),
+        ("crewplane.adapters.invokers.mock.MockInvokerAdapter", True),
+        ("custom.invoker:MockInvokerAdapter", False),
+    ],
+)
+def test_reasoning_control_accepts_only_builtin_mock_invoker(
+    implementation: str, accepted: bool
+) -> None:
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -337,17 +350,20 @@ def test_reasoning_control_rejects_non_cli_invoker() -> None:
         ],
     )
 
+    config = _config()
+    config.settings.integrations.invoker.implementation = implementation
     errors = run_request_validation_errors(
         workflow,
-        _config(),
-        CliInvokerAdapter(),
-        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+        config,
+        MockInvokerAdapter(),
+        implementation,
     )
 
-    assert errors == (
+    expected = (
         "workflow 'demo' -> node 'build' -> provider 'alpha': first-class "
         "reasoning requires the built-in CLI invoker.",
     )
+    assert errors == (() if accepted else expected)
 
 
 def test_reasoning_control_checks_relative_claude_settings_file(

@@ -332,7 +332,7 @@ Provider object fields:
 | --- | --- |
 | `provider` | Agent name from `.crewplane/config.yml`. Required. |
 | `model` | Optional model override for this provider use. |
-| `reasoning` | Optional provider-native reasoning request for the built-in CLI invoker with `provider_kind: codex` or `claude`. |
+| `reasoning` | Optional provider-native reasoning request for the built-in CLI invoker with `provider_kind: codex` or `claude`; also accepted and ignored by the built-in mock invoker. |
 | `role` | `executor` or `reviewer`. Defaults to `executor`. |
 
 Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
@@ -349,11 +349,15 @@ provider needs a `model` or `reasoning` override, or `role: reviewer`.
 effort scale. Crewplane records it as `requested_reasoning` and includes it in
 execution identity. When omitted or set to `null`, Crewplane supplies no
 reasoning argument and the provider's existing configuration remains in
-control. Direct reasoning selectors in `cli_cmd`, `extra_args`, or
-`CLAUDE_CODE_EFFORT_LEVEL` conflict with a first-class request and fail
-preflight. For Claude, that includes `effortLevel` and
+control. With the built-in CLI invoker, direct reasoning selectors in `cli_cmd`,
+`extra_args`, or `CLAUDE_CODE_EFFORT_LEVEL` conflict with a first-class request
+and fail preflight. For Claude, that includes `effortLevel` and
 `env.CLAUDE_CODE_EFFORT_LEVEL` in explicit `--settings` JSON or files.
 Unrelated Claude settings remain valid.
+
+The built-in mock invoker accepts valid reasoning tokens for any provider kind.
+See [Mock Validation](../guides/mock-validation.md#provider-reasoning) for its
+validation and provenance behavior.
 
 ## Input Nodes
 

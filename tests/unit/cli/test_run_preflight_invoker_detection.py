@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from rich.console import Console
 
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.architecture.errors import AdapterContractError
 from crewplane.cli.run.preflight import (
@@ -94,7 +96,13 @@ class CliWrapperAdapter(CliInvokerAdapter):
     pass
 
 
+class MockWrapperAdapter(MockInvokerAdapter):
+    pass
+
+
 class IdentitySpoofingCliAdapter(CliInvokerAdapter):
+    builtin_identity = BUILTIN_CLI_INVOKER_IDENTITY
+
     def canonicalize_options(
         self,
         implementation: str,
@@ -106,9 +114,7 @@ class IdentitySpoofingCliAdapter(CliInvokerAdapter):
             resolved_identity,
             options,
         )
-        return canonical.model_copy(
-            update={"resolved_identity": BUILTIN_CLI_INVOKER_IDENTITY}
-        )
+        return canonical.model_copy(update={"resolved_identity": self.builtin_identity})
 
 
 def _workflow(reasoning: str | None = None) -> WorkflowPlan:
@@ -221,17 +227,42 @@ def test_invoker_detection_preserves_default_cli_implementation() -> None:
     assert not uses_mock_invoker(config)
 
 
-def test_mock_invoker_performs_no_availability_probe(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "implementation",
+    [
+        "mock",
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+        "crewplane.adapters.invokers.mock.MockInvokerAdapter",
+    ],
+)
+@pytest.mark.parametrize("check_cli_availability", [False, True])
+def test_mock_reasoning_performs_no_cli_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    implementation: str,
+    check_cli_availability: bool,
+) -> None:
     def unexpected_probe(command: str) -> str | None:
         raise AssertionError(f"mock invoker probed {command}")
 
+    cli_hook = Mock(side_effect=AssertionError("mock reached CLI diagnostics"))
+    for method in (
+        "collect_request_errors",
+        "collect_model_arg_warnings",
+        "collect_availability_errors",
+    ):
+        monkeypatch.setattr(CliInvokerAdapter, method, cli_hook)
     preview = _compile_with_availability(
         tmp_path,
-        "mock",
+        implementation,
         unexpected_probe,
+        reasoning="xhigh",
+        check_cli_availability=check_cli_availability,
     )
 
     assert not preview.diagnostics
+    assert preview.nodes[0].provider_records[0].requested_reasoning == "xhigh"
+    cli_hook.assert_not_called()
 
 
 def test_builtin_cli_reports_ignored_model_arg_warning(tmp_path: Path) -> None:
@@ -303,8 +334,13 @@ def test_custom_invoker_availability_hook_is_not_called(tmp_path: Path) -> None:
     assert not preview.diagnostics
 
 
-def test_cli_wrapper_is_not_probed_but_remains_reasoning_ineligible(
+@pytest.mark.parametrize(
+    "adapter_name",
+    ["CliWrapperAdapter", "MockWrapperAdapter", "NoAvailabilityInvokerAdapter"],
+)
+def test_custom_invoker_is_not_probed_but_remains_reasoning_ineligible(
     tmp_path: Path,
+    adapter_name: str,
 ) -> None:
     probed_commands: list[str] = []
 
@@ -314,7 +350,7 @@ def test_cli_wrapper_is_not_probed_but_remains_reasoning_ineligible(
 
     preview = _compile_with_availability(
         tmp_path,
-        f"{TEST_MODULE}:CliWrapperAdapter",
+        f"{TEST_MODULE}:{adapter_name}",
         available,
         reasoning="high",
     )
@@ -326,9 +362,21 @@ def test_cli_wrapper_is_not_probed_but_remains_reasoning_ineligible(
     ]
 
 
+@pytest.mark.parametrize(
+    "builtin_identity",
+    [
+        BUILTIN_CLI_INVOKER_IDENTITY,
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+    ],
+)
 def test_adapter_cannot_spoof_builtin_identity_for_reasoning(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    builtin_identity: str,
 ) -> None:
+    monkeypatch.setattr(
+        IdentitySpoofingCliAdapter, "builtin_identity", builtin_identity
+    )
     preview = _compile_with_availability(
         tmp_path,
         f"{TEST_MODULE}:IdentitySpoofingCliAdapter",

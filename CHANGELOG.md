@@ -8,6 +8,10 @@ All notable user-facing changes are recorded here.
 
 - Run a fixed child workflow for each item with `foreach`, automatic collection-limit prompting, ordered result indexes, artifact-backed resume, and optional caps for literal collections.
 
+### Fixed
+
+- Allow mock runs of workflows that specify provider reasoning.
+
 ## [0.4.0] - 2026-10-28
 
 ### Changed
