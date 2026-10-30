@@ -6,7 +6,7 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
-- Run a fixed child workflow for each item in a bounded collection with `foreach`, ordered result indexes, and artifact-backed resume of completed work and review phases. Literal collections need no explicit item cap.
+- Run a fixed child workflow for each item with `foreach`, automatic collection-limit prompting, ordered result indexes, artifact-backed resume, and optional caps for literal collections.
 
 ## [0.4.0] - 2026-10-28
 

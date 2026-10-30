@@ -42,4 +42,10 @@ def test_documented_folder_and_chunk_workflows_compile_with_mock(
         )
         assert not preview.has_errors(), preview.diagnostics
         assert len(preview.foreach_templates) == 1
+        if name == "chunk-analysis.task.md":
+            producer = next(
+                plan for plan in preview.render_plans if plan.node_id == "split"
+            )
+            for stream in producer.streams:
+                assert "at most 12 items." in stream.fragments[-1].text
     assert not (tmp_path / ".crewplane/execution-stages").exists()

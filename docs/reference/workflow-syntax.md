@@ -420,6 +420,17 @@ Paths, commands, globbing, expressions, concatenated references, and metadata
 references such as `output_path` are not collections. Read a collection file
 through an ordinary input node.
 
+For a `.findings` collection, Crewplane automatically adds `max_items` to the
+producer's executor prompt and reviewer task context as a limit on the executor's
+findings array. When multiple groups consume the same producer's findings, the
+prompt uses their smallest cap; each group keeps its own runtime cap. Configure
+collection size through `max_items` and keep authored prompts focused on item
+selection and structure. Crewplane does not rewrite conflicting limits in prose.
+Literal arrays, input outputs, and earlier foreach result indexes add no prompt
+instruction; index-source caps do not propagate to earlier producers or children.
+Runtime validation remains the hard limit: an oversized collection fails the
+group before its children start, without truncation or regeneration.
+
 Collections must be arrays of objects with unique string keys and JSON values.
 Order and repeated objects are preserved; `[]` succeeds without child execution.
 Non-finite numbers, unsupported YAML values, invalid Unicode, cycles, and

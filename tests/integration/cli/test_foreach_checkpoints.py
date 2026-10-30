@@ -127,6 +127,76 @@ def review_project(
 
 
 @requires_resume_support
+def test_findings_producer_review_resume_retains_collection_constraint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "project"
+    fixtures = tmp_path / "fixtures"
+    config, workflow = review_project(root, fixtures)
+    payload, body = workflow_document(workflow)
+    payload["nodes"][1].update(
+        mode="sequential",
+        providers=[
+            {"provider": "alpha", "role": role} for role in ("executor", "reviewer")
+        ],
+    )
+    write_workflow_document(workflow, payload, body)
+    approved = (fixtures / "chunks.i0.part.analyze/reviewer-round-1.md").read_bytes()
+    (fixtures / "planner/reviewer-round-1.md").write_bytes(approved)
+    constraint = "Executor findings: JSON array with at most 4 items."
+    for name in ("alpha_executor_0_round1", "reviewer-round-1"):
+        (fixtures / f"planner/{name}.mutations.json").write_text(
+            json.dumps({"required_prompt_contains": [constraint]}),
+            encoding="utf-8",
+            newline="\n",
+        )
+    monkeypatch.chdir(root)
+    runner = CliRunner()
+    args = ["run", "--tasks", str(workflow), "--config", str(config), "--no-live"]
+
+    def interrupt(store: OutputManager, record: ReviewLoopCheckpoint) -> Path:
+        path = ORIGINAL_PUBLISH(store, record)
+        if (
+            record.node_id == "planner"
+            and isinstance(record, OpenReviewCheckpoint)
+            and record.next_phase == "reviewers"
+        ):
+            raise RuntimeError("pause producer before review")
+        return path
+
+    with monkeypatch.context() as interruption:
+        interruption.setattr(OutputManager, "write_review_checkpoint", interrupt)
+        failed = runner.invoke(app, args)
+        assert failed.exit_code == 1, failed.output
+        assert "pause producer before review" in failed.output
+    resumed = runner.invoke(app, args)
+    assert resumed.exit_code == 0, resumed.output
+    first, second = sorted((root / ".crewplane/execution-stages").iterdir())
+    manifest = json.loads((second / "manifests/run.json").read_bytes())
+    original = json.loads((first / "manifests/run.json").read_bytes())
+    assert manifest["workflow_signature"] == original["workflow_signature"]
+    checkpoint = manifest["resumed_review_checkpoints"][0]
+    assert checkpoint["node_id"] == "planner"
+    assert checkpoint["source_phase"] == "reviewers"
+    events = [
+        json.loads(line)
+        for line in (second / "logs/events.ndjson").read_bytes().splitlines()
+    ]
+    assert [
+        event["role"]
+        for event in events
+        if event["event_type"] == "invocation_started" and event["node_id"] == "planner"
+    ] == ["reviewer"]
+    plan = json.loads((second / "preflight/execution-plan.json").read_bytes())
+    producer = next(
+        render for render in plan["render_plans"] if render["node_id"] == "planner"
+    )
+    assert all(
+        constraint in stream["fragments"][-1]["text"] for stream in producer["streams"]
+    )
+
+
+@requires_resume_support
 @pytest.mark.parametrize("shift_child_lines", [False, True])
 @pytest.mark.parametrize("literal", [False, True])
 @pytest.mark.parametrize(

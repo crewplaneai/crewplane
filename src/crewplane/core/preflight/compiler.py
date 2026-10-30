@@ -19,6 +19,7 @@ from .dependency_edges import append_dependency_edge
 from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .execution_nodes import compile_execution_node, nodes_with_graph_dependencies
 from .foreach.compilation import compilation_source, finish_foreach_preview
+from .foreach.prompts import with_collection_constraints
 from .models import PreflightCompilationPreview
 from .plan_contract_artifacts import validate_artifact_contract_uniqueness
 from .plan_signatures import (
@@ -237,6 +238,7 @@ def _compile_template_plan(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> tuple[list[RenderPlan], list[PreflightExecutionNode], list[DependencyEdge]]:
+    workflow = with_collection_constraints(workflow)
     render_plans: list[RenderPlan] = []
     nodes: list[PreflightExecutionNode] = []
     workspace_records = workspace_policy_records(workflow, config, runtime_snapshot)

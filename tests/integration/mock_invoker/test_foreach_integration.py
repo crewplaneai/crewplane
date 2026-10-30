@@ -96,6 +96,14 @@ def test_mock_foreach_validate_dry_run_fail_resume_skip_force(
     first, second = records(tmp_path)
     assert second[1]["status"] == "succeeded"
     assert second[1]["workflow_signature"] == first[1]["workflow_signature"]
+    restored = json.loads((second[0] / "preflight/execution-plan.json").read_bytes())
+    assert restored["render_plans"] == json.loads(base)["render_plans"]
+    producer = next(
+        render for render in restored["render_plans"] if render["node_id"] == "planner"
+    )
+    for stream in producer["streams"]:
+        text = "".join(fragment.get("text") or "" for fragment in stream["fragments"])
+        assert ("at most 4 items." in text) == (not literal)
     assert set(second[1]["resumed_nodes"]) == {
         "request",
         "planner",

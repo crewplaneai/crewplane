@@ -116,7 +116,8 @@ requirements. Keep the finite concurrency setting from the folder example.
 A single executor emits the collection inside its findings block. Its ordinary
 Markdown output is not a collection source.
 The artifact reference requires `max_items` because its collection is resolved at
-runtime; a collection exceeding the cap fails before any child starts.
+runtime. Crewplane supplies the producer's collection-size instruction from this
+cap; a collection exceeding it still fails before any child starts.
 
 `chunk-analysis.task.md`:
 
@@ -147,7 +148,7 @@ nodes:
     providers: [codex]
 ---
 ## split
-Divide the supplied material into at most twelve chunks:
+Divide the supplied material into chunks:
 {{request.output}}
 Return an array of objects with a chunk label and its excerpt, as strict JSON
 inside <!-- findings --> and <!-- /findings -->. Do not use a code fence.
