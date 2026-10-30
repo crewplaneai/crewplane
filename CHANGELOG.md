@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
 ### Added
 
 - Run a fixed child workflow for each item with `foreach`, automatic collection-limit prompting, ordered result indexes, artifact-backed resume, and optional caps for literal collections.
