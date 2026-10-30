@@ -269,6 +269,7 @@ class Settings(BaseModel):
     log_level: str = "info"
     sequential_consensus_on_exhaustion: SequentialConsensusPolicy = "continue"
     max_audit_rounds: int = Field(default=5, ge=1)
+    max_expanded_nodes: int = Field(default=10_000, strict=True, gt=0)
     max_concurrent_nodes: int | None = Field(default=None, ge=1)
     max_parallel_invocations: int | None = Field(default=None, ge=1)
     token_budget: TokenBudgetSettings = Field(default_factory=TokenBudgetSettings)

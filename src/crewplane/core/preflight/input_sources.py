@@ -12,8 +12,8 @@ from .compile_state import (
     node_source_span,
     source_root,
 )
+from .compiled_records import WorkspaceFileTarget
 from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
-from .models import WorkspaceFileTarget
 from .references import TemplateReference, iter_template_references
 from .static_resources import (
     StaticFileResult,

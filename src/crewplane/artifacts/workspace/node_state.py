@@ -11,10 +11,8 @@ from crewplane.architecture.contracts import JsonObject, JsonValue, NodeArtifact
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import NodeState
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )

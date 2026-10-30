@@ -10,7 +10,7 @@ from threading import Lock
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.file_hashing import ContentSignature
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
     ProviderRecord,
 )

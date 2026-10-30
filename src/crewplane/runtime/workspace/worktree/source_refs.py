@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,

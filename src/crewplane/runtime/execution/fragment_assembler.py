@@ -8,13 +8,13 @@ from crewplane.architecture.contracts import (
     VerifiedNodeArtifact,
 )
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     Fragment,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     RenderStream,
     WorkspaceFileSourceClass,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import (
     FINDINGS_ARTIFACT_KEYS,

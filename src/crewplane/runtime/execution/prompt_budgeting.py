@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from crewplane.architecture.contracts import LogLevel, RuntimeLogValue
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .activity.events import RuntimeEventContext, emit_runtime_log

@@ -12,7 +12,7 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.ports import ProviderProcessPublication
 from crewplane.architecture.safe_files import ensure_single_link_regular_file
 from crewplane.core.config import AgentConfig
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.observability.timing import ElapsedTimer
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 

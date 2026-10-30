@@ -1,30 +1,27 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
-from typing import Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    ValidationInfo,
     field_validator,
     model_validator,
 )
 
-from crewplane.architecture.contracts import ArtifactContract, JsonObject
-from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.token_budget import TokenBudgetThresholds
-from crewplane.core.workflow.keywords import (
-    NodeMode,
-    ProviderRole,
-    ReviewStartsWith,
-    SequentialConsensusPolicy,
-)
-from crewplane.core.workflow.source_locations import SourceSpan, TokenRawSpan
+from crewplane.architecture.contracts import JsonObject
+from crewplane.core.expansion_state import ExpansionState
 from crewplane.version import SCHEMA_VERSION
 
+from .compiled_records import (
+    DependencyEdge,
+    PreflightExecutionNode,
+    RenderPlan,
+    StaticResource,
+    TokenCatalogEntry,
+    WorkspaceFileLocator,
+)
 from .diagnostics import PreflightDiagnostic
 from .plan_contract import (
     validate_current_execution_plan_shape,
@@ -45,405 +42,52 @@ PREFLIGHT_STATUS_FAILED = "preflight_failed"
 PREFLIGHT_STATUS_SUCCEEDED = "preflight_succeeded"
 
 
-TokenKind = Literal["node", "file", "env", "var"]
-FragmentKind = Literal[
-    "literal",
-    "static_file_content",
-    "workspace_file_locator",
-    "static_env",
-    "static_var",
-    "runtime_locator_lookup",
-]
-FRAGMENT_PAYLOAD_FIELDS = frozenset(
-    {
-        "text",
-        "content_ref",
-        "key",
-        "value_handle",
-        "value_stored",
-        "fingerprint",
-        "locator",
-    }
-)
-FRAGMENT_ALLOWED_PAYLOAD_FIELDS = {
-    "literal": frozenset({"text"}),
-    "static_file_content": frozenset({"content_ref"}),
-    "workspace_file_locator": frozenset({"locator"}),
-    "static_env": frozenset({"key", "value_handle", "value_stored", "fingerprint"}),
-    "static_var": frozenset({"key", "value_handle", "value_stored", "fingerprint"}),
-    "runtime_locator_lookup": frozenset({"locator"}),
-}
-
-
-class StaticResource(BaseModel):
+class CompiledForeach(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    resource_id: str
-    kind: Literal["file"]
-    raw_path: str
-    source_root: str
-    resolved_path: str
-    content_ref: str
-    encoding: str = "utf-8"
-    size_bytes: int
-    sha256: str
-    token_signatures: list[str] = Field(default_factory=list)
+    group_id: str
+    namespace: str
+    workflow: str
+    items: list[JsonObject] | str
+    max_items: int = Field(strict=True, ge=0)
+    item_node_id: str
+    shared_bindings: dict[str, str]
+    parameters: dict[str, str]
+    original_dependencies: list[str]
+    template_digest: str
+    execution_order: list[str]
+    nodes: list[PreflightExecutionNode]
+    render_plans: list[RenderPlan]
+    workspace_file_locators: list[WorkspaceFileLocator]
+    token_catalog: list[TokenCatalogEntry]
+    dependency_graph: list[DependencyEdge]
 
-
-class Fragment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    fragment_index: int
-    kind: FragmentKind
-    source_role: PromptSegmentRole
-    text: str | None = None
-    content_ref: str | None = None
-    key: str | None = None
-    value_handle: str | None = None
-    value_stored: str | None = None
-    fingerprint: str | None = None
-    locator: dict[str, str] | None = None
-
-    @model_validator(mode="after")
-    def _validate_fragment_payload(self) -> Fragment:
-        self._reject_unrelated_payload_fields()
-        if self.kind == "literal":
-            self._require_payload_field("text", "Literal fragments require text.")
-        if self.kind == "static_file_content":
-            self._require_payload_field(
-                "content_ref",
-                "Static file fragments require content_ref.",
-            )
-        if self.kind == "workspace_file_locator":
-            self._validate_workspace_file_locator_fragment()
-        if self.kind == "runtime_locator_lookup":
-            self._validate_runtime_locator_fragment()
-        if self.kind in {"static_env", "static_var"}:
-            self._validate_static_value_fragment()
-        return self
-
-    def _reject_unrelated_payload_fields(self) -> None:
-        allowed_fields = FRAGMENT_ALLOWED_PAYLOAD_FIELDS[self.kind]
-        unrelated_fields = sorted(
-            field
-            for field in FRAGMENT_PAYLOAD_FIELDS.difference(allowed_fields)
-            if getattr(self, field) is not None
+    def semantic_digest(self) -> str:
+        from .plan_signatures import (
+            semantic_node_payloads,
+            semantic_source_location_payload,
         )
-        if unrelated_fields:
-            raise ValueError(
-                f"{self.kind} fragments must not define payload field(s): "
-                f"{', '.join(unrelated_fields)}."
-            )
+        from .signatures import signature_for_payload
 
-    def _require_payload_field(self, field_name: str, message: str) -> None:
-        if getattr(self, field_name) is None:
-            raise ValueError(message)
-
-    def _validate_workspace_file_locator_fragment(self) -> None:
-        if self.locator is None:
-            raise ValueError("Workspace file locator fragments require locator.")
-        if not self.locator.get("locator_id"):
-            raise ValueError(
-                "Workspace file locator fragments require locator_id metadata."
-            )
-
-    def _validate_runtime_locator_fragment(self) -> None:
-        if self.locator is None:
-            raise ValueError("Runtime locator fragments require locator.")
-        if not self.locator.get("node_id") or not self.locator.get("artifact_name"):
-            raise ValueError(
-                "Runtime locator fragments require node_id and artifact_name metadata."
-            )
-
-    def _validate_static_value_fragment(self) -> None:
-        if self.key is None:
-            raise ValueError("Static value fragments require key.")
-        value_source_count = sum(
-            value is not None for value in (self.value_handle, self.value_stored)
+        return signature_for_payload(
+            {
+                "nodes": semantic_node_payloads(self.nodes),
+                "render_plans": semantic_source_location_payload(self.render_plans),
+                "locators": semantic_source_location_payload(
+                    self.workspace_file_locators
+                ),
+                "tokens": semantic_source_location_payload(self.token_catalog),
+                "edges": self.dependency_graph,
+                "item_node_id": self.item_node_id,
+                "bindings": self.shared_bindings,
+                "parameters": self.parameters,
+            }
         )
-        if value_source_count != 1:
-            raise ValueError(
-                "Static value fragments require exactly one handle or stored value."
-            )
-        if self.value_stored is not None and self.fingerprint is not None:
-            raise ValueError(
-                "Static value fragments with value_stored must not define fingerprint."
-            )
-
-
-class RenderStream(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_role: ProviderRole
-    fragments: list[Fragment] = Field(default_factory=list)
-
-
-class RenderPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    render_plan_id: str
-    node_id: str | None = None
-    module_id: str | None = None
-    source_file: str | None = None
-    source_root: str | None = None
-    source_span: SourceSpan | None = None
-    template_hash: str | None = None
-    template_signature: str | None = None
-    streams: list[RenderStream] = Field(default_factory=list)
-
-
-class TokenCatalogEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    occurrence_id: str
-    node_id: str
-    target_role: ProviderRole
-    source_role: PromptSegmentRole
-    raw_token: str
-    token_kind: TokenKind
-    fragment_index: int
-    signature: str
-    source_file: str | None = None
-    source_span: SourceSpan | None = None
-    token_raw_span: TokenRawSpan | None = None
-    canonical_locator: str | None = None
-    dependency_signature: str | None = None
-    resolved: JsonObject = Field(default_factory=dict)
-    metadata: dict[str, str] = Field(default_factory=dict)
-
-    @field_validator("token_kind", mode="before")
-    @classmethod
-    def _reject_param_token_kind(cls, value: object) -> object:
-        if value == "param":
-            raise ValueError(
-                "Param tokens are composition-only and cannot be persisted."
-            )
-        return value
-
-
-class DependencyEdge(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    source_node: str
-    target_node: str
-    artifact_name: str | None = None
-    dependency_signature: str
-    target_locator: str | None = None
-    artifact_key: str | None = None
-    first_token_signature: str | None = None
-
-
-class ProviderRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    provider: str
-    role: ProviderRole
-    model: str | None = None
-    requested_reasoning: str | None = None
-    task_id: str
-    agent_config_key: str
-    invoker_alias: str
-    agent_config_signature: str
-    invoker_config_signature: str
-
-
-class TokenBudgetPolicy(TokenBudgetThresholds):
-    pass
-
-
-class RetryPolicy(BaseModel):
-    """Reserved for future compiled retry policy fields."""
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ConcurrencyPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_concurrent_nodes: int | None = Field(default=None, ge=1)
-    max_parallel_invocations: int | None = Field(default=None, ge=1)
-
-
-class ExecutionPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    depth: int | None = Field(default=None, ge=1)
-    audit_rounds: int | None = Field(default=None, ge=1)
-    review_starts_with: ReviewStartsWith = "executor"
-    continue_on_failure: bool = False
-    failure_threshold: int | None = Field(default=None, ge=0)
-    token_budget: TokenBudgetPolicy | None = None
-    consensus_on_exhaustion: SequentialConsensusPolicy | None = None
-    retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
-    concurrency_policy: ConcurrencyPolicy = Field(default_factory=ConcurrencyPolicy)
 
     @property
-    def single_provider_total_rounds(self) -> int:
-        """Resolve single-provider total rounds without changing serialized depth."""
-        return self.depth or 1
-
-    @field_validator("depth", "audit_rounds", mode="before")
-    @classmethod
-    def _validate_positive_round_policy(
-        cls,
-        value: object,
-        info: ValidationInfo,
-    ) -> object:
-        if value is not None and (
-            isinstance(value, bool) or (isinstance(value, (int, float)) and value <= 0)
-        ):
-            raise ValueError(f"{info.field_name} must be greater than 0")
-        return value
-
-
-class WorkspaceFileSourceClass(StrEnum):
-    PROJECT_INITIAL = "project_initial"
-    PROJECT_INITIAL_THEN_CANDIDATE = "project_initial_then_candidate"
-    RUNTIME_DYNAMIC = "runtime_dynamic"
-
-
-class WorkspaceFileTarget(StrEnum):
-    INPUT_OUTPUT = "input_output"
-    EXECUTOR_PROMPT = "executor_prompt"
-    REVIEWER_PROMPT = "reviewer_prompt"
-
-
-class WorkspaceFileLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    locator_id: str
-    content_ref: str | None = None
-    occurrence_id: str
-    node_id: str
-    target: WorkspaceFileTarget
-    source_class: WorkspaceFileSourceClass
-    raw_token: str
-    raw_path: str
-    source_file: str | None = None
-    source_span: SourceSpan | None = None
-    token_raw_span: TokenRawSpan | None = None
-    source_root: str
-    source_root_relative_to_project: str
-    project_root_relative_to_git_top: str
-    git_top_relative_path: str
-    workspace_relative_path: str
-    git_blob: str | None = None
-    git_file_mode: str | None = None
-    byte_size: int | None = Field(default=None, ge=0)
-    canonical_blob_sha256: str | None = None
-    injected_sha256: str | None = None
-    literal_path_verified: bool = False
-    utf8_validated: bool = False
-
-    @field_validator(
-        "locator_id",
-        "occurrence_id",
-        "node_id",
-        "raw_token",
-        "raw_path",
-        "source_root",
-        "source_root_relative_to_project",
-        "project_root_relative_to_git_top",
-        "git_top_relative_path",
-        "workspace_relative_path",
-    )
-    @classmethod
-    def _validate_nonblank_text(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Workspace file locator text fields cannot be blank.")
-        return value
-
-    @model_validator(mode="after")
-    def _validate_source_state(self) -> WorkspaceFileLocator:
-        if self.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC:
-            self._validate_runtime_dynamic_state()
-        else:
-            self._validate_project_initial_state()
-        if (
-            self.target == WorkspaceFileTarget.INPUT_OUTPUT
-            and self.source_class != WorkspaceFileSourceClass.PROJECT_INITIAL
-        ):
-            raise ValueError("Input workspace locators must use project_initial bytes.")
-        return self
-
-    def _validate_project_initial_state(self) -> None:
-        required = {
-            "content_ref": self.content_ref,
-            "git_blob": self.git_blob,
-            "git_file_mode": self.git_file_mode,
-            "byte_size": self.byte_size,
-            "canonical_blob_sha256": self.canonical_blob_sha256,
-        }
-        missing = sorted(name for name, value in required.items() if value is None)
-        if missing:
-            raise ValueError(
-                "Project-initial workspace locators require: " + ", ".join(missing)
-            )
-        if not self.literal_path_verified or not self.utf8_validated:
-            raise ValueError(
-                "Project-initial workspace locators require verified literal UTF-8 bytes."
-            )
-
-    def _validate_runtime_dynamic_state(self) -> None:
-        static_fields = {
-            "content_ref": self.content_ref,
-            "git_blob": self.git_blob,
-            "git_file_mode": self.git_file_mode,
-            "byte_size": self.byte_size,
-            "canonical_blob_sha256": self.canonical_blob_sha256,
-            "injected_sha256": self.injected_sha256,
-        }
-        present = sorted(
-            name for name, value in static_fields.items() if value is not None
-        )
-        if present or self.literal_path_verified or self.utf8_validated:
-            raise ValueError(
-                "Runtime-dynamic workspace locators cannot carry static byte "
-                f"metadata: {', '.join(present) or 'verification flags'}."
-            )
-
-
-class PreflightExecutionNode(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    module_id: str | None = None
-    source_file: str | None = None
-    source_root: str | None = None
-    source_span: SourceSpan | None = None
-    mode: NodeMode
-    findings: bool = False
-    dependencies: list[str] = Field(default_factory=list)
-    render_plan_id: str | None = None
-    provider_records: list[ProviderRecord] = Field(default_factory=list)
-    execution_policy: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
-    workspace_policy: WorkspaceSelectionRecord | None = None
-    artifact_contract: ArtifactContract
-    input_content_ref: str | None = None
-    input_workspace_file_locator_id: str | None = None
-
-    @model_validator(mode="after")
-    def _validate_mode_payload(self) -> PreflightExecutionNode:
-        if self.mode == "input":
-            if self.render_plan_id is not None:
-                raise ValueError(
-                    "Input preflight nodes must not define render_plan_id."
-                )
-            if self.provider_records:
-                raise ValueError(
-                    "Input preflight nodes must not define provider_records."
-                )
-            return self
-        if self.input_content_ref is not None:
-            raise ValueError(
-                "Provider-executed preflight nodes must not define input_content_ref."
-            )
-        if self.input_workspace_file_locator_id is not None:
-            raise ValueError(
-                "Provider-executed preflight nodes must not define "
-                "input_workspace_file_locator_id."
-            )
-        return self
+    def node_bound(self) -> int:
+        count = len(self.items) if isinstance(self.items, list) else self.max_items
+        return count * len(self.nodes)
 
 
 class PreflightCompilationPreview(BaseModel):
@@ -453,6 +97,7 @@ class PreflightCompilationPreview(BaseModel):
     workflow_name: str | None = None
     workflow_signature: str | None = None
     execution_order: list[str] = Field(default_factory=list)
+    foreach_templates: list[CompiledForeach] = Field(default_factory=list)
     nodes: list[PreflightExecutionNode] = Field(default_factory=list)
     render_plans: list[RenderPlan] = Field(default_factory=list)
     static_resources: list[StaticResource] = Field(default_factory=list)
@@ -499,6 +144,8 @@ class PreflightExecutionPlan(BaseModel):
     workflow_name: str
     workflow_signature: str
     execution_order: list[str]
+    expansions: dict[str, ExpansionState] = Field(default_factory=dict)
+    foreach_templates: list[CompiledForeach] = Field(default_factory=list)
     nodes: list[PreflightExecutionNode]
     render_plans: list[RenderPlan]
     static_resources: list[StaticResource]
@@ -554,6 +201,7 @@ class PreflightExecutionPlan(BaseModel):
             workflow_signature=preview.workflow_signature,
             execution_order=list(preview.execution_order),
             nodes=list(preview.nodes),
+            foreach_templates=list(preview.foreach_templates),
             render_plans=list(preview.render_plans),
             static_resources=list(preview.static_resources),
             workspace_file_locators=list(preview.workspace_file_locators),

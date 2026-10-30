@@ -176,6 +176,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -220,6 +221,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
+                return plan
 
             class StubObserver(_ConformingObserverStub):
                 def __init__(  # type: ignore[no-untyped-def]
@@ -454,7 +456,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                     )
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
-                return None
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -507,6 +509,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -548,6 +551,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -598,6 +602,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
+                return plan
 
             class StubObserver(_ConformingObserverStub):
                 def __init__(  # type: ignore[no-untyped-def]

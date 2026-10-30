@@ -85,6 +85,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
+                return plan
 
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
             try:

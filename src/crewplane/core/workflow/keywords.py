@@ -5,7 +5,7 @@ from enum import StrEnum
 from itertools import pairwise
 from typing import Literal, get_args
 
-NodeMode = Literal["parallel", "sequential", "input"]
+NodeMode = Literal["parallel", "sequential", "input", "foreach"]
 ReviewStartsWith = Literal["executor", "reviewer"]
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .common import (

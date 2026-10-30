@@ -15,7 +15,8 @@ from crewplane.core.execution_state import (
     ResumeOrigin,
     validate_run_state_schema_version,
 )
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.expansion_state import ExpansionProvenance
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
@@ -56,6 +57,13 @@ class CheckpointIdentity(CheckpointRecord):
     run_key_name: str = Field(min_length=1)
     node_id: str = Field(min_length=1)
     tasks: list[CheckpointTask]
+    expansion: ExpansionProvenance | None = None
+
+    @model_validator(mode="after")
+    def validate_expansion_identity(self) -> Self:
+        if self.expansion is not None:
+            self.expansion.validate_node(self.node_id)
+        return self
 
     @field_validator("run_state_schema_version")
     @classmethod
@@ -234,6 +242,8 @@ def validate_checkpoint_node(
     Raises:
         ValueError: The first violated checkpoint/node constraint.
     """
+    if checkpoint.expansion != node.expansion:
+        raise ValueError("Checkpoint expansion provenance does not match concrete node")
     tasks = [
         CheckpointTask(task_id=p.task_id, role=p.role) for p in node.provider_records
     ]

@@ -9,6 +9,7 @@ import pytest
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import (
+    ArtifactContract,
     EventType,
     build_findings_filename,
     build_result_filename,
@@ -26,7 +27,6 @@ from crewplane.core.preflight import (
     RenderStream,
     signature_for_payload,
 )
-from crewplane.core.preflight.models import ArtifactContract
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole

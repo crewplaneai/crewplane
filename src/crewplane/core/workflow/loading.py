@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
 
@@ -9,6 +9,7 @@ from crewplane.core.yaml_loader import load_yaml_unique
 
 from .composition import compose_workflow_markdown
 from .composition.models import (
+    ComposedForeach,
     ComposedWorkflowDocument,
     WorkflowSourceRecord,
 )
@@ -25,6 +26,7 @@ class WorkflowLoadResult:
     node_source_paths: dict[str, Path]
     node_source_spans: dict[str, SourceSpan]
     prompt_segment_spans: dict[str, list[SourceSpan]]
+    foreach_templates: dict[str, ComposedForeach] = field(default_factory=dict)
 
 
 def _build_workflow_load_result(
@@ -96,7 +98,7 @@ def load_tasks_with_sources(
         node_source_spans = {}
         prompt_segment_spans = {}
 
-    return _build_workflow_load_result(
+    loaded = _build_workflow_load_result(
         path=path,
         data=data,
         workflow_content=workflow_content,
@@ -104,6 +106,12 @@ def load_tasks_with_sources(
         node_source_paths=node_source_paths,
         node_source_spans=node_source_spans,
         prompt_segment_spans=prompt_segment_spans,
+    )
+
+    return (
+        replace(loaded, foreach_templates=composed.foreach_templates)
+        if path.suffix.lower() == ".md"
+        else loaded
     )
 
 

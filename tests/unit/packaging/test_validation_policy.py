@@ -21,7 +21,7 @@ def test_job_budgets_include_phase_and_overhead() -> None:
     assert validation_policy.load_policy().job_minutes() == {
         "linux": 30,
         "darwin": 45,
-        "win32": 45,
+        "win32": 55,
         "package": 20,
         "testpypi": 45,
         "race": 18,
@@ -37,7 +37,7 @@ def test_budget_change_updates_every_dependent_job_and_rounds_up(
     assert jobs["linux"] == 31
     assert jobs["testpypi"] == 46
     assert jobs["package"] == 20
-    assert jobs["win32"] == 45
+    assert jobs["win32"] == 55
 
 
 def test_race_budget_tracks_repetitions(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ from crewplane.core.preflight.diagnostics import (
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
+from crewplane.core.preflight.foreach.compilation import inventory_workflow
 from crewplane.core.preflight.secrets import FingerprintKeyPolicy
 from crewplane.core.preflight.source import PreflightWorkflowSource
 
@@ -92,7 +93,7 @@ def compile_workflow_preview(
     diagnostics = (
         asyncio.run(
             collect_invoker_availability_diagnostics(
-                context.source.workflow,
+                inventory_workflow(context.source),
                 config,
                 context.project_root,
                 snapshot_result.invoker_options,
@@ -101,7 +102,7 @@ def compile_workflow_preview(
         )
         if check_cli_availability
         else collect_invoker_diagnostics(
-            context.source.workflow,
+            inventory_workflow(context.source),
             config,
             context.project_root,
             snapshot_result.invoker_options,
@@ -220,7 +221,7 @@ def compile_preview(
 ) -> PreflightCompilationPreview:
     workspace_check = collect_workspace_source_policy(
         config=context.config,
-        workflow=context.source.workflow,
+        workflow=inventory_workflow(context.source),
         project_root=context.project_root,
         state_dir=context.state_dir,
         real_execution=workspace_real_execution,

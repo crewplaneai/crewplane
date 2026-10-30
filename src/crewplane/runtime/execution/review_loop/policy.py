@@ -4,7 +4,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts.artifacts import build_review_audit_directory_name
 from crewplane.architecture.safe_files import ensure_contained_directory
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
     ProviderRecord,
 )

@@ -21,7 +21,7 @@ from crewplane.artifacts.workspace.state.paths import (
     WORKSPACE_STATE_FILENAME,
     workspace_state_candidates,
 )
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
 

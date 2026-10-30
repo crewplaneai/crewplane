@@ -175,6 +175,11 @@ class ArtifactStorePort(Protocol):
     ) -> StageFinalizeResult:
         """Finalize a node using only its compiled artifact locators."""
 
+    def publish_raw_output(
+        self, request: NodeArtifactRequest, payload: bytes
+    ) -> StageFinalizeResult:
+        """Publish exact output bytes at the compiled locator without a wrapper."""
+
     def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
         """Resolve the compiled output locator for a node."""
 
@@ -195,6 +200,7 @@ class ArtifactStorePort(Protocol):
         self,
         request: NodeArtifactRequest,
         kind: str,
+        max_bytes: int | None = None,
     ) -> VerifiedNodeArtifact:
         """Return descriptor-verified bytes and their canonical artifact path."""
 

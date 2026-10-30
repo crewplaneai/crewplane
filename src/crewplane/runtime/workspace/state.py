@@ -17,8 +17,8 @@ from crewplane.architecture.contracts.execution_status import (
     TerminalWorkspaceStatus,
 )
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )

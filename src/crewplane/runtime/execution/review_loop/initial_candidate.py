@@ -13,7 +13,7 @@ from crewplane.architecture.contracts.artifacts import (
 )
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
 

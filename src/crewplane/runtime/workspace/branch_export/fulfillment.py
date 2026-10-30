@@ -11,8 +11,8 @@ from crewplane.artifacts.workspace.node_state import (
 )
 from crewplane.artifacts.workspace.state.paths import WORKSPACE_STATE_FILENAME
 from crewplane.core.execution_state import NodeState
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )

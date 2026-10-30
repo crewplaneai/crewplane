@@ -17,10 +17,8 @@ from crewplane.core.execution_state import (
     ResumeOrigin,
 )
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 
 from .common import (
     ExecutionTelemetry,
@@ -48,6 +46,7 @@ def write_successful_node_state(
             run_id=output.run_id,
             run_key_name=output.run_key_name,
             node_id=node.id,
+            expansion=node.expansion,
             completed_at=datetime.now().isoformat(),
             artifacts=_descriptors_for_result(output, finalize_result),
             generated_files=_generated_file_descriptors(output, finalize_result),

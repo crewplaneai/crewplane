@@ -26,7 +26,11 @@ from crewplane.runtime.execution import WorkflowExecutionError, execute_workflow
 
 from . import workflow_runner
 from .cleanup import cleanup_app
-from .dry_run import preview_topological_waves, print_dry_run_plan
+from .dry_run import (
+    preview_topological_waves,
+    print_dry_run_plan,
+    print_foreach_summary,
+)
 from .onboarding import ONBOARDING_COMMAND_HELP, run_onboarding_command
 from .project_init import initialize_project_templates
 from .run.observability import ObservabilityHubInstance
@@ -411,6 +415,7 @@ def validate(
             )
         console.print("[green]✓[/] Providers: references resolved")
         console.print("[green]✓[/] Preflight: compiled execution plan preview")
+        print_foreach_summary(preview, console)
     except typer.Exit:
         raise
     except KeyboardInterrupt as exc:

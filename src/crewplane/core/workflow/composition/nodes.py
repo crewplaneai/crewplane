@@ -9,6 +9,7 @@ from .models import ComposedNode, CompositionContext, NodeSpec
 from .rewrites import (
     qualify_id,
     resolve_dependency_id,
+    rewrite_artifact_references,
     rewrite_prompt_segments,
 )
 
@@ -36,7 +37,19 @@ def compose_local_node(
         "worktree": composed_worktree,
     }
     consumed_params: set[str] = set()
-    if node_payload.mode != "input":
+    if node_payload.mode == "foreach":
+        updates.pop("worktree")
+        updates["inputs"] = {
+            name: resolve_dependency_id(
+                caller, context.namespace_prefix, context.bound_input_nodes
+            )
+            for name, caller in node_payload.inputs.items()
+        }
+        if isinstance(node_payload.items, str):
+            updates["items"] = rewrite_artifact_references(
+                node_payload.items, context.namespace_prefix, context.bound_input_nodes
+            )
+    elif node_payload.mode != "input":
         resolved_segments, consumed_params = rewrite_prompt_segments(
             node_payload.prompt_segments,
             namespace_prefix=context.namespace_prefix,
@@ -102,6 +115,6 @@ def _implicit_worktree_selector(
     context: CompositionContext,
     node_payload: WorkflowNode,
 ) -> str | None:
-    if node_payload.mode == "input" or node_payload.worktree is not None:
+    if node_payload.mode in {"input", "foreach"} or node_payload.worktree is not None:
         return None
     return context.implicit_worktree_selector

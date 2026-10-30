@@ -94,7 +94,7 @@ def test_interrupted_invocation_starts_full_count_again(
         def stop_requested(self) -> bool:
             return stop_requested
 
-    async def interrupt_second_pass(*args: Any, **kwargs: Any) -> None:
+    async def interrupt_second_pass(*args: Any, **kwargs: Any):
         nonlocal stop_requested
         new_runs = set(run_directories(tmp_path)) - set(started_runs)
         assert len(new_runs) == 1
@@ -105,7 +105,7 @@ def test_interrupted_invocation_starts_full_count_again(
                 raise asyncio.CancelledError()
             stop_requested = True
             await asyncio.Event().wait()
-        await original(*args, **kwargs)
+        return await original(*args, **kwargs)
 
     with (
         patch.object(cli, "execute_workflow", new=interrupt_second_pass),

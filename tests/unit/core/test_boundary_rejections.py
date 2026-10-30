@@ -15,8 +15,8 @@ from crewplane.core.execution_state import (
     ResumeOrigin,
     RunManifest,
 )
+from crewplane.core.preflight.compiled_records import Fragment
 from crewplane.core.preflight.models import (
-    Fragment,
     WorkspaceSelectionRecord,
     WorkspaceSetupCommandRecord,
 )

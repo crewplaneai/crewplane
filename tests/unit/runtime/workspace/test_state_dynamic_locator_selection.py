@@ -5,11 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.core.preflight.models import (
-    ArtifactContract,
-    RenderPlan,
-    WorkspaceFileLocator,
-)
+from crewplane.architecture.contracts import ArtifactContract
+from crewplane.core.preflight.compiled_records import RenderPlan, WorkspaceFileLocator
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,

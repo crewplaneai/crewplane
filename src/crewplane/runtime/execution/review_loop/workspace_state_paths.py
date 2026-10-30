@@ -4,7 +4,7 @@ from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.workspace.state.paths import workspace_bundle_path
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
     invocation_slug,

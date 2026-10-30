@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceFileLocator,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.input import InputContentError, execute_input_stage

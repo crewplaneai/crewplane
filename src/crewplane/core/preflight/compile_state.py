@@ -7,18 +7,18 @@ from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
 
+from .compiled_records import (
+    DependencyEdge,
+    StaticResource,
+    TokenCatalogEntry,
+    WorkspaceFileLocator,
+)
 from .diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
-from .models import (
-    DependencyEdge,
-    StaticResource,
-    TokenCatalogEntry,
-    WorkspaceFileLocator,
-    WorkspaceSourceSnapshot,
-)
+from .models import WorkspaceSourceSnapshot
 from .references import TemplateReference
 from .secrets import FingerprintKeyCache, FingerprintKeyPolicy, SecretContext
 from .source import PreflightWorkflowSource
@@ -54,6 +54,7 @@ class PreflightCompileOptions:
     prompt_segment_spans: dict[str, tuple[SourceSpan, ...]] = field(
         default_factory=dict
     )
+    item_input_ids: frozenset[str] = frozenset()
     allowed_template_paths: tuple[Path, ...] = ()
     terminal_history_reader: TerminalHistoryReaderPort | None = None
     runtime_variables: dict[str, str] = field(default_factory=dict)

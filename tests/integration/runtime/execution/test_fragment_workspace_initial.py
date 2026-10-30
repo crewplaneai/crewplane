@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     Fragment,
     RenderPlan,
     RenderStream,

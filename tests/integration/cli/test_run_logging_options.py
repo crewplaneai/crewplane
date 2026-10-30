@@ -31,7 +31,7 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
-                return None
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -66,7 +66,7 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
-                return None
+                return plan
 
             cli.Console = ConsoleFactory(
                 file=stream,

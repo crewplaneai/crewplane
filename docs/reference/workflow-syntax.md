@@ -18,6 +18,7 @@ with [Workflow Authoring](../guides/workflow-authoring.md).
 - [Review Responses](#review-responses)
 - [Provider Objects](#provider-objects)
 - [Input Nodes](#input-nodes)
+- [Foreach Nodes](#foreach-nodes)
 - [Prompt Sections](#prompt-sections)
 - [Templates](#templates)
 - [Token Budget Override](#token-budget-override)
@@ -191,7 +192,7 @@ Node selection:
 
 - `worktree: <name>` selects a declared logical worktree.
 - `worktree: none` opts out and uses the project root.
-- If exactly one worktree is declared, non-input nodes without an explicit
+- If exactly one worktree is declared, provider nodes without an explicit
   selector inherit it.
 - If multiple worktrees are declared, provider nodes must select one explicitly
   or set `worktree: none`.
@@ -206,7 +207,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | Field | Description |
 | --- | --- |
 | `id` | Node ID. |
-| `mode` | `parallel`, `sequential`, or `input`. |
+| `mode` | `parallel`, `sequential`, `input`, or `foreach`. |
 | `providers` | Provider shorthand strings or provider objects. |
 | `needs` | Upstream node IDs. |
 | `continue_on_failure` | Treat selected parallel or review-loop failure policies as successful node completion. |
@@ -217,7 +218,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `review_starts_with` | `executor` or `reviewer` for sequential executor/reviewer review loops. Defaults to `executor`. |
 | `failure_threshold` | Parallel-node failure threshold. Must be less than provider count. |
 | `token_budget` | Node token budget override. |
-| `worktree` | Node worktree selector. Not valid for input nodes. |
+| `worktree` | Node worktree selector. Not valid for input or foreach nodes. |
 
 Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
 reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`.
@@ -229,6 +230,7 @@ reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`
 | Mode | Providers | Mode-specific controls | Result selection |
 | --- | --- | --- | --- |
 | `input` | None. | `source` only. | The referenced file is copied as the node result. |
+| `foreach` | None on the group; child nodes may use providers. | `workflow`, `item_input`, `items`, `max_items`, `inputs`, `with`. | An ordered index of terminal child results. |
 | `parallel` | One or more executors. Reviewers are rejected. | `failure_threshold`, `continue_on_failure`. | Latest artifact for each provider task is aggregated. |
 | `sequential` with one provider | Exactly one executor. | `depth`. | Latest executor round is selected. |
 | `sequential` with multiple providers | One or more executors followed by one or more reviewers. | `depth`, `audit_rounds`, `review_starts_with`, `continue_on_failure`. | Runtime review-loop status selects canonical executor and reviewer artifacts. |
@@ -330,7 +332,7 @@ Provider object fields:
 | --- | --- |
 | `provider` | Agent name from `.crewplane/config.yml`. Required. |
 | `model` | Optional model override for this provider use. |
-| `reasoning` | Optional provider-native reasoning request for the built-in CLI invoker with `provider_kind: codex` or `claude`. |
+| `reasoning` | Optional provider-native reasoning request for the built-in CLI invoker with `provider_kind: codex` or `claude`; also accepted and ignored by the built-in mock invoker. |
 | `role` | `executor` or `reviewer`. Defaults to `executor`. |
 
 Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
@@ -347,11 +349,15 @@ provider needs a `model` or `reasoning` override, or `role: reviewer`.
 effort scale. Crewplane records it as `requested_reasoning` and includes it in
 execution identity. When omitted or set to `null`, Crewplane supplies no
 reasoning argument and the provider's existing configuration remains in
-control. Direct reasoning selectors in `cli_cmd`, `extra_args`, or
-`CLAUDE_CODE_EFFORT_LEVEL` conflict with a first-class request and fail
-preflight. For Claude, that includes `effortLevel` and
+control. With the built-in CLI invoker, direct reasoning selectors in `cli_cmd`,
+`extra_args`, or `CLAUDE_CODE_EFFORT_LEVEL` conflict with a first-class request
+and fail preflight. For Claude, that includes `effortLevel` and
 `env.CLAUDE_CODE_EFFORT_LEVEL` in explicit `--settings` JSON or files.
 Unrelated Claude settings remain valid.
+
+The built-in mock invoker accepts valid reasoning tokens for any provider kind.
+See [Mock Validation](../guides/mock-validation.md#provider-reasoning) for its
+validation and provenance behavior.
 
 ## Input Nodes
 
@@ -374,6 +380,101 @@ Rules:
   `review_starts_with`,
   `failure_threshold`, `continue_on_failure`, `token_budget`, or `worktree`
   selector is allowed.
+
+## Foreach Nodes
+
+`mode: foreach` runs one fixed child workflow for each object in an ordered
+collection. It uses the parent run and scheduler. The group completes after all
+instances succeed and publishes a JSON result index through `{{group.output}}`.
+
+| Field | Contract |
+| --- | --- |
+| `id`, `mode`, `needs` | Group identity, `foreach`, and authored prerequisites. |
+| `workflow` | Fixed `.md` path relative to the declaring workflow, within the project root. |
+| `item_input` | Name of a declared child input that receives one JSON object. |
+| `items` | Literal array of JSON objects, or exactly one upstream `{{node.output}}` or `{{node.findings}}` reference. |
+| `max_items` | Optional for literal arrays; required for artifact references. When supplied, must be a strict positive integer. |
+| `inputs` | Optional mapping of other child input names to caller node IDs. |
+| `with` | Optional string parameters substituted for `{{param:key}}` during composition, shared by every instance. |
+
+These are the only foreach fields. Provide an empty or HTML-comment-only
+`## <id>` section. Provider, prompt, worktree, findings, and invocation/review/
+failure-policy fields are rejected even when explicitly empty or false.
+
+| `items` | `max_items` | Result |
+| --- | --- | --- |
+| Literal array, including `[]` | Omitted | Accepted; preflight uses the array length as its bound. |
+| Literal array | Positive integer at least its length | Accepted; the cap acts as an optional assertion. |
+| Literal array | Smaller than its length | Rejected during preflight. |
+| Artifact reference | Omitted | Rejected during declaration validation. |
+| Artifact reference | Positive integer | Accepted; the resolved collection must fit before any child starts. |
+| Either form | Explicit `null`, boolean, string, fractional number, zero, or negative value | Rejected. |
+
+Omit the key to infer a literal bound; `max_items: null` does not mean omission.
+Every artifact reference requires an explicit cap, including references to input
+outputs and earlier foreach result indexes. Literal arrays contribute their actual
+length to the generated-node budget, even when an explicit cap is larger.
+
+Every collection or shared source must already be an ancestor through `needs`.
+Bindings do not authorize unrelated nodes. `.output` collection sources must
+be input or foreach nodes, whose outputs preserve raw data. Provider-generated
+collections use `.findings` from a node with `findings: true` and exactly one
+executor. Aggregate findings and ordinary wrapped provider outputs are rejected.
+Paths, commands, globbing, expressions, concatenated references, and metadata
+references such as `output_path` are not collections. Read a collection file
+through an ordinary input node.
+
+For a `.findings` collection, Crewplane automatically adds `max_items` to the
+producer's executor prompt and reviewer task context as a limit on the executor's
+findings array. When multiple groups consume the same producer's findings, the
+prompt uses their smallest cap; each group keeps its own runtime cap. Configure
+collection size through `max_items` and keep authored prompts focused on item
+selection and structure. Crewplane does not rewrite conflicting limits in prose.
+Literal arrays, input outputs, and earlier foreach result indexes add no prompt
+instruction; index-source caps do not propagate to earlier producers or children.
+Runtime validation remains the hard limit: an oversized collection fails the
+group before its children start, without truncation or regeneration.
+
+Collections must be arrays of objects with unique string keys and JSON values.
+Order and repeated objects are preserved; `[]` succeeds without child execution.
+Non-finite numbers, unsupported YAML values, invalid Unicode, cycles, and
+container nesting deeper than 64 are rejected, counting the collection array
+as depth 1. Collections and result indexes are limited to 1 MiB of canonical
+UTF-8 JSON; runtime collection artifacts must also fit that limit before decoding.
+The projected result index is checked before any child starts. Use smaller items
+or artifact references when the index would exceed its byte or depth limit.
+Template-looking strings inside items remain data.
+
+Child input bindings follow static-import rules. Bound input fallback files
+are not read. Unknown names, duplicate normalized keys, or aliases binding the
+same child input twice are invalid. Distinct inputs may share a caller source.
+Unbound inputs retain their file sources. Child imports can forward both item
+and shared inputs. Parameters retain inheritance, override, unused-binding
+checks, and unbound `param` → `var` rewriting.
+
+Preflight freezes and validates every child, including for an empty collection.
+Nested foreach is forbidden, including through child imports. Child repetition
+metadata does not create additional runs. Set a finite
+`settings.max_concurrent_nodes` and keep the combined bound within
+[`settings.max_expanded_nodes`](configuration.md#settings).
+
+Generated IDs use ordinals, for example `chunks.i0.analyze`, never item fields.
+The `<group-id>.` prefix is reserved for generated nodes and worktrees; parent
+nodes cannot reference individual generated children. Each item input waits for
+the group's original prerequisites, independent child roots wait for that input,
+and the group waits for every instance terminal. Waiting groups consume no node
+concurrency slot. A failed child blocks the group and its downstream consumers;
+independent branches can continue.
+
+Worktrees declared by the child are separate for each instance. Managed
+worktrees start from the captured project base and preserve internal lineage.
+Child provider nodes without a selected worktree use the shared project root.
+Shared artifact bindings retain existing cross-worktree restrictions and never
+transfer mutable caller checkouts. Explicit branch names must remain unique
+across instances.
+
+See [iteration examples](../examples/composition.md#iterate-over-folders) and
+[expansion artifacts and resume](artifacts.md#foreach-expansions).
 
 ## Prompt Sections
 

@@ -7,10 +7,8 @@ import pytest
 from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig
-from crewplane.core.preflight.models import (
-    PreflightExecutionPlan,
-    ProviderRecord,
-)
+from crewplane.core.preflight.compiled_records import ProviderRecord
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     agent_config_input_payload,

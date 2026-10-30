@@ -16,7 +16,8 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig, Config
-from crewplane.core.preflight.models import PreflightExecutionPlan, ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole

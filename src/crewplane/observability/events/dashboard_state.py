@@ -7,6 +7,7 @@ from time import monotonic
 from crewplane.architecture.contracts import (
     ExecutionStatus,
     LogPresentationFormat,
+    TopologyNode,
     WorkflowTopology,
     parse_lifecycle_status,
 )
@@ -93,6 +94,7 @@ class RunDashboardState:
     workflow_started_at: float | None = None
     workflow_finished_at: float | None = None
     nodes: dict[str, NodeRuntimeState] = field(default_factory=dict)
+    topology_nodes: dict[str, TopologyNode] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.workflow_status = parse_lifecycle_status(self.workflow_status)
@@ -158,4 +160,5 @@ def build_initial_state(topology: WorkflowTopology, run_id: str) -> RunDashboard
         run_id=run_id,
         node_order=node_order,
         nodes=nodes,
+        topology_nodes={node.id: node for node in topology.nodes},
     )

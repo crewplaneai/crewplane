@@ -13,10 +13,8 @@ from crewplane.architecture.safe_files import (
     contained_regular_file,
     ensure_contained_directory,
 )
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint, ReviewLoopCheckpoint
 from crewplane.core.review_checkpoint_state import (
     CheckpointFile,

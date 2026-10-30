@@ -18,6 +18,7 @@ from crewplane.architecture.contracts import (
     is_node_event_type,
     is_workflow_event_type,
 )
+from crewplane.architecture.contracts.execution_event import TopologyExpansionPayload
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -46,6 +47,7 @@ from crewplane.observability.events import (
     workflow_event,
     workspace_event,
 )
+from crewplane.observability.events.builders import topology_expansion_event
 from crewplane.observability.run_summary.builder import workflow_status
 from crewplane.observability.run_summary.issues import issue_summaries
 from crewplane.observability.types import RunResult
@@ -57,6 +59,7 @@ EXPECTED_EVENT_VALUES = {
     EventType.WORKFLOW_FINISHED: "workflow_finished",
     EventType.WORKFLOW_FAILED: "workflow_failed",
     EventType.WORKFLOW_CANCELLED: "workflow_cancelled",
+    EventType.TOPOLOGY_EXPANDED: "topology_expanded",
     EventType.NODE_STARTED: "node_started",
     EventType.NODE_FINISHED: "node_finished",
     EventType.NODE_FAILED: "node_failed",
@@ -88,7 +91,8 @@ def test_event_category_aliases_are_disjoint_and_cover_lifecycle_members() -> No
         for right in category_members[index + 1 :]
     )
     assert frozenset().union(*category_members) == frozenset(EventType) - {
-        EventType.RUNTIME_LOG
+        EventType.RUNTIME_LOG,
+        EventType.TOPOLOGY_EXPANDED,
     }
 
 
@@ -711,6 +715,10 @@ def _single_node_state() -> RunDashboardState:
 
 def _event_for_type(event_type: EventType) -> ExecutionEvent:
     match event_type:
+        case EventType.TOPOLOGY_EXPANDED:
+            return topology_expansion_event(
+                "workflow", "run-1", TopologyExpansionPayload("chunks", 0, (), ())
+            )
         case _ if is_workflow_event_type(event_type):
             return workflow_event(event_type, "workflow", "run-1")
         case _ if is_node_event_type(event_type):

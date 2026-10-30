@@ -42,6 +42,26 @@ When mock is active, `crewplane run` prints:
 Mock invoker active: no provider CLI commands will be started.
 ```
 
+### Provider Reasoning
+
+Workflows can retain provider `reasoning` values when switching to the built-in
+mock invoker, including in foreach child workflows. Mock accepts valid reasoning
+tokens for any configured provider kind and ignores them during invocation. It
+skips provider executable discovery, availability probes, and native reasoning
+conflict checks, so provider CLIs do not need to be installed.
+
+Workflow syntax, provider references, graph structure, templates, workspace
+policy, and foreach bounds still undergo normal validation. The selected mock
+integration must also have valid mock options; remove CLI-only invoker options
+when switching integrations.
+
+Crewplane preserves the authored values as `requested_reasoning` in compiled
+provider records and invocation events, and shows them in dry-run output.
+Reasoning remains part of workflow identity: changing a value prevents reuse of
+the previous signature for duplicate skips or resume, even though mock output
+does not use that value. This metadata records the request, not an applied mock
+setting. Custom invokers remain ineligible for first-class reasoning.
+
 ## Output Modes
 
 - `lorem`: deterministic generated output. For non-reviewer invocations with

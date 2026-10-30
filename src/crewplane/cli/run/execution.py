@@ -15,6 +15,7 @@ from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.artifacts.locks import acquire_same_context_lock
 from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.resume.checkpoint_hydration import hydrate_review_checkpoints
+from crewplane.artifacts.resume.expansions import hydrate_expansions
 from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.bootstrap import (
     build_runtime_config_snapshot,
@@ -28,6 +29,7 @@ from crewplane.core.preflight.diagnostics import (
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
+from crewplane.core.preflight.foreach.compilation import inventory_workflow
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.observability import ObservabilityHub, PersistentRunLogger
@@ -118,10 +120,12 @@ async def run_and_finalize_workflow(
     branch_export_records: tuple[Path, ...] = ()
     persistent_logger: PersistentRunLogger | None = None
 
-    def complete_scheduler_postconditions() -> None:
+    def complete_scheduler_postconditions(
+        effective_plan: PreflightExecutionPlan,
+    ) -> None:
         nonlocal branch_export_records
         branch_export_records = fulfill_branch_exports(
-            plan,
+            effective_plan,
             output,
             resumed_node_ids=resumed_node_ids,
         )
@@ -217,7 +221,7 @@ async def execute_workflow_run(
         )
     try:
         invoker_diagnostics = await collect_invoker_availability_diagnostics(
-            workflow,
+            inventory_workflow(source),
             config,
             context.project_root,
             snapshot_result.invoker_options,
@@ -286,6 +290,8 @@ async def execute_workflow_run(
         )
         try:
             if resume_plan.frontier is not None:
+                plan = hydrate_expansions(resume_plan.frontier, plan, output)
+                workflow_topology = workflow_topology_from_plan(plan)
                 hydrate_resume_frontier(resume_plan.frontier, plan, output)
                 hydrate_review_checkpoints(resume_plan.frontier, plan, output)
                 if resume_source is not None:

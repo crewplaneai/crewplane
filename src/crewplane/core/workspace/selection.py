@@ -48,7 +48,7 @@ def logical_workspace_selections(
 
 
 def selected_worktree_name(workflow: WorkflowPlan, node: WorkflowNode) -> str | None:
-    if node.mode == "input":
+    if node.mode in {"input", "foreach"}:
         return None
     if node.worktree == PROJECT_ROOT_WORKTREE_SELECTOR:
         return None
@@ -136,7 +136,7 @@ def _base_logical_workspace_selections(
     settings = config.settings
     selections: dict[str, LogicalWorkspaceSelection] = {}
     for node in workflow.nodes:
-        if node.mode == "input":
+        if node.mode in {"input", "foreach"}:
             continue
         selections[node.id] = _selection_for_node(workflow, settings, node)
     return selections

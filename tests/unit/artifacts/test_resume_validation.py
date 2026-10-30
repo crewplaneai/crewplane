@@ -506,13 +506,15 @@ def test_frontier_scans_states_before_checkpoints_in_plan_node_order(tmp_path) -
     manifest_before = source.manifest.model_dump()
     calls = Mock()
     with ExitStack() as stack:
-        for name in (
-            "_read_node_state",
-            "_node_state_is_valid",
-            "read_review_checkpoint",
+        from crewplane.artifacts.resume import checkpoint_selection
+
+        for owner, name in (
+            (validation, "_read_node_state"),
+            (validation, "_node_state_is_valid"),
+            (checkpoint_selection, "read_review_checkpoint"),
         ):
             spy = stack.enter_context(
-                patch.object(validation, name, wraps=getattr(validation, name))
+                patch.object(owner, name, wraps=getattr(owner, name))
             )
             calls.attach_mock(spy, name)
         frontier = validate_resume_frontier(source, plan)

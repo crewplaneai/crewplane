@@ -8,6 +8,7 @@ from crewplane.architecture.contracts import (
     NodeArtifactRequest,
 )
 from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.naming import (
     run_event_log_relative_path,
     run_summary_relative_path,
@@ -65,6 +66,8 @@ def refresh_historical_run_summary(
     plan: PreflightExecutionPlan,
     source: RunHistoryRecord,
 ) -> Path:
+    if not plan.expansions:
+        plan = reconstruct_expansions(plan, source.run_dir).plan
     artifact_store = _HistoricalArtifactStore(
         source,
         {node.id: node.artifact_contract for node in plan.nodes},

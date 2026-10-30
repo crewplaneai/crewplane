@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import hashlib
-import json
-from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject, JsonValue, NodeArtifactRequest
+from crewplane.architecture.contracts import JsonObject, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
@@ -16,31 +11,17 @@ from crewplane.core.execution_state import (
     NodeState,
     ResumeOrigin,
 )
-from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
-from crewplane.core.value_checks import is_strict_int
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 
-from ..atomic import atomic_write_bytes
 from ..workspace.node_state import build_node_workspace_descriptor
-from ..workspace.state.fields import (
-    encode_workspace_state_for_resume,
-    without_branch_export,
-)
 from .generated_files import copy_generated_file_descriptors
 from .validation import (
     ValidatedResumeFrontier,
     required_resume_artifact_paths,
 )
 from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
-
-
-@dataclass(frozen=True)
-class _WorkspaceArtifactDescriptor:
-    integrity: Mapping[str, object]
-    is_workspace_state: bool
+from .workspace_hydration import copy_workspace_artifacts
 
 
 def hydrate_resume_frontier(
@@ -66,7 +47,7 @@ def hydrate_resume_frontier(
             source_state.generated_files,
             node.id,
         )
-        _copy_workspace_artifacts(frontier, output, node, hydrated_at)
+        copy_workspace_artifacts(frontier, output, node, hydrated_at)
         output.write_node_resume_source(
             NodeArtifactRequest(node.id, node.artifact_contract),
             _resume_source_payload(
@@ -134,328 +115,6 @@ def _copy_descriptors(
     return hydrated
 
 
-def _copy_workspace_artifacts(
-    frontier: ValidatedResumeFrontier,
-    output: ArtifactStorePort,
-    node: PreflightExecutionNode,
-    hydrated_at: str,
-) -> None:
-    source_state = frontier.node_states[node.id]
-    if node.workspace_policy is None:
-        return
-    stage_path = node.artifact_contract.stage_path
-    if stage_path is None:
-        return
-    source_stage_dir = frontier.source.run_dir / stage_path
-    if not source_stage_dir.is_dir():
-        return
-    target_stage_dir = output.create_node_dir(
-        NodeArtifactRequest(node.id, node.artifact_contract)
-    )
-    expected_artifacts = _workspace_artifact_descriptors(source_state.workspace)
-    for run_relative_path in sorted(expected_artifacts):
-        relative = _stage_relative_workspace_artifact_path(
-            stage_path,
-            run_relative_path,
-        )
-        if relative is None:
-            raise ValueError(
-                f"Workspace resume artifact for node '{node.id}' is not reusable."
-            )
-        source_path = contained_regular_file(
-            frontier.source.run_dir,
-            run_relative_path,
-        )
-        if source_path is None:
-            raise ValueError(
-                f"Workspace resume artifact for node '{node.id}' is not reusable."
-            )
-        target_path = target_stage_dir / relative
-        payload = source_path.read_bytes()
-        _validate_workspace_artifact_payload(
-            node.id,
-            run_relative_path,
-            payload,
-            expected_artifacts,
-        )
-        source_descriptor = expected_artifacts[run_relative_path]
-        expected_size = source_descriptor.integrity["size_bytes"]
-        expected_sha256 = source_descriptor.integrity["sha256"]
-        if source_descriptor.is_workspace_state:
-            payload = _hydrated_workspace_state_payload(
-                payload,
-                frontier,
-                output,
-                node.id,
-                hydrated_at,
-            )
-            expected_size = len(payload)
-            expected_sha256 = hashlib.sha256(payload).hexdigest()
-        atomic_write_bytes(target_path, payload)
-        actual_size, actual_sha256 = file_size_and_sha256(target_path)
-        if actual_size != expected_size or actual_sha256 != expected_sha256:
-            raise ValueError(
-                f"Hydrated workspace resume artifact changed for node '{node.id}'."
-            )
-
-
-def _stage_relative_workspace_artifact_path(
-    stage_path: str,
-    run_relative_path: str,
-) -> Path | None:
-    prefix = f"{stage_path.rstrip('/')}/"
-    if not run_relative_path.startswith(prefix):
-        return None
-    relative = Path(run_relative_path.removeprefix(prefix))
-    if relative.is_absolute() or any(
-        part in {"", ".", ".."} for part in relative.parts
-    ):
-        return None
-    return relative
-
-
-def _workspace_artifact_descriptors(
-    workspace: JsonObject | None,
-) -> dict[str, _WorkspaceArtifactDescriptor]:
-    descriptors: dict[str, _WorkspaceArtifactDescriptor] = {}
-    if not isinstance(workspace, Mapping):
-        return descriptors
-    states = workspace.get("states")
-    if not isinstance(states, list):
-        return descriptors
-    for state in states:
-        _collect_workspace_state_descriptors(descriptors, state)
-    _collect_review_loop_descriptors(descriptors, workspace.get("review_loop"))
-    return descriptors
-
-
-def _collect_workspace_state_descriptors(
-    descriptors: dict[str, _WorkspaceArtifactDescriptor],
-    state: object,
-) -> None:
-    if not isinstance(state, Mapping):
-        return
-    _collect_workspace_artifact_descriptor(
-        descriptors,
-        state.get("workspace_state_artifact"),
-        is_workspace_state=True,
-    )
-    setup = state.get("setup")
-    if isinstance(setup, Mapping):
-        _collect_workspace_artifact_descriptor(
-            descriptors, setup.get("metadata_artifact")
-        )
-        _collect_workspace_artifact_descriptor(descriptors, setup.get("log_artifact"))
-    bundle = state.get("bundle")
-    if isinstance(bundle, Mapping):
-        _collect_workspace_artifact_descriptor(descriptors, bundle.get("artifact"))
-
-
-def _collect_review_loop_descriptors(
-    descriptors: dict[str, _WorkspaceArtifactDescriptor],
-    review_loop: object,
-) -> None:
-    if not isinstance(review_loop, Mapping):
-        return
-    _collect_workspace_artifact_descriptor(
-        descriptors, review_loop.get("status_artifact")
-    )
-    selected_outputs = review_loop.get("selected_outputs")
-    if not isinstance(selected_outputs, list):
-        return
-    for output in selected_outputs:
-        if isinstance(output, Mapping):
-            _collect_workspace_artifact_descriptor(descriptors, output.get("artifact"))
-
-
-def _collect_workspace_artifact_descriptor(
-    descriptors: dict[str, _WorkspaceArtifactDescriptor],
-    value: object,
-    is_workspace_state: bool = False,
-) -> None:
-    if not isinstance(value, Mapping):
-        return
-    relative_path = value.get("relative_path")
-    sha256 = value.get("sha256")
-    size_bytes = value.get("size_bytes")
-    if (
-        isinstance(relative_path, str)
-        and isinstance(sha256, str)
-        and is_strict_int(size_bytes)
-    ):
-        descriptors[relative_path] = _WorkspaceArtifactDescriptor(
-            integrity=value, is_workspace_state=is_workspace_state
-        )
-
-
-def _validate_workspace_artifact_payload(
-    node_id: str,
-    relative_path: str,
-    payload: bytes,
-    expected_artifacts: dict[str, _WorkspaceArtifactDescriptor],
-) -> None:
-    descriptor = expected_artifacts.get(relative_path)
-    if descriptor is None:
-        raise ValueError(
-            f"Workspace resume artifact for node '{node_id}' is not reusable."
-        )
-    if descriptor.is_workspace_state and _validate_workspace_state_resume_payload(
-        node_id,
-        payload,
-        descriptor.integrity,
-    ):
-        return
-    if hashlib.sha256(payload).hexdigest() != descriptor.integrity["sha256"]:
-        raise ValueError(
-            f"Workspace resume artifact hash changed for node '{node_id}'."
-        )
-    if len(payload) != descriptor.integrity["size_bytes"]:
-        raise ValueError(
-            f"Workspace resume artifact size changed for node '{node_id}'."
-        )
-
-
-def _validate_workspace_state_resume_payload(
-    node_id: str,
-    payload: bytes,
-    descriptor: Mapping[str, object],
-) -> bool:
-    resume_sha256 = descriptor.get("resume_sha256")
-    resume_size_bytes = descriptor.get("resume_size_bytes")
-    if not isinstance(resume_sha256, str) or not is_strict_int(resume_size_bytes):
-        return False
-    try:
-        state = json.loads(payload.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return False
-    resume_bytes = encode_workspace_state_for_resume(state)
-    if hashlib.sha256(resume_bytes).hexdigest() != resume_sha256:
-        raise ValueError(
-            f"Workspace resume artifact hash changed for node '{node_id}'."
-        )
-    if len(resume_bytes) != resume_size_bytes:
-        raise ValueError(
-            f"Workspace resume artifact size changed for node '{node_id}'."
-        )
-    return True
-
-
-def _hydrated_workspace_state_payload(
-    payload: bytes,
-    frontier: ValidatedResumeFrontier,
-    output: ArtifactStorePort,
-    node_id: str,
-    hydrated_at: str,
-) -> bytes:
-    try:
-        state = json.loads(payload.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ValueError(
-            f"Workspace state for node '{node_id}' is not reusable."
-        ) from exc
-    if not isinstance(state, dict):
-        raise ValueError(f"Workspace state for node '{node_id}' is not reusable.")
-    state = without_branch_export(state)
-    if not isinstance(state, dict):
-        raise ValueError(f"Workspace state for node '{node_id}' is not reusable.")
-    state["resume_origin"] = _workspace_state_resume_origin(
-        state,
-        frontier,
-        node_id,
-        hydrated_at,
-    )
-    _scrub_workspace_state_placement(state)
-    state["run_id"] = output.run_id
-    state["run_key_name"] = output.run_key_name
-    state["updated_at"] = hydrated_at
-    return (
-        json.dumps(state, allow_nan=False, indent=2, sort_keys=True).encode("utf-8")
-        + b"\n"
-    )
-
-
-def _workspace_state_resume_origin(
-    state: dict[str, object],
-    frontier: ValidatedResumeFrontier,
-    node_id: str,
-    hydrated_at: str,
-) -> JsonObject:
-    origin: JsonObject = {
-        "source_run_id": frontier.source.manifest.run_id,
-        "source_run_key_name": frontier.source.manifest.run_key_name,
-        "source_node_id": node_id,
-        "hydrated_at": hydrated_at,
-    }
-    workspace = state.get("workspace")
-    if isinstance(workspace, Mapping):
-        origin["source_workspace"] = _json_object(workspace)
-    execution = state.get("execution")
-    if isinstance(execution, Mapping):
-        origin["source_execution"] = _json_object(execution)
-    source_resume_origin = state.get("resume_origin")
-    if isinstance(source_resume_origin, Mapping):
-        origin["source_resume_origin"] = _json_object(source_resume_origin)
-    return origin
-
-
-def _scrub_workspace_state_placement(state: dict[str, object]) -> None:
-    _reject_unresolved_source_workspace_claims(state)
-    workspace = state.get("workspace")
-    if isinstance(workspace, dict):
-        workspace["path"] = None
-        workspace["effective_cwd"] = None
-        workspace["cache_root"] = None
-        workspace["checkout_root"] = None
-        workspace["cache_key"] = None
-        workspace["retention"] = "not_applicable"
-        workspace["retained_reason"] = "hydrated_resume"
-    execution = state.get("execution")
-    if isinstance(execution, dict):
-        execution["cache_root"] = None
-        execution["workspace_path"] = None
-        execution["checkout_root"] = None
-        execution["effective_cwd"] = None
-        execution["worktree_git_dir"] = None
-    state.pop("temporary_refs", None)
-    state.pop("ref_publication", None)
-
-
-def _reject_unresolved_source_workspace_claims(state: dict[str, object]) -> None:
-    temporary_refs = state.get("temporary_refs")
-    if isinstance(temporary_refs, list) and any(
-        isinstance(claim, dict) and claim.get("phase") != "removed"
-        for claim in temporary_refs
-    ):
-        raise ValueError("Workspace state has unresolved source temporary refs.")
-    publication = state.get("ref_publication")
-    if isinstance(publication, dict) and publication.get("phase") == "prepared":
-        raise ValueError("Workspace state has unresolved source ref publication.")
-
-
-def _json_object(value: Mapping[str, object]) -> JsonObject:
-    result: JsonObject = {}
-    for key, item in value.items():
-        converted = _json_value(item)
-        if converted is not None or item is None:
-            result[str(key)] = converted
-    return result
-
-
-def _json_value(value: object) -> JsonValue | None:
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    if isinstance(value, Mapping):
-        return _json_object(value)
-    if isinstance(value, list):
-        items: list[JsonValue] = []
-        for item in value:
-            converted = _json_value(item)
-            if converted is not None or item is None:
-                items.append(converted)
-        return items
-    return None
-
-
 def _hydrated_node_state(
     node: PreflightExecutionNode,
     plan: PreflightExecutionPlan,
@@ -474,6 +133,7 @@ def _hydrated_node_state(
         run_id=output.run_id,
         run_key_name=output.run_key_name,
         node_id=node.id,
+        expansion=node.expansion,
         completed_at=hydrated_at,
         artifacts=descriptors,
         generated_files=generated_files,

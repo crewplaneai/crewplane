@@ -9,6 +9,7 @@ from rich.console import Console
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.loader import is_builtin_implementation
+from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.resume.decision import ResumeDecision
 from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
@@ -155,6 +156,9 @@ def print_dry_run_resume_advisory(
                     project_root,
                     successful_run.run_dir / "manifests",
                 )
+                branch_plan = reconstruct_expansions(
+                    branch_plan, successful_run.run_dir
+                ).plan
                 branch_export_records = preview_branch_exports_from_history(
                     branch_plan,
                     successful_run,
@@ -245,7 +249,10 @@ def artifact_valid_history_plan(
         if record.manifest.status != "succeeded":
             continue
         frontier = validate_resume_frontier(record, validation_plan)
-        if len(frontier.resumed_node_ids) == len(validation_plan.nodes):
+        effective = frontier.effective_plan or validation_plan
+        if len(frontier.resumed_node_ids) == len(effective.nodes) and len(
+            effective.expansions
+        ) == len(effective.foreach_templates):
             return ResumePlan(
                 workflow_identity=workflow_identity,
                 decision=ResumeDecision(kind="skip", successful_run=record),
@@ -261,7 +268,14 @@ def artifact_valid_history_plan(
     ) and any(
         checkpoint_node_is_eligible(node)
         and (node.workspace_policy is None or not node.workspace_policy.enabled)
-        for node in validation_plan.nodes
+        for node in [
+            *validation_plan.nodes,
+            *(
+                node
+                for template in validation_plan.foreach_templates
+                for node in template.nodes
+            ),
+        ]
     ):
         fingerprint = project_fingerprint(
             Path(validation_plan.project_root), (state_dir,)

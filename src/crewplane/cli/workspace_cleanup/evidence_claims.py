@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.naming import (
     preflight_plan_relative_path,
     run_manifest_relative_path,
@@ -82,7 +83,10 @@ def load_authoritative_plan(
         run_dir,
     ):
         return AuthoritativePlanLoad(None, True)
-    return AuthoritativePlanLoad(descriptors.plan, False)
+    reconstructed = reconstruct_expansions(descriptors.plan, run_dir)
+    if reconstructed.invalid_groups:
+        return AuthoritativePlanLoad(None, True)
+    return AuthoritativePlanLoad(reconstructed.plan, False)
 
 
 def load_workspace_claim(

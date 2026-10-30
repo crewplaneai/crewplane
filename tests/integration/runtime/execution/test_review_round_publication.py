@@ -6,9 +6,7 @@ import pytest
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import (
-    ExecutionPolicy,
-)
+from crewplane.core.preflight.compiled_records import ExecutionPolicy
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop import (
     reviewer_round as review_loop_reviewer_round,

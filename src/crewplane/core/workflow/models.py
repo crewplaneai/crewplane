@@ -7,6 +7,7 @@ from typing import NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import (
     PromptSegment,
     PromptSegmentPayload,
@@ -97,9 +98,15 @@ class WorkflowProviderPayload(TypedDict):
 class WorkflowNodePayload(TypedDict):
     id: str
     mode: NodeMode
-    providers: list[WorkflowProviderPayload]
+    providers: NotRequired[list[WorkflowProviderPayload]]
     needs: list[str]
-    continue_on_failure: bool
+    continue_on_failure: NotRequired[bool]
+    workflow: NotRequired[str]
+    item_input: NotRequired[str]
+    items: NotRequired[list[JsonObject] | str]
+    max_items: NotRequired[int]
+    inputs: NotRequired[dict[str, str]]
+    with_params: NotRequired[dict[str, str]]
     findings: NotRequired[bool]
     prompt_segments: NotRequired[list[PromptSegmentPayload]]
     source: NotRequired[str]
@@ -135,7 +142,23 @@ class WorkflowPayload(TypedDict):
 
 
 class WorkflowNode(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    workflow: str | None = None
+    item_input: str | None = None
+    items: list[JsonObject] | str | None = None
+    max_items: int | None = Field(default=None, strict=True, gt=0)
+    inputs: dict[str, str] = Field(default_factory=dict)
+    with_params: dict[str, str] = Field(default_factory=dict, alias="with")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_foreach(cls, value: object) -> object:
+        from crewplane.core.workflow.validation.foreach import (
+            validate_foreach_declaration,
+        )
+
+        return validate_foreach_declaration(value, internal_parameters=True)
 
     id: str
     mode: NodeMode
@@ -219,6 +242,27 @@ def workflow_provider_payload_dict(provider: ProviderSpec) -> WorkflowProviderPa
 
 
 def workflow_node_payload_dict(node: WorkflowNode) -> WorkflowNodePayload:
+    if node.mode == "foreach":
+        if (
+            node.workflow is None
+            or node.item_input is None
+            or node.items is None
+            or (isinstance(node.items, str) and node.max_items is None)
+        ):
+            raise ValueError(f"Incomplete foreach declaration '{node.id}'")
+        foreach_payload: WorkflowNodePayload = {
+            "id": node.id,
+            "mode": node.mode,
+            "needs": list(node.needs),
+            "workflow": node.workflow,
+            "item_input": node.item_input,
+            "items": node.items,
+            "inputs": dict(node.inputs),
+            "with_params": dict(node.with_params),
+        }
+        if node.max_items is not None:
+            foreach_payload["max_items"] = node.max_items
+        return foreach_payload
     node_payload: WorkflowNodePayload = {
         "id": node.id,
         "mode": node.mode,

@@ -62,6 +62,8 @@ def _request_diagnostics(
 ) -> tuple[InvokerDiagnostics, InvokerAdapterPort | None]:
     implementation = config.settings.integrations.invoker.implementation
     identity = resolve_implementation_path("invoker", implementation)
+    if is_builtin_implementation("invoker", identity, "mock"):
+        return InvokerDiagnostics(), None
     if not is_builtin_implementation("invoker", identity, "cli"):
         return InvokerDiagnostics(
             _reasoning_ineligibility_errors(_reasoning_requested_locations(workflow))
@@ -109,6 +111,8 @@ def run_request_validation_errors(
     working_directory: Path | None = None,
     options: JsonObject | None = None,
 ) -> tuple[str, ...]:
+    if is_builtin_implementation("invoker", resolved_identity, "mock"):
+        return ()
     requested_locations = _reasoning_requested_locations(workflow)
     if not is_builtin_implementation("invoker", resolved_identity, "cli"):
         return _reasoning_ineligibility_errors(requested_locations)

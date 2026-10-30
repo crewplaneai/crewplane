@@ -221,3 +221,8 @@ instead of silently starting provider calls from scratch.
 - Restore from review status or entire run directories: status reports lack
   some execution state, and run directories can contain incomplete or unrelated
   files. Explicit checkpoint records identify the work that is safe to reuse.
+
+## Bounded Iteration Update
+
+[ADR 0020](0020-bounded-workflow-iteration.md) extends this decision to restore
+verified workflow expansions before selecting generated work for reuse.

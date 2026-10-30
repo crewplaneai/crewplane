@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.artifacts.resume.checkpoint_files import read_checkpoint_file
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from crewplane.core.review_checkpoint_state import (
     CheckpointAuditProgress,

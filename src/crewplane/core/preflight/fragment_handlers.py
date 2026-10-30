@@ -20,9 +20,9 @@ from .compile_state import (
     source_root,
     token_source_span,
 )
+from .compiled_records import Fragment
 from .dependency_edges import append_dependency_edge, dependency_signature
 from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
-from .models import Fragment
 from .references import TemplateReference
 from .signatures import signature_for_payload
 from .static_resources import (

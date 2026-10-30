@@ -5,7 +5,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from crewplane.core.preflight.models import ExecutionPolicy, PreflightExecutionPlan
+from crewplane.core.preflight.compiled_records import ExecutionPolicy
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_policy import (
     maximum_review_round,
     remediation_depth_or_default,

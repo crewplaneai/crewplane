@@ -5,10 +5,8 @@ from dataclasses import dataclass, field
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.contracts.integration import scoped_integration_payload
 from crewplane.core.config import AgentConfig
-from crewplane.core.preflight.models import (
-    PreflightExecutionPlan,
-    ProviderRecord,
-)
+from crewplane.core.preflight.compiled_records import ProviderRecord
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     runtime_agent_execution_payload,
@@ -50,7 +48,15 @@ class CompiledRuntimeContext:
         )
 
     def validate_execution_contract(self) -> None:
-        for node in self.plan.nodes:
+        nodes = [
+            *self.plan.nodes,
+            *(
+                node
+                for template in self.plan.foreach_templates
+                for node in template.nodes
+            ),
+        ]
+        for node in nodes:
             for provider in node.provider_records:
                 self.agent_config_for_provider(provider)
 

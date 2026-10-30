@@ -9,7 +9,10 @@ from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.results.findings import FindingsExtractionError
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import PreflightExecutionNode, ProviderRecord
+from crewplane.core.preflight.compiled_records import (
+    PreflightExecutionNode,
+    ProviderRecord,
+)
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.review_contract import ReviewLoopStopReason
 from crewplane.core.review_policy import audit_round_context

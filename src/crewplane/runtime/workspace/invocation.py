@@ -8,10 +8,8 @@ from crewplane.artifacts.workspace.state.paths import (
     WORKSPACE_STATE_FILENAME,
     workspace_state_filename,
 )
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.runtime_config.workspace import (
     requires_controlled_child_environment,
 )

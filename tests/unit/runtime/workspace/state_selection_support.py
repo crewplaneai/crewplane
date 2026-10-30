@@ -5,16 +5,17 @@ import json
 import re
 from pathlib import Path
 
-from crewplane.architecture.contracts import NodeArtifactRequest
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.architecture.contracts import ArtifactContract, NodeArtifactRequest
+from crewplane.core.preflight.compiled_records import (
     Fragment,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
     RenderStream,
     WorkspaceFileLocator,
+)
+from crewplane.core.preflight.models import (
+    PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION

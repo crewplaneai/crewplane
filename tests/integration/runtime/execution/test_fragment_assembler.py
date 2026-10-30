@@ -10,9 +10,7 @@ import crewplane.core.workflow.models as workflow_models
 import crewplane.core.workflow.validation as workflow_validation
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
 from crewplane.artifacts.verification import read_verified_node_artifact
-from crewplane.core.preflight.models import (
-    Fragment,
-)
+from crewplane.core.preflight.compiled_records import Fragment
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole

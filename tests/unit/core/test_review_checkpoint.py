@@ -10,7 +10,7 @@ from crewplane.core.execution_state import (
     ReviewCheckpointResumeSummary,
     RunManifest,
 )
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.review_checkpoint import (
     REVIEW_CHECKPOINT_ADAPTER,
     ClosedReviewCheckpoint,

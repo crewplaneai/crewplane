@@ -7,7 +7,7 @@ from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
 
 from .compile_state import CompileState, PreflightCompileOptions, source_file
-from .models import TokenCatalogEntry, TokenKind
+from .compiled_records import TokenCatalogEntry, TokenKind
 from .references import TemplateReference
 
 

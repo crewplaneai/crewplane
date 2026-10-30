@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.artifacts.resume.validation import validate_resume_frontier
-from crewplane.core.preflight.models import ExecutionPolicy
+from crewplane.core.preflight.compiled_records import ExecutionPolicy
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.resume import (
     attach_workspace_descriptor,

@@ -196,6 +196,11 @@ agents:
   #   prompt_transport: stdin
 
 settings:
+  # Total generated nodes across all foreach groups, including their item inputs.
+  max_expanded_nodes: 10000
+  # Foreach requires an explicit finite cap on running nodes. Choose for your host.
+  # max_concurrent_nodes: 4
+
   # Core-owned authorization for {{file:...}} references outside this project.
   file_access:
     allowed_template_paths: []

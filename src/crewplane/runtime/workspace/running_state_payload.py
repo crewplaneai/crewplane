@@ -7,8 +7,8 @@ from crewplane.artifacts.workspace.state.source_fields import invocation_source_
 from crewplane.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
+    from crewplane.core.preflight.compiled_records import PreflightExecutionNode
     from crewplane.core.preflight.models import (
-        PreflightExecutionNode,
         WorkspaceSelectionRecord,
         WorkspaceSourceSnapshot,
     )

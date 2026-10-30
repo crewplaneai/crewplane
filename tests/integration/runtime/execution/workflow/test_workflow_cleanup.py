@@ -13,12 +13,10 @@ import pytest
 import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
 import crewplane.runtime.execution.workflow.postconditions as workflow_postconditions_module
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
-    PreflightExecutionNode,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,

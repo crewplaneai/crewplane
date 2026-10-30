@@ -215,12 +215,19 @@ Pricing values are per million tokens.
 | `settings.log_level` | Runtime log level string. Defaults to `info`. |
 | `settings.sequential_consensus_on_exhaustion` | `continue` or `fatal`. Defaults to `continue`. |
 | `settings.max_audit_rounds` | Maximum allowed node `audit_rounds`. Defaults to `5`. |
-| `settings.max_concurrent_nodes` | Optional cap on concurrent ready nodes. |
+| `settings.max_concurrent_nodes` | Optional cap on concurrent ready nodes. A finite positive value is required for workflows containing `foreach`. |
 | `settings.max_parallel_invocations` | Optional cap on provider invocations inside a parallel node. |
+| `settings.max_expanded_nodes` | Strict positive integer limiting generated nodes across all `foreach` groups in one run. Defaults to `10000`. Counts composed child nodes, including item inputs; completed groups do not release budget. |
 | `settings.file_access` | Permissions for including files with `{{file:...}}`. |
 | `settings.token_budget` | Global token budget warning/failure thresholds. |
 | `settings.workspace` | Workspace isolation settings. |
 | `settings.integrations` | Adapter implementation and option settings. |
+
+Iteration preflight sums literal item counts, or dynamic `max_items`, multiplied
+by the number of nodes in each compiled child. The total must fit
+`max_expanded_nodes`. Lower this limit for smaller machines; node concurrency
+limits running work, while this limit bounds the entire generated graph.
+See [Foreach nodes](workflow-syntax.md#foreach-nodes) for collection limits.
 
 ## `settings.file_access`
 

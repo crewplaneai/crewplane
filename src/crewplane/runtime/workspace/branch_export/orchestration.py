@@ -9,10 +9,8 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.naming import workspace_export_relative_path
 from crewplane.artifacts.run_history import RunHistoryRecord
-from crewplane.core.preflight.models import (
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.workspace.branch_export.attempts import (
     BranchExportAttempt,
     BranchExportRecordWriter,

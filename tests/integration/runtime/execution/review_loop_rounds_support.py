@@ -1,18 +1,18 @@
 from pathlib import Path
 
+from crewplane.architecture.contracts import ArtifactContract
 from crewplane.architecture.contracts.invocation_failures import (
     FailureKind,
     FailurePhase,
     InvocationFailureSummary,
 )
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     ExecutionPolicy,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError

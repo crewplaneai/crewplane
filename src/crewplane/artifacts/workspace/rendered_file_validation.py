@@ -4,12 +4,12 @@ from pathlib import Path
 
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceFileLocator,
     WorkspaceFileTarget,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.value_checks import is_nonnegative_int, is_sha256, is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES, is_git_object_id

@@ -3,13 +3,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.architecture.contracts import ArtifactContract
+from crewplane.core.preflight.compiled_records import (
     Fragment,
-    PreflightCompilationPreview,
-    PreflightDiagnostic,
     PreflightExecutionNode,
     ProviderRecord,
+)
+from crewplane.core.preflight.models import (
+    PreflightCompilationPreview,
+    PreflightDiagnostic,
 )
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole

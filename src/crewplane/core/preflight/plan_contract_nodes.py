@@ -14,7 +14,8 @@ from . import plan_contract_records, plan_contract_workspace_lineage
 from .invocation_names import validate_invocation_names
 
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode, PreflightExecutionPlan, RenderPlan
+    from .compiled_records import PreflightExecutionNode, RenderPlan
+    from .models import PreflightExecutionPlan
 
 
 def validate_node_relationships(
@@ -49,7 +50,7 @@ def validate_node_relationships(
 
 def _validate_node_execution_policy(node: PreflightExecutionNode) -> None:
     provider_roles = [provider.role for provider in node.provider_records]
-    if node.mode == "input":
+    if node.mode in {"input", "foreach"}:
         _validate_input_execution_policy(node)
         return
     if node.mode == "parallel":
@@ -135,7 +136,9 @@ def _validate_review_loop_provider_order(
 
 def _validate_input_execution_policy(node: PreflightExecutionNode) -> None:
     policy = node.execution_policy
-    if node.findings or node.dependencies:
+    if node.findings or (
+        node.dependencies and node.mode == "input" and node.expansion is None
+    ):
         raise ValueError(
             f"Persisted input node '{node.id}' cannot define findings or dependencies."
         )

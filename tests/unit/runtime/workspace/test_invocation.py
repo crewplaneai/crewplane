@@ -5,16 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.contracts import ArtifactContract, NodeArtifactRequest
 from crewplane.artifacts.workspace.state.paths import (
     is_workspace_claim_name,
     workspace_state_candidates,
 )
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     PreflightExecutionNode,
     ProviderRecord,
     WorkspaceFileLocator,
+)
+from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )

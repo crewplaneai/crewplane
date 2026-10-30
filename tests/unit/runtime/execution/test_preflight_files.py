@@ -3,7 +3,7 @@ import hashlib
 import pytest
 
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
+from crewplane.core.preflight.compiled_records import (
     Fragment,
     RenderPlan,
     RenderStream,

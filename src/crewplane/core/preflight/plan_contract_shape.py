@@ -92,6 +92,26 @@ def validate_current_value_fingerprint_shape(
 def validate_persisted_node_contracts(nodes: Sequence[object]) -> None:
     for node in nodes:
         _validate_persisted_workspace_policy(node)
+        if (
+            getattr(node, "input_item_slot", False)
+            and getattr(node, "mode", None) != "input"
+        ):
+            raise ValueError("Only input nodes can declare frozen item slots")
+        if getattr(node, "mode", None) == "foreach":
+            if any(
+                getattr(node, field, None)
+                for field in (
+                    "render_plan_id",
+                    "provider_records",
+                    "workspace_policy",
+                    "input_content_ref",
+                    "input_workspace_file_locator_id",
+                )
+            ):
+                raise ValueError(
+                    "Foreach nodes cannot contain provider, workspace, or input execution records"
+                )
+            continue
         if getattr(node, "mode", None) == "input":
             _validate_persisted_input_node_contract(node)
             continue
@@ -114,6 +134,10 @@ def _validate_persisted_input_node_contract(node: object) -> None:
         for field in ("input_content_ref", "input_workspace_file_locator_id")
         if str(getattr(node, field, "") or "").strip()
     ]
+    if getattr(node, "input_item_slot", False):
+        if input_sources:
+            raise ValueError("Frozen item slots cannot contain fallback input sources")
+        return
     if len(input_sources) != 1:
         raise ValueError(
             "Persisted input preflight node "

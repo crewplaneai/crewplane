@@ -5,19 +5,22 @@ import json
 import subprocess
 from pathlib import Path
 
-from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
-from crewplane.core.preflight.dependency_edges import dependency_signature
-from crewplane.core.preflight.models import (
+from crewplane.architecture.contracts import (
     ArtifactContract,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
+)
+from crewplane.core.preflight.compiled_records import (
     DependencyEdge,
     ExecutionPolicy,
     Fragment,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
     RenderStream,
 )
+from crewplane.core.preflight.dependency_edges import dependency_signature
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import invocation_slug

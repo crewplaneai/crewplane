@@ -4,7 +4,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import LogLevel
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ...common import ExecutionTelemetry, RuntimeEventContext, emit_runtime_log

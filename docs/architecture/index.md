@@ -26,6 +26,7 @@ User task guidance lives in the public docs sections linked from
 - [ADR 0014: Artifact-backed resume](adr/0014-artifact-backed-node-boundary-resume.md)
 - [ADR 0018: Native Windows support](adr/0018-native-windows-support.md)
 - [ADR 0019: Explicit plugin system](adr/0019-explicit-plugin-system.md)
+- [ADR 0020: Bounded workflow iteration](adr/0020-bounded-workflow-iteration.md)
 
 Key architectural constraints:
 

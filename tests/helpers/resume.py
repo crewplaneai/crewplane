@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.contracts import ArtifactContract, NodeArtifactRequest
 from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
@@ -16,16 +16,17 @@ from crewplane.core.execution_state import (
     NodeState,
     RunManifest,
 )
-from crewplane.core.preflight.models import (
-    ArtifactContract,
+from crewplane.core.preflight.compiled_records import (
     DependencyEdge,
     ExecutionPolicy,
-    PreflightCompilationPreview,
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     ProviderRecord,
     RenderPlan,
     WorkspaceFileLocator,
+)
+from crewplane.core.preflight.models import (
+    PreflightCompilationPreview,
+    PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )

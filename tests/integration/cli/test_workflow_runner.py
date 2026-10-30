@@ -31,6 +31,7 @@ from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight import (
     signature_for_payload,
 )
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -303,7 +304,9 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await run_workflow(
                     workflow,
-                    mock_runner_config(),
+                    mock_runner_config(
+                        invoker_implementation=f"{__name__}:PreflightOrderingInvokerAdapter"
+                    ),
                     console,
                     execute_workflow_impl=execute_workflow_mock,
                 )
@@ -316,6 +319,31 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             acquire_lock.assert_not_called()
             allocate_output.assert_not_called()
             execute_workflow_mock.assert_not_called()
+
+    async def test_mock_reasoning_executes_and_preserves_requested_metadata(
+        self,
+    ) -> None:
+        with temporary_project_cwd(self.tmp_path) as root:
+            console = Console(file=io.StringIO(), force_terminal=False)
+            workflow = runner_workflow()
+            workflow.nodes[0].providers[0].reasoning = "xhigh"
+            config = mock_runner_config()
+            config.agents["alpha"].cli_cmd = ["definitely-not-installed-cli"]
+
+            await run_workflow(workflow, config, console)
+
+            (run_dir,) = run_directories(root)
+            plan = json.loads((run_dir / "preflight/execution-plan.json").read_bytes())
+            manifest = json.loads((run_dir / "manifests/run.json").read_bytes())
+            assert (
+                plan["nodes"][0]["provider_records"][0]["requested_reasoning"]
+                == "xhigh"
+            )
+            assert manifest["status"] == "succeeded"
+            assert manifest["workflow_signature"] == plan["workflow_signature"]
+            assert "hello" in (
+                result_directories(root)[0] / "build.node-result.md"
+            ).read_text(encoding="utf-8")
 
     async def test_force_ignores_duplicate_signature(self) -> None:
         with temporary_project_cwd(self.tmp_path) as root:
@@ -479,10 +507,11 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=False,  # noqa: ARG001 - Required by callback signature.
                 workflow_identity=None,  # noqa: ARG001 - Required by callback signature.
                 resumed_node_ids=(),  # noqa: ARG001 - Required by callback signature.
-            ) -> None:
+            ) -> PreflightExecutionPlan:
                 captured_command.extend(
                     plan.runtime_config_snapshot["agents"]["alpha"]["cli_cmd"]
                 )
+                return plan
 
             await run_workflow(
                 workflow,

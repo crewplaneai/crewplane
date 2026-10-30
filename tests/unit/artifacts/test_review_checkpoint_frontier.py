@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from crewplane.artifacts.resume import validation
+from crewplane.artifacts.resume import checkpoint_selection
 from crewplane.artifacts.resume.checkpoint_store import publish_review_checkpoint
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.cli.run.resume import artifact_valid_history_plan
@@ -433,9 +433,9 @@ def test_checkpoint_selection_preserves_validation_order_and_error_handling(
         for name in checks:
             spy = stack.enter_context(
                 patch.object(
-                    validation,
+                    checkpoint_selection,
                     name,
-                    wraps=getattr(validation, name),
+                    wraps=getattr(checkpoint_selection, name),
                     side_effect=error if name == failed_check else None,
                 )
             )
@@ -501,7 +501,11 @@ def test_checkpoint_gates_follow_identity_checks_and_skip_detailed_validation(
             "require_checkpoint_project",
         ):
             spy = stack.enter_context(
-                patch.object(validation, name, wraps=getattr(validation, name))
+                patch.object(
+                    checkpoint_selection,
+                    name,
+                    wraps=getattr(checkpoint_selection, name),
+                )
             )
             calls.attach_mock(spy, name)
         frontier = validate_resume_frontier(source, plan, observation, fences)

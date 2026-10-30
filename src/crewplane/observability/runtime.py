@@ -22,6 +22,7 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
+from crewplane.architecture.contracts.execution_event import EventType
 from crewplane.observability.events import (
     ExecutionEvent,
     apply_event,
@@ -210,6 +211,13 @@ class ObservabilityHub:
         with self._lock:
             if event is not None:
                 apply_event(self._state, event)
+                if event.event_type == EventType.TOPOLOGY_EXPANDED:
+                    self._layout = compute_topology_layout(
+                        WorkflowTopology(
+                            self._state.workflow_name,
+                            tuple(self._state.topology_nodes.values()),
+                        )
+                    )
             snapshot = DashboardSnapshot(
                 state=copy.deepcopy(self._state),
                 layout=self._layout,

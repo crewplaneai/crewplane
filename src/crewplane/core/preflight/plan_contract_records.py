@@ -6,7 +6,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode, PreflightExecutionPlan, RenderPlan
+    from .compiled_records import PreflightExecutionNode, RenderPlan
+    from .models import PreflightExecutionPlan
 
 
 def node_id(node: object) -> str:

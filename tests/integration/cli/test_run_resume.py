@@ -216,6 +216,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     1,
                     "B result",
                 )
+                return plan
 
             with self.assertRaisesRegex(RuntimeError, "B failed"):
                 await execute_workflow_run(
@@ -302,6 +303,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     1,
                     "B result",
                 )
+                return plan
 
             with self.assertRaises(asyncio.CancelledError):
                 await execute_workflow_run(
@@ -421,6 +423,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     1,
                     "B result",
                 )
+                return plan
 
             with self.assertRaises(WorkflowCancelledByUser):
                 await execute_workflow_run(

@@ -5,7 +5,8 @@ from pathlib import Path
 from crewplane.architecture.contracts import LogLevel, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_text
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.artifacts.expansions import read_expansion_artifact
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 
 from .common import (
     CompiledRuntimeContext,
@@ -31,7 +32,20 @@ def execute_input_stage(
     node_dir = output.create_node_dir(
         NodeArtifactRequest(stage.id, stage.artifact_contract)
     )
-    if stage.input_workspace_file_locator_id is not None:
+    expansion = stage.expansion
+    item = (
+        runtime_context.plan.expansions[expansion.group_id].items[expansion.ordinal]
+        if expansion is not None and expansion.ordinal is not None
+        else None
+    )
+    if item is not None and stage.input_content_ref == item.relative_path:
+        try:
+            input_content = read_expansion_artifact(output.stages_dir, item).decode(
+                "utf-8"
+            )
+        except (OSError, ValueError) as exc:
+            raise InputContentError(f"Input node '{stage.id}': {exc}") from exc
+    elif stage.input_workspace_file_locator_id is not None:
         input_content = _read_workspace_input_content(
             runtime_context,
             stage.input_workspace_file_locator_id,

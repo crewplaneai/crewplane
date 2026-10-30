@@ -14,13 +14,10 @@ import crewplane.runtime.execution.workflow.execution_session as workflow_execut
 import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
 import crewplane.runtime.execution.workflow.scheduling as workflow_scheduling_module
-from crewplane.architecture.contracts import EventType
+from crewplane.architecture.contracts import ArtifactContract, EventType
 from crewplane.artifacts import OutputManager
-from crewplane.core.preflight.models import (
-    ArtifactContract,
-    PreflightExecutionNode,
-    PreflightExecutionPlan,
-)
+from crewplane.core.preflight.compiled_records import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.deferred_cleanup import DeferredAsyncCleanupRegistry

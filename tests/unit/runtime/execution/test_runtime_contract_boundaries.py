@@ -6,7 +6,8 @@ import inspect
 import pytest
 
 from crewplane.architecture.contracts.integration import CanonicalIntegrationConfig
-from crewplane.core.preflight.models import PreflightExecutionPlan, ProviderRecord
+from crewplane.core.preflight.compiled_records import ProviderRecord
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.serialization import canonical_json_bytes
 from crewplane.core.preflight.signatures import signature_for_payload
