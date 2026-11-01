@@ -13,6 +13,17 @@ UNSUPPORTED_INDEX_EXTENSIONS = {
     "sdir": "sparse-index",
 }
 SUPPORTED_GIT_INDEX_FORMAT_VERSIONS = {2, 3, 4}
+INDEX_HEADER_SIZE = 12
+INDEX_SIGNATURE_SIZE = 4
+INDEX_VERSION_END = 8
+ENTRY_STAT_SIZE = 40
+ENTRY_FLAGS_SIZE = 2
+ENTRY_EXTENDED_FLAGS_SIZE = 2
+ENTRY_ALIGNMENT = 8
+ENTRY_EXTENDED_FLAGS_MASK = 0x4000
+V4_PREFIX_CONTINUATION_MASK = 0x80
+EXTENSION_SIGNATURE_SIZE = 4
+EXTENSION_HEADER_SIZE = 8
 
 
 def validate_index_extensions(
@@ -63,17 +74,19 @@ def validate_index_extensions(
 
 def git_index_extensions(payload: bytes, object_format: str) -> tuple[str, ...]:
     checksum_length = index_checksum_length(object_format)
-    if len(payload) < 12 + checksum_length:
+    if len(payload) < INDEX_HEADER_SIZE + checksum_length:
         raise ValueError("index file is too short")
-    if payload[:4] != b"DIRC":
+    if payload[:INDEX_SIGNATURE_SIZE] != b"DIRC":
         raise ValueError("index header is invalid")
-    index_format_version = int.from_bytes(payload[4:8], "big")
+    index_format_version = int.from_bytes(
+        payload[INDEX_SIGNATURE_SIZE:INDEX_VERSION_END], "big"
+    )
     if index_format_version not in SUPPORTED_GIT_INDEX_FORMAT_VERSIONS:
         raise ValueError(
             f"Git index format version {index_format_version} is unsupported"
         )
-    entry_count = int.from_bytes(payload[8:12], "big")
-    offset = 12
+    entry_count = int.from_bytes(payload[INDEX_VERSION_END:INDEX_HEADER_SIZE], "big")
+    offset = INDEX_HEADER_SIZE
     extension_end = len(payload) - checksum_length
     entries_remaining = entry_count
     while entries_remaining:
@@ -103,18 +116,18 @@ def next_index_entry_offset(
     extension_end: int,
 ) -> int:
     entry_start = offset
-    fixed_length = 40 + checksum_length + 2
+    fixed_length = ENTRY_STAT_SIZE + checksum_length + ENTRY_FLAGS_SIZE
     if offset + fixed_length > extension_end:
         raise ValueError("index entry is truncated")
     flags = int.from_bytes(
-        payload[offset + fixed_length - 2 : offset + fixed_length],
+        payload[offset + fixed_length - ENTRY_FLAGS_SIZE : offset + fixed_length],
         "big",
     )
     offset += fixed_length
-    if flags & 0x4000:
-        if offset + 2 > extension_end:
+    if flags & ENTRY_EXTENDED_FLAGS_MASK:
+        if offset + ENTRY_EXTENDED_FLAGS_SIZE > extension_end:
             raise ValueError("extended index entry flags are truncated")
-        offset += 2
+        offset += ENTRY_EXTENDED_FLAGS_SIZE
     if index_format_version == 4:
         offset = skip_v4_path_prefix_length(payload, offset, extension_end)
     path_end = payload.find(b"\0", offset, extension_end)
@@ -123,7 +136,9 @@ def next_index_entry_offset(
     entry_end = path_end + 1
     if index_format_version == 4:
         return entry_end
-    padding = (8 - ((entry_end - entry_start) % 8)) % 8
+    padding = (
+        ENTRY_ALIGNMENT - ((entry_end - entry_start) % ENTRY_ALIGNMENT)
+    ) % ENTRY_ALIGNMENT
     if entry_end + padding > extension_end:
         raise ValueError("index entry padding is truncated")
     return entry_end + padding
@@ -137,7 +152,7 @@ def skip_v4_path_prefix_length(
     while offset < extension_end:
         value = payload[offset]
         offset += 1
-        if value & 0x80 == 0:
+        if value & V4_PREFIX_CONTINUATION_MASK == 0:
             return offset
     raise ValueError("index v4 path prefix length is truncated")
 
@@ -149,11 +164,16 @@ def read_index_extensions(
 ) -> tuple[str, ...]:
     extensions: list[str] = []
     while offset < extension_end:
-        if offset + 8 > extension_end:
+        if offset + EXTENSION_HEADER_SIZE > extension_end:
             raise ValueError("index extension header is truncated")
-        signature = payload[offset : offset + 4].decode("ascii", errors="replace")
-        size = int.from_bytes(payload[offset + 4 : offset + 8], "big")
-        offset += 8
+        signature = payload[offset : offset + EXTENSION_SIGNATURE_SIZE].decode(
+            "ascii", errors="replace"
+        )
+        size = int.from_bytes(
+            payload[offset + EXTENSION_SIGNATURE_SIZE : offset + EXTENSION_HEADER_SIZE],
+            "big",
+        )
+        offset += EXTENSION_HEADER_SIZE
         if offset + size > extension_end:
             raise ValueError(f"index extension {signature!r} is truncated")
         extensions.append(signature)

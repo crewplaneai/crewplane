@@ -214,12 +214,14 @@ def _run_setup_commands(
             resolved_argv,
             command.argv,
             command.command_index,
-            context.cwd,
-            remaining,
-            context.child_environment,
+            _SetupCommandContext(
+                cwd=context.cwd,
+                timeout_seconds=remaining,
+                child_environment=context.child_environment,
+                cancellation=context.cancellation,
+                state_path=context.process_state_path,
+            ),
             log_handle,
-            context.cancellation,
-            context.process_state_path,
         )
         records.append(record)
         failure = _setup_command_failure(record)
@@ -293,16 +295,21 @@ class _SetupProcessResult:
     cancelled: bool = False
 
 
+@dataclass(frozen=True)
+class _SetupCommandContext:
+    cwd: Path
+    timeout_seconds: float
+    child_environment: ChildProcessEnvironment
+    cancellation: WorkspaceSetupCancellation | None
+    state_path: Path | None
+
+
 def _run_setup_command(
     argv: list[str],
     recorded_argv: list[str | JsonObject],
     command_index: int,
-    cwd: Path,
-    timeout_seconds: float,
-    child_environment: ChildProcessEnvironment,
+    context: _SetupCommandContext,
     log_handle: TextIO,
-    cancellation: WorkspaceSetupCancellation | None,
-    state_path: Path | None,
 ) -> _SetupCommandRecord:
     started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
@@ -320,19 +327,15 @@ def _run_setup_command(
         ):
             result = _run_setup_process(
                 argv,
-                cwd,
-                timeout_seconds,
-                child_environment,
+                context,
                 stdout_file,
                 stderr_file,
-                cancellation,
-                state_path,
             )
             _write_setup_command_output(log_handle, stdout_file, stderr_file, result)
             record = _setup_command_record(
                 recorded_argv,
                 command_index,
-                cwd,
+                context.cwd,
                 started_at,
                 started,
                 exit_code=result.exit_code,
@@ -346,7 +349,7 @@ def _run_setup_command(
         record = _setup_command_record(
             recorded_argv,
             command_index,
-            cwd,
+            context.cwd,
             started_at,
             started,
             exit_code=None,
@@ -374,36 +377,33 @@ def _write_setup_command_output(
 
 def _run_setup_process(
     argv: list[str],
-    cwd: Path,
-    timeout_seconds: float,
-    child_environment: ChildProcessEnvironment,
+    context: _SetupCommandContext,
     stdout_file: TextIO,
     stderr_file: TextIO,
-    cancellation: WorkspaceSetupCancellation | None,
-    state_path: Path | None,
 ) -> _SetupProcessResult:
+    cancellation = context.cancellation
     process = subprocess.Popen(
         argv,
-        cwd=cwd,
+        cwd=context.cwd,
         stdout=stdout_file,
         stderr=stderr_file,
-        env=_setup_child_env(child_environment),
+        env=_setup_child_env(context.child_environment),
         text=True,
         start_new_session=supports_posix_process_groups(),
     )
     registered = True
     if cancellation is not None:
-        registered = cancellation.register_process(process, state_path)
+        registered = cancellation.register_process(process, context.state_path)
         if not registered:
             return _SetupProcessResult(None, cancelled=True)
     try:
-        returncode = process.wait(timeout=timeout_seconds)
-        _terminate_setup_process(process, state_path)
+        returncode = process.wait(timeout=context.timeout_seconds)
+        _terminate_setup_process(process, context.state_path)
         if cancellation is not None and cancellation.is_cancelled():
             return _SetupProcessResult(None, cancelled=True)
         return _SetupProcessResult(returncode)
     except subprocess.TimeoutExpired:
-        _terminate_setup_process(process, state_path)
+        _terminate_setup_process(process, context.state_path)
         return _SetupProcessResult(None, timed_out=True)
     finally:
         if cancellation is not None and registered:

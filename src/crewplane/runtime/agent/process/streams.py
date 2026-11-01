@@ -120,46 +120,17 @@ async def collect_process_output(
         if log_handle is not None:
             log_queue = asyncio.Queue(maxsize=LOG_QUEUE_MAX_ITEMS)
             writer_status = asyncio.get_running_loop().create_future()
-        try:
-            async with asyncio.TaskGroup() as group:
-                stream_task = group.create_task(
-                    capture_process_streams(
-                        process,
-                        log_queue,
-                        stdout_capture,
-                        stderr_capture,
-                        diagnostic_sink,
-                        process_group_id,
-                        idle_timeout_seconds,
-                        writer_status,
-                    )
-                )
-                owned_tasks = [stream_task]
-                if (
-                    log_handle is not None
-                    and log_queue is not None
-                    and writer_status is not None
-                ):
-                    owned_tasks.extend(
-                        (
-                            group.create_task(
-                                drain_log_queue(log_handle, log_queue, writer_status)
-                            ),
-                            group.create_task(watch_log_writer_status(writer_status)),
-                        )
-                    )
-                try:
-                    await asyncio.wait(owned_tasks)
-                except BaseException as exc:
-                    for task in owned_tasks:
-                        task.cancel()
-                    # The stream task can finish before its retained log worker.
-                    await drain_after_stream_failure(process, process_group_id, exc)
-                    raise
-        except BaseException as exc:
-            _preserve_writer_failure(writer_status, exc)
-            raise
-        _preserve_writer_failure(writer_status)
+        await _coordinate_process_streams(
+            process,
+            log_handle,
+            log_queue,
+            stdout_capture,
+            stderr_capture,
+            diagnostic_sink,
+            process_group_id,
+            idle_timeout_seconds,
+            writer_status,
+        )
         await drain_async_process(process, process_group_id)
         close_captures(captures)
         return ProcessOutputCapture(
@@ -179,6 +150,59 @@ async def collect_process_output(
         if failure is not exc:
             raise failure from exc
         raise
+
+
+async def _coordinate_process_streams(
+    process: asyncio.subprocess.Process,
+    log_handle: BinaryIO | None,
+    log_queue: asyncio.Queue[bytes | None] | None,
+    stdout_capture: CapturedStream,
+    stderr_capture: CapturedStream,
+    diagnostic_sink: InvocationDiagnosticSink | None,
+    process_group_id: int | None,
+    idle_timeout_seconds: float | None,
+    writer_status: asyncio.Future[BaseException | None] | None,
+) -> None:
+    try:
+        async with asyncio.TaskGroup() as group:
+            stream_task = group.create_task(
+                capture_process_streams(
+                    process,
+                    log_queue,
+                    stdout_capture,
+                    stderr_capture,
+                    diagnostic_sink,
+                    process_group_id,
+                    idle_timeout_seconds,
+                    writer_status,
+                )
+            )
+            owned_tasks = [stream_task]
+            if (
+                log_handle is not None
+                and log_queue is not None
+                and writer_status is not None
+            ):
+                owned_tasks.extend(
+                    (
+                        group.create_task(
+                            drain_log_queue(log_handle, log_queue, writer_status)
+                        ),
+                        group.create_task(watch_log_writer_status(writer_status)),
+                    )
+                )
+            try:
+                await asyncio.wait(owned_tasks)
+            except BaseException as exc:
+                for task in owned_tasks:
+                    task.cancel()
+                # The stream task can finish before its retained log worker.
+                await drain_after_stream_failure(process, process_group_id, exc)
+                raise
+    except BaseException as exc:
+        _preserve_writer_failure(writer_status, exc)
+        raise
+    _preserve_writer_failure(writer_status)
 
 
 def _preserve_writer_failure(

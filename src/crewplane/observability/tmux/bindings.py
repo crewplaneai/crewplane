@@ -132,15 +132,7 @@ class TmuxCompactKeyBindings:
         session: TmuxSessionTargets,
         commands: _BindingCommands,
     ) -> None:
-        dashboard_bindings = dashboard_key_bindings(
-            session_name=session.session_name,
-            left_pane_id=session.left_pane_id,
-            move_up=commands.move_up,
-            move_down=commands.move_down,
-            enter_inspect=commands.enter_inspect,
-            raw_inspect=commands.raw_inspect,
-            quit_requested_path=runtime_files.quit_requested,
-        )
+        dashboard_bindings = _dashboard_bindings(commands, runtime_files, session)
         for key, binding_commands in dashboard_bindings.items():
             self._bind_dashboard_key(tmux, DASHBOARD_KEY_TABLE, key, binding_commands)
         self._bind_dashboard_key(
@@ -190,15 +182,7 @@ class TmuxCompactKeyBindings:
         if commands is None:
             return
 
-        dashboard_bindings = dashboard_key_bindings(
-            session_name=session.session_name,
-            left_pane_id=session.left_pane_id,
-            move_up=commands.move_up,
-            move_down=commands.move_down,
-            enter_inspect=commands.enter_inspect,
-            raw_inspect=commands.raw_inspect,
-            quit_requested_path=runtime_files.quit_requested,
-        )
+        dashboard_bindings = _dashboard_bindings(commands, runtime_files, session)
         focus_mouse_target = focus_commands("=")
         for table in COPY_MODE_KEY_TABLES:
             for key, binding_commands in dashboard_bindings.items():
@@ -258,3 +242,17 @@ class TmuxCompactKeyBindings:
                 tmux_command_string(*commands),
             ]
         )
+
+
+def _dashboard_bindings(
+    commands: _BindingCommands, runtime_files: RuntimeFiles, session: TmuxSessionTargets
+) -> dict[str, list[list[str]]]:
+    return dashboard_key_bindings(
+        session_name=session.session_name,
+        left_pane_id=session.left_pane_id,
+        move_up=commands.move_up,
+        move_down=commands.move_down,
+        enter_inspect=commands.enter_inspect,
+        raw_inspect=commands.raw_inspect,
+        quit_requested_path=runtime_files.quit_requested,
+    )

@@ -184,13 +184,13 @@ def _nested_upstream_sources(
     upstreams = payload.get("upstream_sources")
     if not isinstance(upstreams, list):
         return ()
-    parsed = [
-        source_ref
-        for item in upstreams
-        if isinstance(item, dict)
-        for source_ref in [_source_ref_from_payload(state_path, item)]
-        if source_ref is not None
-    ]
+    parsed: list[WorktreeSourceRef] = []
+    for item in upstreams:
+        if not isinstance(item, dict):
+            continue
+        source_ref = _source_ref_from_payload(state_path, item)
+        if source_ref is not None:
+            parsed.append(source_ref)
     return tuple(parsed)
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 from crewplane.artifacts.workspace.state.source_fields import invocation_source_payload
 from crewplane.version import SCHEMA_VERSION
@@ -18,6 +18,41 @@ if TYPE_CHECKING:
         WorkspaceStateWriteRequest,
     )
     from .worktree.types import WorktreeSourceRef
+
+
+class _RunningGitPayload(TypedDict):
+    object_format: str
+    repo_id: str
+    run_base_commit: str
+    source_tree: str
+    git_top_level: str
+    active_git_dir: str
+    common_git_dir: str
+    worktree_config_active: bool
+    worktree_lock_mode: str | None
+
+
+class _RunningWorkspacePayload(TypedDict):
+    path: None
+    effective_cwd: None
+    cache_key: str
+    materialization: str
+    writable: bool
+    lineage_producer: bool
+    retention: str
+    retained_reason: None
+    project_root_relative_path: str
+    reuse_generation: NotRequired[int]
+
+
+class _RunningExecutionPayload(TypedDict):
+    cache_root: str | None
+    workspace_path: str
+    checkout_root: str | None
+    worktree_git_dir: str | None
+    checkout_size_bytes: int | None
+    effective_cwd: str | None
+    provisioning_duration_seconds: float | None
 
 
 def build_running_workspace_state_payload(
@@ -70,7 +105,7 @@ def build_running_workspace_state_payload(
 def _git_payload(
     source: WorkspaceSourceSnapshot,
     materialization: WorkspaceStateMaterializationRequest,
-) -> dict[str, object]:
+) -> _RunningGitPayload:
     return {
         "object_format": source.object_format,
         "repo_id": source.repository_id,
@@ -87,7 +122,7 @@ def _git_payload(
 def _workspace_payload(
     source: WorkspaceSourceSnapshot,
     materialization: WorkspaceStateMaterializationRequest,
-) -> dict[str, object]:
+) -> _RunningWorkspacePayload:
     return {
         "path": None,
         "effective_cwd": None,
@@ -103,7 +138,7 @@ def _workspace_payload(
 
 def _execution_payload(
     materialization: WorkspaceStateMaterializationRequest,
-) -> dict[str, object]:
+) -> _RunningExecutionPayload:
     provisioning = materialization.provisioning
     return {
         "cache_root": materialization.cache_root,

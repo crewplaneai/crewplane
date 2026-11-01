@@ -56,20 +56,18 @@ def create_template_file(
 
 
 def discover_workflow_library_templates() -> list[Path]:
-    if not WORKFLOW_LIBRARY_TEMPLATE_DIR.exists():
-        return []
-    return sorted(
-        path.relative_to(WORKFLOW_LIBRARY_TEMPLATE_DIR)
-        for path in WORKFLOW_LIBRARY_TEMPLATE_DIR.rglob("*.task.md")
-        if path.is_file()
-    )
+    return _discover_workflow_library("*.task.md")
 
 
 def discover_workflow_library_assets() -> list[Path]:
+    return _discover_workflow_library("*")
+
+
+def _discover_workflow_library(pattern: str) -> list[Path]:
     if not WORKFLOW_LIBRARY_TEMPLATE_DIR.exists():
         return []
     return sorted(
         path.relative_to(WORKFLOW_LIBRARY_TEMPLATE_DIR)
-        for path in WORKFLOW_LIBRARY_TEMPLATE_DIR.rglob("*")
+        for path in WORKFLOW_LIBRARY_TEMPLATE_DIR.rglob(pattern)
         if path.is_file()
     )

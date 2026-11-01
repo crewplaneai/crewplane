@@ -27,26 +27,26 @@ def safe_file_operations() -> SafeFileOperations:
         from . import safe_files_windows
 
         return SafeFileOperations(
-            safe_files_windows.ensure_contained_directory,
-            safe_files_windows.contained_directory,
-            safe_files_windows.contained_regular_file,
-            safe_files_windows.ensure_regular_file,
-            safe_files_windows.replace_contained_file,
-            safe_files_windows.open_regular_file,
-            safe_files_windows.open_writable_file,
-            safe_files_windows.open_contained_file,
-            safe_files_windows.signature_timestamp,
+            ensure_contained_directory=safe_files_windows.ensure_contained_directory,
+            contained_directory=safe_files_windows.contained_directory,
+            contained_regular_file=safe_files_windows.contained_regular_file,
+            ensure_regular_file=safe_files_windows.ensure_regular_file,
+            replace_contained_file=safe_files_windows.replace_contained_file,
+            open_regular_file=safe_files_windows.open_regular_file,
+            open_destination=safe_files_windows.open_writable_file,
+            open_contained_file=safe_files_windows.open_contained_file,
+            signature_timestamp=safe_files_windows.signature_timestamp,
         )
     from . import safe_files_posix
 
     return SafeFileOperations(
-        safe_files_posix.ensure_contained_directory,
-        safe_files_posix.contained_directory,
-        safe_files_posix.contained_regular_file,
-        safe_files_posix.ensure_single_link_regular_file,
-        safe_files_posix.replace_contained_file,
-        safe_files_posix.open_regular_file,
-        safe_files_posix.open_destination,
-        safe_files_posix.open_contained_file,
-        safe_files_posix.signature_timestamp,
+        ensure_contained_directory=safe_files_posix.ensure_contained_directory,
+        contained_directory=safe_files_posix.contained_directory,
+        contained_regular_file=safe_files_posix.contained_regular_file,
+        ensure_regular_file=safe_files_posix.ensure_single_link_regular_file,
+        replace_contained_file=safe_files_posix.replace_contained_file,
+        open_regular_file=safe_files_posix.open_regular_file,
+        open_destination=safe_files_posix.open_destination,
+        open_contained_file=safe_files_posix.open_contained_file,
+        signature_timestamp=safe_files_posix.signature_timestamp,
     )

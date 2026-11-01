@@ -112,30 +112,34 @@ def _payload_from_record(
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             return _workspace_payload_from_record(record)
         case EventType.TOPOLOGY_EXPANDED:
-            try:
-                return TopologyExpansionPayload(
-                    group_id=TypeAdapter(str).validate_python(
-                        record.get("group_id"), strict=True
-                    ),
-                    item_count=TypeAdapter(int).validate_python(
-                        record.get("item_count"), strict=True
-                    ),
-                    additions=tuple(
-                        TypeAdapter(list[TopologyNode]).validate_python(
-                            record.get("additions")
-                        )
-                    ),
-                    group_dependencies=tuple(
-                        TypeAdapter(list[str]).validate_python(
-                            record.get("group_dependencies"), strict=True
-                        )
-                    ),
-                )
-            except (ValidationError, ValueError, TypeError):
-                return None
+            return _topology_expansion_payload_from_record(record)
         case EventType.RUNTIME_LOG:
             return _runtime_log_payload_from_record(record)
     return None
+
+
+def _topology_expansion_payload_from_record(
+    record: Mapping[str, object],
+) -> TopologyExpansionPayload | None:
+    try:
+        return TopologyExpansionPayload(
+            group_id=TypeAdapter(str).validate_python(
+                record.get("group_id"), strict=True
+            ),
+            item_count=TypeAdapter(int).validate_python(
+                record.get("item_count"), strict=True
+            ),
+            additions=tuple(
+                TypeAdapter(list[TopologyNode]).validate_python(record.get("additions"))
+            ),
+            group_dependencies=tuple(
+                TypeAdapter(list[str]).validate_python(
+                    record.get("group_dependencies"), strict=True
+                )
+            ),
+        )
+    except (ValidationError, ValueError, TypeError):
+        return None
 
 
 def _workflow_payload_from_record(

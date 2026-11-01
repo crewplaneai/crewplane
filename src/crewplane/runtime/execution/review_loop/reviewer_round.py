@@ -340,11 +340,8 @@ def evaluate_reviewer_outputs(
             outputs.append(evaluate_reviewer_output(request, result))
         except ReviewerOutputMissingError as exc:
             failures.append(
-                ReviewerInvocationFailure(
-                    index=result.index,
-                    provider=result.provider,
-                    task_id=result.task_id,
-                    output_file=result.output_file,
+                _reviewer_output_failure(
+                    result,
                     error=exc,
                     failure_kind="missing_review_content",
                     warning=(
@@ -356,11 +353,8 @@ def evaluate_reviewer_outputs(
             )
         except ReviewerOutputPublicationError as exc:
             failures.append(
-                ReviewerInvocationFailure(
-                    index=result.index,
-                    provider=result.provider,
-                    task_id=result.task_id,
-                    output_file=result.output_file,
+                _reviewer_output_failure(
+                    result,
                     error=exc,
                     failure_kind="output_publication_failed",
                     warning=(
@@ -370,6 +364,23 @@ def evaluate_reviewer_outputs(
                 )
             )
     return outputs, failures
+
+
+def _reviewer_output_failure(
+    result: ReviewerInvocationResult,
+    error: Exception,
+    failure_kind: str,
+    warning: str,
+) -> ReviewerInvocationFailure:
+    return ReviewerInvocationFailure(
+        index=result.index,
+        provider=result.provider,
+        task_id=result.task_id,
+        output_file=result.output_file,
+        error=error,
+        failure_kind=failure_kind,
+        warning=warning,
+    )
 
 
 def evaluate_reviewer_output(

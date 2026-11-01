@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from crewplane.architecture.contracts import (
     EventType,
     ExecutionStatus,
@@ -86,3 +88,21 @@ def test_hub_recomputes_layout_for_dynamic_children() -> None:
             "chunks.i0.item",
             "chunks.i0.work",
         }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("group_id", 1),
+        ("group_id", None),
+        ("group_dependencies", [1]),
+        ("group_dependencies", "before"),
+        ("additions", None),
+    ],
+)
+def test_topology_reader_rejects_invalid_identity_and_dependency_shapes(
+    field: str, value: object
+) -> None:
+    record = execution_event_log_record(expansion())
+
+    assert event_from_record({**record, field: value}) is None

@@ -27,11 +27,15 @@ def pane_render_args(
     return ["bash", "-lc", script]
 
 
-def tmux_bash_array(tmux_executable: str, socket_name: str | None) -> str:
+def tmux_argv_prefix(tmux_executable: str, socket_name: str | None) -> list[str]:
     command = [tmux_executable]
     if socket_name:
         command.extend(["-L", socket_name])
-    return shlex.join(command)
+    return command
+
+
+def tmux_bash_array(tmux_executable: str, socket_name: str | None) -> str:
+    return shlex.join(tmux_argv_prefix(tmux_executable, socket_name))
 
 
 def shell_read_value_function() -> str:

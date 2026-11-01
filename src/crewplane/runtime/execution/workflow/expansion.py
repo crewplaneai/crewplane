@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from functools import partial
 
 from crewplane.architecture.contracts import (
     ExecutionStatus,
@@ -18,7 +18,6 @@ from crewplane.architecture.contracts.execution_event import (
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.expansions import caller_locators, commit_expansion
 from crewplane.core.expansion_state import ExpansionArtifact
-from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.foreach.expansion import descriptor, instantiate_foreach
 from crewplane.core.preflight.foreach.index import projected_index
 from crewplane.core.preflight.foreach.models import ExpansionBatch
@@ -33,6 +32,7 @@ from crewplane.observability.events.builders import topology_expansion_event
 
 from ..common import CompiledRuntimeContext
 from .execution_session import WorkflowExecutionSession
+from .publications import register_recoverable_publication
 from .state import initialize_workflow_execution_state
 
 
@@ -134,11 +134,14 @@ def _publish_expansion(
 ) -> None:
     publications = context.runtime_publications
 
-    def register(path: Path) -> None:
-        publications.publish(path, file_size_and_sha256(path), recovery_source=path)
-
     with publications.transaction():
-        commit_expansion(output, context.plan, batch, items, register)
+        commit_expansion(
+            output,
+            context.plan,
+            batch,
+            items,
+            partial(register_recoverable_publication, publications),
+        )
 
 
 def _install_expanded_plan(

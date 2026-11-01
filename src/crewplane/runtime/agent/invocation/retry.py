@@ -111,16 +111,17 @@ def _schedule_configured_failure_retry(
         failure_detail = f"failed with exit code {result.returncode}"
     else:
         failure_detail = "matched configured retry conditions"
+    message = (
+        f"{cmd[0]} {failure_detail}; retrying in "
+        f"{config.retry_delay_seconds}s "
+        f"({next_retry_count}/{config.max_retries})"
+    )
     return ScheduleFailureRetry(
         retry_count=next_retry_count,
         wait_seconds=config.retry_delay_seconds,
         notice=InvocationDiagnosticNotice(
             level=LogLevel.WARNING,
-            message=(
-                f"{cmd[0]} {failure_detail}; retrying in "
-                f"{config.retry_delay_seconds}s "
-                f"({next_retry_count}/{config.max_retries})"
-            ),
+            message=message,
             operation="retry_scheduled",
             attributes={
                 "retry_count": next_retry_count,
@@ -128,12 +129,7 @@ def _schedule_configured_failure_retry(
                 "retry_delay_seconds": round(config.retry_delay_seconds, 3),
                 "returncode": result.returncode,
             },
-            console_message=(
-                "[yellow]WARN[/] "
-                f"{cmd[0]} {failure_detail}; "
-                f"retrying in {config.retry_delay_seconds}s "
-                f"({next_retry_count}/{config.max_retries})"
-            ),
+            console_message=f"[yellow]WARN[/] {message}",
         ),
     )
 
@@ -292,27 +288,24 @@ def _schedule_quota_retry(
             f"(parsed reset {format_wait_duration(quota.reset_after_seconds)} "
             f"+ floor {config.quota_reset_sleep_floor_seconds}s)"
         )
+    message = (
+        f"Quota reached for {cmd[0]}; retrying in {wait_detail} "
+        f"(quota attempt {quota_retry_count}; independent of max_retries)"
+    )
     return ScheduleQuotaRetry(
         quota_retry_started_at=quota_retry_started_at,
         quota_retry_count=quota_retry_count,
         wait_seconds=wait_seconds,
         notice=InvocationDiagnosticNotice(
             level=LogLevel.WARNING,
-            message=(
-                f"Quota reached for {cmd[0]}; retrying in {wait_detail} "
-                f"(quota attempt {quota_retry_count}; independent of max_retries)"
-            ),
+            message=message,
             operation="quota_retry_scheduled",
             attributes={
                 "quota_attempt": quota_retry_count,
                 "wait_seconds": round(wait_seconds, 3),
                 "ordinary_max_retries": config.max_retries,
             },
-            console_message=(
-                "[yellow]WARN[/] Quota reached for "
-                f"{cmd[0]}; retrying in {wait_detail} "
-                f"(quota attempt {quota_retry_count}; independent of max_retries)"
-            ),
+            console_message=f"[yellow]WARN[/] {message}",
         ),
     )
 

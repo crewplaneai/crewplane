@@ -71,7 +71,7 @@ def run_git_literal(
     git_top_level: Path,
     *args: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
+    return _run_git_command(
         [
             "git",
             *workspace_git_config_args(),
@@ -79,11 +79,7 @@ def run_git_literal(
             "-C",
             git_top_level.as_posix(),
             *args,
-        ],
-        check=True,
-        capture_output=True,
-        env=git_env(),
-        timeout=WORKSPACE_GIT_FILE_READ_TIMEOUT_SECONDS,
+        ]
     )
 
 
@@ -91,8 +87,14 @@ def run_git(
     git_top_level: Path,
     *args: str,
 ) -> subprocess.CompletedProcess[bytes]:
+    return _run_git_command(
+        ["git", *workspace_git_config_args(), "-C", git_top_level.as_posix(), *args]
+    )
+
+
+def _run_git_command(command: list[str]) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
-        ["git", *workspace_git_config_args(), "-C", git_top_level.as_posix(), *args],
+        command,
         check=True,
         capture_output=True,
         env=git_env(),

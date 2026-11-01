@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, closing, contextmanager
 from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
@@ -12,8 +12,10 @@ from uuid import uuid4
 from .windows_file_handles import (
     DELETE,
     FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_CREATE,
     FILE_LIST_DIRECTORY,
+    FILE_OPEN,
     FILE_OPEN_IF,
     FILE_READ_ATTRIBUTES,
     FILE_SHARE_READ,
@@ -49,7 +51,7 @@ def protected_directory(
                 part,
                 listing_access if index == len(absolute.parts) - 1 else access,
                 share,
-                FILE_OPEN_IF if create else 1,
+                FILE_OPEN_IF if create else FILE_OPEN,
                 directory=True,
             )
             handles.callback(handle.close)
@@ -75,13 +77,12 @@ def _path_errors() -> Iterator[None]:
 
 @contextmanager
 def protected_file(path: Path, links: int = 1) -> Iterator[FileHandle]:
-    with protected_directory(path.parent) as parent:
-        handle = parent.open_child(path.name, GENERIC_READ)
-        try:
-            handle.validate(directory=False, links=links)
-            yield handle
-        finally:
-            handle.close()
+    with (
+        protected_directory(path.parent) as parent,
+        closing(parent.open_child(path.name, GENERIC_READ)) as handle,
+    ):
+        handle.validate(directory=False, links=links)
+        yield handle
 
 
 @contextmanager
@@ -120,13 +121,14 @@ def contained_regular_file(root: Path, parts: tuple[str, ...]) -> Path | None:
 
 
 def ensure_regular_file(path: Path) -> Path:
-    with protected_directory(path.parent, create=True) as parent:
-        handle = parent.open_child(path.name, GENERIC_READ, disposition=FILE_OPEN_IF)
-        try:
-            handle.validate(directory=False)
-            return path
-        finally:
-            handle.close()
+    with (
+        protected_directory(path.parent, create=True) as parent,
+        closing(
+            parent.open_child(path.name, GENERIC_READ, disposition=FILE_OPEN_IF)
+        ) as handle,
+    ):
+        handle.validate(directory=False)
+        return path
 
 
 @contextmanager
@@ -167,15 +169,13 @@ def delete_matching_entry(
         if required:
             raise
         return
-    try:
+    with closing(handle):
         info = handle.information()
-        if info.identity != identity or info.attributes & 0x400:
+        if info.identity != identity or info.attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             if required:
                 raise ValueError(f"Publication entry changed identity: {handle.path}")
             return
         handle.delete()
-    finally:
-        handle.close()
 
 
 def reset_directory(path: Path) -> None:
@@ -260,14 +260,13 @@ def rename_contained_file(
     with (
         protected_directory(target.parent) as parent,
         protected_directory(source.parent) as source_parent,
+        closing(
+            source_parent.open_child(source.name, DELETE | FILE_READ_ATTRIBUTES)
+        ) as handle,
     ):
-        handle = source_parent.open_child(source.name, DELETE | FILE_READ_ATTRIBUTES)
-        try:
-            if handle.validate(directory=False).identity != identity:
-                raise ValueError(f"Metadata temporary entry changed identity: {source}")
-            handle.publish_entry(parent, target.name, rename=True)
-        finally:
-            handle.close()
+        if handle.validate(directory=False).identity != identity:
+            raise ValueError(f"Metadata temporary entry changed identity: {source}")
+        handle.publish_entry(parent, target.name, rename=True)
 
 
 def replace_contained_file(root: Path, parts: tuple[str, ...], source: Path) -> Path:

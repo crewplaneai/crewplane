@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Lock
-from typing import Any
 
 from crewplane.runtime.workspace import mutator_fence, state
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
@@ -71,9 +70,9 @@ class WorkspaceWorkerCancellation:
             await self.wait_for_completion(task, failure_context, cancel, worker_fence)
             raise
 
-    async def wait_for_completion(
+    async def wait_for_completion[T](
         self,
-        task: asyncio.Task[Any],
+        task: asyncio.Task[T],
         failure_context: str,
         cancel: asyncio.CancelledError,
         worker_fence: WorkspaceWorkerFence | None = None,
@@ -96,7 +95,7 @@ class WorkspaceWorkerCancellation:
         except Exception as exc:
             note_cleanup_failure(cancel, failure_context, exc)
 
-    def defer_completion(self, task: asyncio.Task[Any]) -> None:
+    def defer_completion[T](self, task: asyncio.Task[T]) -> None:
         self.cleanup_registry.register(_await_workspace_worker(task), False)
 
     async def persist_fence_after_timeout(
@@ -145,7 +144,7 @@ def _release_durable_workspace_worker_fence(
         mutator_fence.release_workspace_mutator(state_path)
 
 
-async def _await_workspace_worker(task: asyncio.Task[Any]) -> None:
+async def _await_workspace_worker[T](task: asyncio.Task[T]) -> None:
     try:
         await asyncio.shield(task)
     except WorkspaceSnapshotCancelled:

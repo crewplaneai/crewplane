@@ -5,7 +5,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol, cast
 
 from crewplane.observability.log_presentation.limits import (
     DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
@@ -27,12 +27,23 @@ from crewplane.observability.tmux.runtime_files import (
 from crewplane.observability.tmux.selection_control import (
     read_selection_control,
 )
+from crewplane.observability.tmux.shell_commands import tmux_argv_prefix
 from crewplane.observability.tmux.snapshot_types import (
     InspectView,
     SelectedInvocationSnapshot,
 )
 
 RequestedView = Literal["auto", "raw", "formatted"]
+
+
+class _InspectControlArgs(Protocol):
+    runtime_root: Path
+    tmux_executable: str
+    socket_name: str | None
+    session_name: str
+    right_pane_id: str
+    view: RequestedView
+    line_budget: int
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def parse_args(argv: list[str] | None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None) -> _InspectControlArgs:
     parser = argparse.ArgumentParser(description="Control compact tmux inspect mode.")
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--tmux-executable", required=True)
@@ -82,7 +93,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         type=int,
         default=DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
     )
-    return parser.parse_args(argv)
+    return cast(_InspectControlArgs, parser.parse_args(argv))
 
 
 def inspect_source_snapshot(
@@ -114,7 +125,7 @@ def resolve_requested_view(
 
 
 def respawn_inspect_pane(
-    args: argparse.Namespace,
+    args: _InspectControlArgs,
     runtime_files: RuntimeFiles,
 ) -> bool:
     launcher = shlex.join(
@@ -144,7 +155,7 @@ def respawn_inspect_pane(
     return True
 
 
-def activate_inspect_controls(args: argparse.Namespace) -> None:
+def activate_inspect_controls(args: _InspectControlArgs) -> None:
     tmux = tmux_command(args.tmux_executable, args.socket_name)
     run_tmux_best_effort(
         [
@@ -167,10 +178,7 @@ def run_tmux_best_effort(command: list[str]) -> None:
 
 
 def tmux_command(tmux_executable: str, socket_name: str | None) -> list[str]:
-    command = [tmux_executable]
-    if socket_name:
-        command.extend(["-L", socket_name])
-    return command
+    return tmux_argv_prefix(tmux_executable, socket_name)
 
 
 def read_optional_text(path: Path) -> str | None:

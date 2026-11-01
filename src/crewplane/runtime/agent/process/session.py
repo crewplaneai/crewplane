@@ -29,6 +29,12 @@ async def wait_for_owned_task[Result](
 
 
 class ProcessSession(Protocol):
+    """Own process startup, containment, capture transfer, and finalization policy.
+
+    The lifecycle starts and releases the process before collecting output. On
+    failure it drains the owned process tree before closing native resources.
+    """
+
     @property
     def process(self) -> asyncio.subprocess.Process | None: ...
     @property
@@ -39,29 +45,57 @@ class ProcessSession(Protocol):
         cwd: Path,
         environment: dict[str, str] | None,
         stdin_data: bytes | None = None,
-    ) -> asyncio.subprocess.Process: ...
-    def release(self) -> None: ...
+    ) -> asyncio.subprocess.Process:
+        """Acquire process ownership, retaining partial startup for failure drain."""
+        ...
+
+    def release(self) -> None:
+        """Permit execution after ownership is recorded; ungated sessions do nothing."""
+        ...
+
     async def collect(
         self,
         stdin_data: bytes | None,
         log_handle: BinaryIO | None,
         diagnostics: InvocationDiagnosticSink | None,
         idle_timeout: float | None,
-    ) -> ProcessOutputCapture: ...
-    async def drain_failed(
-        self, diagnostics: InvocationDiagnosticSink | None
-    ) -> None: ...
-    def close(self) -> None: ...
-    def can_report_completion(self, cleanup_confirmed: bool) -> bool: ...
+    ) -> ProcessOutputCapture:
+        """Collect output and transfer successful capture-file ownership to the caller."""
+        ...
+
+    async def drain_failed(self, diagnostics: InvocationDiagnosticSink | None) -> None:
+        """Drain owned processes and pipes after failure, reporting cleanup errors."""
+        ...
+
+    def close(self) -> None:
+        """Close native ownership resources; closure alone does not confirm drainage."""
+        ...
+
+    def can_report_completion(self, cleanup_confirmed: bool) -> bool:
+        """Decide whether containment and drainage evidence allow completion reporting."""
+        ...
+
     def prepare_finalization(
         self, active_exception: BaseException | None, cleanup_confirmed: bool
-    ) -> None: ...
+    ) -> None:
+        """Attach platform-specific unconfirmed-cleanup evidence before reporting."""
+        ...
+
     def finalization_requires_capture_cleanup(
         self, active_exception: BaseException | None
-    ) -> bool: ...
+    ) -> bool:
+        """Decide whether a finalization failure requires discarding captured output."""
+        ...
+
     def handle_finalization_error(
         self, error: Exception, active_exception: BaseException | None
-    ) -> None: ...
+    ) -> None:
+        """Raise without an active error, otherwise apply the platform error policy.
+
+        POSIX preserves the active error. Windows job ownership promotes cleanup
+        failure unless cancellation is active, in which case it attaches the cause.
+        """
+        ...
 
 
 def process_session() -> ProcessSession:

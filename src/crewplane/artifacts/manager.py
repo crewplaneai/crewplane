@@ -309,18 +309,27 @@ class OutputManager:
         failure_message: str | None = None,
         cancel_reason: str | None = None,
     ) -> Path:
-        manifest_path = self._run_manifest_path()
-        current = RunManifest.model_validate_json(
-            read_contained_bytes(manifest_path.parent, manifest_path.name)
-        )
-        updated = current.model_copy(
-            update={
+        current = self._read_run_manifest()
+        return self._write_updated_run_manifest(
+            current,
+            {
                 "status": status,
                 "completed_at": completed_at,
                 "failure_message": failure_message,
                 "cancel_reason": cancel_reason,
-            }
+            },
         )
+
+    def _read_run_manifest(self) -> RunManifest:
+        manifest_path = self._run_manifest_path()
+        return RunManifest.model_validate_json(
+            read_contained_bytes(manifest_path.parent, manifest_path.name)
+        )
+
+    def _write_updated_run_manifest(
+        self, current: RunManifest, updates: dict[str, object]
+    ) -> Path:
+        updated = current.model_copy(update=updates)
         validated = RunManifest.model_validate(updated.model_dump(mode="json"))
         return self.write_run_manifest(validated)
 
@@ -356,20 +365,16 @@ class OutputManager:
         source_run_id: str,
         source_run_key_name: str,
     ) -> Path:
-        manifest_path = self._run_manifest_path()
-        current = RunManifest.model_validate_json(
-            read_contained_bytes(manifest_path.parent, manifest_path.name)
-        )
+        current = self._read_run_manifest()
         resumed_nodes = [*current.resumed_nodes, node_id]
-        updated = current.model_copy(
-            update={
+        return self._write_updated_run_manifest(
+            current,
+            {
                 "resumed_nodes": resumed_nodes,
                 "resume_source_run_id": source_run_id,
                 "resume_source_run_key_name": source_run_key_name,
-            }
+            },
         )
-        validated = RunManifest.model_validate(updated.model_dump(mode="json"))
-        return self.write_run_manifest(validated)
 
     def write_workspace_export(
         self, logical_worktree_name: str, payload: object

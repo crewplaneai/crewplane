@@ -103,6 +103,45 @@ def test_native_ownership_failures_are_explicit(api, operation):
     job.close()
 
 
+@pytest.mark.parametrize(
+    "operation", ["SetInformationJobObject", "AssignProcessToJobObject"]
+)
+@pytest.mark.parametrize("cleanup_succeeds", [True, False])
+def test_native_error_capture_preserves_cleanup_precedence(
+    api, monkeypatch, operation, cleanup_succeeds
+):
+    last_error = 5
+    expected_handle = 101 if operation == "SetInformationJobObject" else 202
+
+    def get_last_error():
+        return last_error
+
+    def close_handle(handle):
+        nonlocal last_error
+        assert handle == expected_handle
+        last_error = 6
+        return cleanup_succeeds
+
+    monkeypatch.setattr(ctypes, "get_last_error", get_last_error, raising=False)
+    job = None if operation == "SetInformationJobObject" else windows_job.WindowsJob()
+    getattr(api, operation).return_value = False
+    api.CloseHandle.side_effect = close_handle
+    try:
+        with pytest.raises(OSError) as failure:
+            if job is None:
+                windows_job.WindowsJob()
+            else:
+                job.assign(999)
+        assert failure.value.errno == (5 if cleanup_succeeds else 6)
+        if operation == "AssignProcessToJobObject" and cleanup_succeeds:
+            assert "Provider launch was withheld" in failure.value.__notes__[0]
+    finally:
+        api.CloseHandle.side_effect = None
+        api.CloseHandle.return_value = True
+        if job is not None:
+            job.close()
+
+
 def test_binding_configuration_is_lazy_and_platform_guarded(monkeypatch):
     windows_job.kernel32.cache_clear()
     monkeypatch.setattr(windows_job, "os", SimpleNamespace(name="posix"))

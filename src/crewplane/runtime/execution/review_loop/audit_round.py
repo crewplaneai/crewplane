@@ -227,29 +227,40 @@ async def _acquire_review_candidate(
     try:
         candidate = await complete_audit_io(prepare_candidate)
     except asyncio.CancelledError:
-        stalled = (
-            progress.stop_reason == ReviewLoopStopReason.NO_PROGRESS
-            and not request.stage.execution_policy.continue_on_failure
-        )
-        exhausted = (
-            isinstance(completed_candidate, AuditIterationOutcome)
-            and (request.audit_round_num or 1)
-            == audit_rounds_or_default(request.stage.execution_policy.audit_rounds)
-            and (
-                completed_candidate is AuditIterationOutcome.STOP
-                or round_num == maximum_review_round(request.remediation_depth)
-            )
-            and (
-                progress.latest_valid_executor_outputs is None
-                or not consensus_failure_allows_continuation(request.stage)[0]
-            )
-        )
-        if stalled or exhausted:
+        if _completed_rejection_survives_cancellation(
+            request, progress, round_num, completed_candidate
+        ):
             return AuditIterationOutcome.STOP
         raise
     if isinstance(candidate, ReviewCandidate) and request.commit_transition is not None:
         await request.commit_transition("reviewers", round_num)
     return candidate
+
+
+def _completed_rejection_survives_cancellation(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+    round_num: int,
+    completed_candidate: ReviewCandidate | AuditIterationOutcome | None,
+) -> bool:
+    stalled = (
+        progress.stop_reason == ReviewLoopStopReason.NO_PROGRESS
+        and not request.stage.execution_policy.continue_on_failure
+    )
+    exhausted = (
+        isinstance(completed_candidate, AuditIterationOutcome)
+        and (request.audit_round_num or 1)
+        == audit_rounds_or_default(request.stage.execution_policy.audit_rounds)
+        and (
+            completed_candidate is AuditIterationOutcome.STOP
+            or round_num == maximum_review_round(request.remediation_depth)
+        )
+        and (
+            progress.latest_valid_executor_outputs is None
+            or not consensus_failure_allows_continuation(request.stage)[0]
+        )
+    )
+    return stalled or exhausted
 
 
 def _prepare_review_candidate(

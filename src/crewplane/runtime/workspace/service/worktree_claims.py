@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from crewplane.runtime.workspace.filesystem import (
-    runtime_workspace_cache_root,
-)
 from crewplane.runtime.workspace.state import (
-    WorkspaceStateMaterializationRequest,
     write_running_workspace_state,
 )
 from crewplane.runtime.workspace.worktree.cache import ReusableWorktreeCheckout
@@ -17,7 +13,7 @@ from crewplane.runtime.workspace.worktree.materialization import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeProvisioningClaim
 
-from .common import workspace_state_request
+from .common import workspace_state_request, worktree_state_materialization_request
 from .types import WorkspaceInvocationRequest, WorktreePreparationPlan
 
 
@@ -97,17 +93,13 @@ class WorktreeClaimWriter:
             plan.node,
             plan.source,
             plan.policy,
-            WorkspaceStateMaterializationRequest(
-                workspace_path=claim.workspace_path,
-                child_environment_required=plan.child_environment_required,
-                cache_root=runtime_workspace_cache_root(request.plan),
+            replace(
+                worktree_state_materialization_request(
+                    request, plan, claim.workspace_path
+                ),
                 effective_cwd=claim.cwd,
                 checkout_root=claim.checkout_root,
                 worktree_git_dir=claim.git_dir,
-                source_ref=plan.source_ref,
-                materialization=plan.policy.materialization,
-                writable=True,
-                lineage_producer=plan.lineage_producer,
                 worktree_lock_mode=claim.lock_mode,
                 reuse=claim.reuse,
                 reuse_generation=claim.generation,

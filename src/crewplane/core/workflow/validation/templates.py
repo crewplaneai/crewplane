@@ -52,17 +52,30 @@ def collect_prompt_template_diagnostics(
     ancestors = _ancestor_map_if_available(workflow)
     diagnostics: list[WorkflowValidationDiagnostic] = []
     for node in workflow.nodes:
-        for template_text in _node_template_texts(node):
-            for template_token in extract_template_tokens(template_text):
-                message = _template_reference_error(
-                    node.id,
-                    template_token,
-                    nodes_by_id,
-                    ancestors.get(node.id) if ancestors is not None else None,
-                )
-                if message is not None:
-                    diagnostics.append(_template_diagnostic(message, node.id))
+        diagnostics.extend(
+            _node_template_diagnostics(
+                node,
+                nodes_by_id,
+                ancestors.get(node.id) if ancestors is not None else None,
+            )
+        )
     return tuple(diagnostics)
+
+
+def _node_template_diagnostics(
+    node: WorkflowNode,
+    nodes_by_id: dict[str, WorkflowNode],
+    ancestors: set[str] | None,
+) -> list[WorkflowValidationDiagnostic]:
+    diagnostics: list[WorkflowValidationDiagnostic] = []
+    for template_text in _node_template_texts(node):
+        for template_token in extract_template_tokens(template_text):
+            message = _template_reference_error(
+                node.id, template_token, nodes_by_id, ancestors
+            )
+            if message is not None:
+                diagnostics.append(_template_diagnostic(message, node.id))
+    return diagnostics
 
 
 def _node_template_texts(node: WorkflowNode) -> tuple[str, ...]:

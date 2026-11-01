@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TypedDict
 
 from crewplane.architecture.contracts import EventType, InvocationWorkspaceContext
 from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
@@ -326,7 +327,14 @@ def safe_error_message(exc: Exception) -> str:
     return exc.__class__.__name__
 
 
-def failure_event_fields(exc: Exception) -> dict[str, str]:
+class FailureEventFields(TypedDict, total=False):
+    failure_kind: str
+    failure_phase: str
+    failure_source: str
+    failure_advice: str
+
+
+def failure_event_fields(exc: Exception) -> FailureEventFields:
     if not isinstance(exc, InvocationFailureError):
         return {}
     return {

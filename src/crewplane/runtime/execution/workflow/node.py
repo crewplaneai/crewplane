@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 from crewplane.architecture.contracts import (
     AgentInvoker,
@@ -12,7 +11,6 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.results.findings import FindingsExtractionError
-from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.compiled_records import PreflightExecutionNode
 
 from ..common import (
@@ -34,6 +32,7 @@ from ..publication_registry import RuntimePublicationRegistry
 from ..resume import write_successful_node_state
 from ..review_loop.checkpoint import emit_checkpoint_reuse, require_entry_project
 from ..sequential import execute_sequential_stage
+from .publications import register_recoverable_publication
 
 
 def mark_node_running_activity(
@@ -73,6 +72,44 @@ async def execute_node(
     emit_checkpoint_reuse(runtime_context, node.id, telemetry)
     if should_print_console(telemetry):
         execution_console(telemetry).rule(f"Node: {node.id} ({node.mode})")
+    await _dispatch_node_stage(node, output, invoker, runtime_context, telemetry)
+    publications = runtime_context.runtime_publications
+    with publications.transaction():
+        stage_finalize_result = _finalize_node_artifacts(
+            node, output, runtime_context, publications
+        )
+    emit_stage_finalize_logs(telemetry, stage_finalize_result)
+    cleanup_errors = (
+        await runtime_context.generated_file_workspaces.cleanup_node_best_effort_async(
+            node.id,
+        )
+    )
+    _emit_generated_file_workspace_cleanup_errors(telemetry, node.id, cleanup_errors)
+    with publications.transaction():
+        node_state_path = write_successful_node_state(
+            node,
+            runtime_context.plan,
+            output,
+            workflow_identity,
+            stage_finalize_result,
+            (
+                runtime_context.review_checkpoints[node.id].resume_origin
+                if node.id in runtime_context.review_checkpoints
+                else None
+            ),
+        )
+        register_recoverable_publication(publications, node_state_path)
+    if should_print_console(telemetry):
+        execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")
+
+
+async def _dispatch_node_stage(
+    node: PreflightExecutionNode,
+    output: ArtifactStorePort,
+    invoker: AgentInvoker,
+    runtime_context: CompiledRuntimeContext,
+    telemetry: ExecutionTelemetry | None,
+) -> None:
     if node.mode == "input":
         execute_input_stage(
             node,
@@ -98,44 +135,28 @@ async def execute_node(
         )
     else:
         raise ValueError("Foreach control nodes must execute in the workflow scheduler")
-    publications = runtime_context.runtime_publications
-    with publications.transaction():
-        try:
-            stage_finalize_result = output.finalize_node(
-                NodeArtifactRequest(node.id, node.artifact_contract),
-                findings_enabled=node.findings,
-                task_specs=build_stage_task_specs(node),
-                generated_file_detection_enabled=generated_file_detection_enabled(node),
-                generated_file_workspace_roots=(
-                    runtime_context.generated_file_workspaces.roots_for_node(node.id)
-                ),
-            )
-        except FindingsExtractionError as exc:
-            raise NodeExecutionError(str(exc)) from exc
-        _register_stage_publications(publications, stage_finalize_result)
-    emit_stage_finalize_logs(telemetry, stage_finalize_result)
-    cleanup_errors = (
-        await runtime_context.generated_file_workspaces.cleanup_node_best_effort_async(
-            node.id,
-        )
-    )
-    _emit_generated_file_workspace_cleanup_errors(telemetry, node.id, cleanup_errors)
-    with publications.transaction():
-        node_state_path = write_successful_node_state(
-            node,
-            runtime_context.plan,
-            output,
-            workflow_identity,
-            stage_finalize_result,
-            (
-                runtime_context.review_checkpoints[node.id].resume_origin
-                if node.id in runtime_context.review_checkpoints
-                else None
+
+
+def _finalize_node_artifacts(
+    node: PreflightExecutionNode,
+    output: ArtifactStorePort,
+    runtime_context: CompiledRuntimeContext,
+    publications: RuntimePublicationRegistry,
+) -> StageFinalizeResult:
+    try:
+        stage_finalize_result = output.finalize_node(
+            NodeArtifactRequest(node.id, node.artifact_contract),
+            findings_enabled=node.findings,
+            task_specs=build_stage_task_specs(node),
+            generated_file_detection_enabled=generated_file_detection_enabled(node),
+            generated_file_workspace_roots=(
+                runtime_context.generated_file_workspaces.roots_for_node(node.id)
             ),
         )
-        _register_recoverable_publication(publications, node_state_path)
-    if should_print_console(telemetry):
-        execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")
+    except FindingsExtractionError as exc:
+        raise NodeExecutionError(str(exc)) from exc
+    _register_stage_publications(publications, stage_finalize_result)
+    return stage_finalize_result
 
 
 def generated_file_detection_enabled(node: PreflightExecutionNode) -> bool:
@@ -149,25 +170,10 @@ def _register_stage_publications(
     reserved_paths = (result.result_file, result.findings_file)
     for path in reserved_paths:
         if path is not None:
-            _register_recoverable_publication(publications, path)
+            register_recoverable_publication(publications, path)
     for path in result.generated_files:
         if path not in reserved_paths:
-            publications.publish(
-                path,
-                file_size_and_sha256(path),
-                recovery_source=path,
-            )
-
-
-def _register_recoverable_publication(
-    publications: RuntimePublicationRegistry,
-    path: Path,
-) -> None:
-    publications.publish(
-        path,
-        file_size_and_sha256(path),
-        recovery_source=path,
-    )
+            register_recoverable_publication(publications, path)
 
 
 def _emit_generated_file_workspace_cleanup_errors(

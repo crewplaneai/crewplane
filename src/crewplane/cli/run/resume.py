@@ -149,16 +149,9 @@ def print_dry_run_resume_advisory(
             successful_run = resume_plan.decision.successful_run
             branch_export_records: tuple[JsonObject, ...] = ()
             if successful_run is not None:
-                branch_plan = _preview_plan_for_run(
-                    preview,
-                    successful_run.manifest.run_id,
-                    successful_run.manifest.run_key_name,
-                    project_root,
-                    successful_run.run_dir / "manifests",
+                branch_plan = prepare_historical_plan(
+                    preview, successful_run, project_root
                 )
-                branch_plan = reconstruct_expansions(
-                    branch_plan, successful_run.run_dir
-                ).plan
                 branch_export_records = preview_branch_exports_from_history(
                     branch_plan,
                     successful_run,
@@ -221,22 +214,21 @@ def _branch_export_verification_failed(
     return any(record.get("status") == "failed_verification" for record in records)
 
 
-def _preview_plan_for_run(
+def prepare_historical_plan(
     preview: PreflightCompilationPreview,
-    run_id: str,
-    run_key_name: str,
-    context_root: Path,
-    manifest_root: Path,
+    source_run: RunHistoryRecord,
+    project_root: Path,
 ) -> PreflightExecutionPlan:
-    return PreflightExecutionPlan.from_preview(
+    plan = PreflightExecutionPlan.from_preview(
         preview=preview,
-        run_id=run_id,
-        run_key_name=run_key_name,
-        project_root=context_root.as_posix(),
-        context_root=context_root.as_posix(),
-        manifest_root=manifest_root.as_posix(),
+        run_id=source_run.manifest.run_id,
+        run_key_name=source_run.manifest.run_key_name,
+        project_root=project_root.as_posix(),
+        context_root=project_root.as_posix(),
+        manifest_root=(source_run.run_dir / "manifests").as_posix(),
         created_at=datetime.now(),
     )
+    return reconstruct_expansions(plan, source_run.run_dir).plan
 
 
 def artifact_valid_history_plan(
@@ -263,19 +255,8 @@ def artifact_valid_history_plan(
             decision=ResumeDecision(kind="execute_full"),
         )
     observation = None
-    if any(
-        record.manifest.status in {"failed", "cancelled"} for record in records
-    ) and any(
-        checkpoint_node_is_eligible(node)
-        and (node.workspace_policy is None or not node.workspace_policy.enabled)
-        for node in [
-            *validation_plan.nodes,
-            *(
-                node
-                for template in validation_plan.foreach_templates
-                for node in template.nodes
-            ),
-        ]
+    if _has_interrupted_history(records) and _has_project_root_checkpoint(
+        validation_plan
     ):
         fingerprint = project_fingerprint(
             Path(validation_plan.project_root), (state_dir,)
@@ -300,6 +281,21 @@ def artifact_valid_history_plan(
     return ResumePlan(
         workflow_identity=workflow_identity,
         decision=ResumeDecision(kind="execute_full"),
+    )
+
+
+def _has_interrupted_history(records: tuple[RunHistoryRecord, ...]) -> bool:
+    return any(record.manifest.status in {"failed", "cancelled"} for record in records)
+
+
+def _has_project_root_checkpoint(plan: PreflightExecutionPlan) -> bool:
+    return any(
+        checkpoint_node_is_eligible(node)
+        and (node.workspace_policy is None or not node.workspace_policy.enabled)
+        for node in [
+            *plan.nodes,
+            *(node for template in plan.foreach_templates for node in template.nodes),
+        ]
     )
 
 

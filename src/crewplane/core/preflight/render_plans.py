@@ -341,31 +341,15 @@ def fragment_for_occurrence(
     target_role = occurrence.target_role
     reference = occurrence.reference
     if reference.kind == "node":
-        return node_reference_fragment(
-            node,
-            target_role,
-            occurrence.source_role,
-            occurrence.segment_index,
-            reference,
-            options,
-            state,
-            fragment_index,
-            occurrence.occurrence_id,
-        )
-    if reference.kind == "file":
-        return file_reference_fragment(
-            node,
-            target_role,
-            occurrence.source_role,
-            occurrence.segment_index,
-            reference,
-            options,
-            state,
-            fragment_index,
-            occurrence.occurrence_id,
-        )
-    if reference.kind in {"env", "var"}:
-        return static_value_fragment(
+        handler = node_reference_fragment
+    elif reference.kind == "file":
+        handler = file_reference_fragment
+    elif reference.kind in {"env", "var"}:
+        handler = static_value_fragment
+    else:
+        handler = None
+    if handler is not None:
+        return handler(
             node,
             target_role,
             occurrence.source_role,

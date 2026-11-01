@@ -189,6 +189,22 @@ class TmuxCompactRefreshController:
                 pane_geometry,
             )
 
+        self._render_pane_contents(
+            runtime_files, snapshot, selected_node_id, inspect_mode, pane_geometry
+        )
+        self._update_window_metadata(
+            session, state, mode, selected_node_id, inspect_node_id, inspect_view
+        )
+
+    def _render_pane_contents(
+        self,
+        runtime_files: RuntimeFiles,
+        snapshot: DashboardSnapshot,
+        selected_node_id: str | None,
+        inspect_mode: bool,
+        pane_geometry: PaneGeometry,
+    ) -> None:
+        state = snapshot.state
         current_monotonic_time = self._monotonic_now()
         prepared_invocation = None
         if not inspect_mode:
@@ -220,6 +236,17 @@ class TmuxCompactRefreshController:
         if rendered.right_lines is not None:
             write_atomic(runtime_files.right_content, "\n".join(rendered.right_lines))
 
+    def _update_window_metadata(
+        self,
+        session: StartedCompactSession,
+        state: RunDashboardState,
+        mode: str,
+        selected_node_id: str | None,
+        inspect_node_id: str | None,
+        inspect_view: str | None,
+    ) -> None:
+        targets = session.targets
+        tmux = session.tmux
         self._window.set_status_option_if_changed(
             tmux,
             targets.session_name,

@@ -59,6 +59,15 @@ def compile_preflight_preview(
     runtime_snapshot: RuntimeConfigSnapshot,
     options: PreflightCompileOptions,
 ) -> PreflightCompilationPreview:
+    """Compile a preview, returning selected validation failures as diagnostics.
+
+    ValueErrors from inventory preparation and literal-expansion validation
+    become diagnostics, as do selected failures handled by delegated phases;
+    unhandled exceptions propagate. Compilation stops after an error-producing
+    phase. Only an error-free inventory receives foreach-preview finalization
+    and literal-expansion validation. Delegated file reads and fingerprint-key
+    I/O follow the supplied compile options; this does not invoke providers.
+    """
     try:
         inventory = compilation_source(source, config)
     except ValueError as exc:

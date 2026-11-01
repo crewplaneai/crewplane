@@ -229,6 +229,21 @@ def load_expansion(
     )
     if recorded.state != derived.state:
         raise ValueError("Expansion identity or item descriptors changed")
+    _validate_expansion_caller_bindings(plan, template, recorded)
+    if isinstance(template.items, list) and items != template.items:
+        raise ValueError("Literal expansion items differ from compiled collection")
+    for evidence, item in zip(recorded.state.items, items, strict=True):
+        if read_expansion_artifact(
+            stages_dir, evidence, COLLECTION_BYTE_LIMIT
+        ) != canonical_json_bytes(item):
+            raise ValueError("Expansion item file differs from collection")
+    _validate_expansion_semantics(recorded, derived)
+    return derived, items
+
+
+def _validate_expansion_caller_bindings(
+    plan: PreflightExecutionPlan, template: CompiledForeach, recorded: ExpansionBatch
+) -> None:
     expected_callers = caller_locators(template)
     nodes = {node.id: node for node in plan.nodes}
     if set(recorded.state.caller_artifacts) != {
@@ -245,13 +260,11 @@ def load_expansion(
             != expected_path
         ):
             raise ValueError("Expansion caller locator changed")
-    if isinstance(template.items, list) and items != template.items:
-        raise ValueError("Literal expansion items differ from compiled collection")
-    for evidence, item in zip(recorded.state.items, items, strict=True):
-        if read_expansion_artifact(
-            stages_dir, evidence, COLLECTION_BYTE_LIMIT
-        ) != canonical_json_bytes(item):
-            raise ValueError("Expansion item file differs from collection")
+
+
+def _validate_expansion_semantics(
+    recorded: ExpansionBatch, derived: ExpansionBatch
+) -> None:
     recorded_payload, derived_payload = recorded.model_dump(), derived.model_dump()
     recorded_payload["nodes"] = semantic_node_payloads(recorded.nodes)
     derived_payload["nodes"] = semantic_node_payloads(derived.nodes)
@@ -261,4 +274,3 @@ def load_expansion(
         raise ValueError(
             "Recorded expansion additions differ from frozen-template derivation"
         )
-    return derived, items

@@ -198,14 +198,12 @@ def _validate_workspace_artifact_payload(
         descriptor.integrity,
     ):
         return
-    if hashlib.sha256(payload).hexdigest() != descriptor.integrity["sha256"]:
-        raise ValueError(
-            f"Workspace resume artifact hash changed for node '{node_id}'."
-        )
-    if len(payload) != descriptor.integrity["size_bytes"]:
-        raise ValueError(
-            f"Workspace resume artifact size changed for node '{node_id}'."
-        )
+    _assert_workspace_byte_signature(
+        node_id,
+        payload,
+        descriptor.integrity["sha256"],
+        descriptor.integrity["size_bytes"],
+    )
 
 
 def _validate_workspace_state_resume_payload(
@@ -222,15 +220,23 @@ def _validate_workspace_state_resume_payload(
     except (json.JSONDecodeError, UnicodeDecodeError):
         return False
     resume_bytes = encode_workspace_state_for_resume(state)
-    if hashlib.sha256(resume_bytes).hexdigest() != resume_sha256:
+    _assert_workspace_byte_signature(
+        node_id, resume_bytes, resume_sha256, resume_size_bytes
+    )
+    return True
+
+
+def _assert_workspace_byte_signature(
+    node_id: str, payload: bytes, expected_sha256: object, expected_size_bytes: object
+) -> None:
+    if hashlib.sha256(payload).hexdigest() != expected_sha256:
         raise ValueError(
             f"Workspace resume artifact hash changed for node '{node_id}'."
         )
-    if len(resume_bytes) != resume_size_bytes:
+    if len(payload) != expected_size_bytes:
         raise ValueError(
             f"Workspace resume artifact size changed for node '{node_id}'."
         )
-    return True
 
 
 def _hydrated_workspace_state_payload(

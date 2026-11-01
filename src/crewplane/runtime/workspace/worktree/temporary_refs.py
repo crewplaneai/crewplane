@@ -22,7 +22,7 @@ from crewplane.core.workspace.naming import (
 )
 
 from ..cleanup_notes import note_cleanup_failure
-from ..git import git
+from ..git import GitCommand, git
 from ..locks import git_metadata_lock
 from ..state import read_workspace_state
 from ..state_evidence import (
@@ -208,20 +208,9 @@ def _delete_temporary_import_ref(
     source = imported_ref.source
     with git_metadata_lock(Path(source.common_git_dir), cancel_requested):
         command = git(Path(source.git_top_level))
-        current = direct_ref_oid(command, imported_ref.name, "temporary import")
-        if current == imported_ref.target_oid:
-            command.run(
-                "update-ref",
-                "--no-deref",
-                "-d",
-                imported_ref.name,
-                imported_ref.target_oid,
-            )
-        elif current is not None:
-            raise RuntimeError(
-                "Workspace temporary import ref moved and was retained: "
-                f"{imported_ref.name}."
-            )
+        _delete_exact_temporary_import_ref(
+            command, imported_ref.name, imported_ref.target_oid
+        )
     mark_workspace_temporary_ref_removed(
         imported_ref.owner.state_path,
         imported_ref.name,
@@ -301,14 +290,22 @@ def _reconcile_temporary_import_ref(
         command = git(repo_root)
         if command.text("check-ref-format", "--normalize", ref_name) != ref_name:
             raise RuntimeError("Workspace temporary ref cleanup name is unsafe.")
-        current = direct_ref_oid(command, ref_name, "temporary import")
-        if current == target_oid:
-            command.run("update-ref", "--no-deref", "-d", ref_name, target_oid)
-            return 1
-        if current is not None:
-            raise RuntimeError(
-                f"Workspace temporary import ref moved and was retained: {ref_name}."
-            )
+        return _delete_exact_temporary_import_ref(command, ref_name, target_oid)
+
+
+def _delete_exact_temporary_import_ref(
+    command: GitCommand,
+    ref_name: str,
+    target_oid: str,
+) -> int:
+    current = direct_ref_oid(command, ref_name, "temporary import")
+    if current == target_oid:
+        command.run("update-ref", "--no-deref", "-d", ref_name, target_oid)
+        return 1
+    if current is not None:
+        raise RuntimeError(
+            f"Workspace temporary import ref moved and was retained: {ref_name}."
+        )
     return 0
 
 

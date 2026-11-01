@@ -4,6 +4,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Protocol
 
+from .shell_commands import tmux_argv_prefix
 from .warnings import dispatch_tmux_warning
 
 DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS = 1.0
@@ -112,9 +113,7 @@ class TmuxCommandClient:
         return result.returncode == 0
 
     def _command(self, args: list[str]) -> list[str]:
-        command = [self._tmux_executable]
-        if self._socket_name:
-            command.extend(["-L", self._socket_name])
+        command = tmux_argv_prefix(self._tmux_executable, self._socket_name)
         command.extend(args)
         return command
 

@@ -68,10 +68,9 @@ def runtime_node_cell_lines(
         return lines
 
     visible_log_lines = live_lines[-stream_lines_per_node:]
-    padding_count = stream_lines_per_node - len(visible_log_lines)
-    if padding_count > 0:
-        lines.extend(pad_text("", cell_width) for _ in range(padding_count))
-    lines.extend(fit_cell(line, cell_width) for line in visible_log_lines)
+    lines.extend(
+        _selected_stream_rows(visible_log_lines, stream_lines_per_node, cell_width)
+    )
     return lines
 
 
@@ -171,10 +170,20 @@ def sticky_continuation_cell_lines(
     previous_start = max(0, previous_end - stream_lines_per_node)
     continuation_lines = live_lines[previous_start:previous_end]
 
-    padding_count = stream_lines_per_node - len(continuation_lines)
+    lines.extend(
+        _selected_stream_rows(continuation_lines, stream_lines_per_node, cell_width)
+    )
+    return lines
+
+
+def _selected_stream_rows(
+    selected_lines: list[str], row_count: int, cell_width: int
+) -> list[str]:
+    lines: list[str] = []
+    padding_count = row_count - len(selected_lines)
     if padding_count > 0:
         lines.extend(pad_text("", cell_width) for _ in range(padding_count))
-    lines.extend(fit_cell(line, cell_width) for line in continuation_lines)
+    lines.extend(fit_cell(line, cell_width) for line in selected_lines)
     return lines
 
 

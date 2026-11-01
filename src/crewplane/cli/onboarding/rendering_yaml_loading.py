@@ -18,7 +18,7 @@ def load_config_mapping(config_text: str, description: str) -> Config:
         raise OnboardingRenderingError(f"{description} is invalid.") from error
 
 
-def load_yaml_mapping(text: str, description: str) -> Mapping[str, object]:
+def load_yaml_mapping(text: str, description: str) -> Mapping[object, object]:
     try:
         data = load_yaml_unique(text)
     except (TypeError, ValueError, YAMLError) as error:
@@ -29,10 +29,10 @@ def load_yaml_mapping(text: str, description: str) -> Mapping[str, object]:
 
 
 def mapping_child(
-    data: Mapping[str, object],
+    data: Mapping[object, object],
     key: str,
     description: str,
-) -> Mapping[str, object]:
+) -> Mapping[object, object]:
     value = data.get(key)
     if not isinstance(value, Mapping):
         raise OnboardingRenderingError(f"{description} is missing {key}.")

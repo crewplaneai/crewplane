@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import datetime
 from typing import Never
 
 import typer
 
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.expansions import reconstruct_expansions
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.bootstrap import RuntimeConfigSnapshotBuildResult
 from crewplane.core.config import Config
@@ -35,7 +33,7 @@ from .manifest import (
     write_running_run_manifest,
 )
 from .preflight import write_preflight_failure_artifacts
-from .resume import ResumePlan
+from .resume import ResumePlan, prepare_historical_plan
 
 
 def raise_run_preflight_errors(
@@ -140,16 +138,7 @@ def fulfill_historical_branch_exports(
     eligible_node_ids: Collection[str] | None = None,
 ) -> None:
     try:
-        plan = PreflightExecutionPlan.from_preview(
-            preview=preview,
-            run_id=source_run.manifest.run_id,
-            run_key_name=source_run.manifest.run_key_name,
-            project_root=context.project_root.as_posix(),
-            context_root=context.project_root.as_posix(),
-            manifest_root=(source_run.run_dir / "manifests").as_posix(),
-            created_at=datetime.now(),
-        )
-        plan = reconstruct_expansions(plan, source_run.run_dir).plan
+        plan = prepare_historical_plan(preview, source_run, context.project_root)
         branch_export_records = fulfill_branch_exports_from_history(
             plan,
             source_run,

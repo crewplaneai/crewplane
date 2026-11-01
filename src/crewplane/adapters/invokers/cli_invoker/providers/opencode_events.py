@@ -17,7 +17,9 @@ from ..usage_decoders import CounterReader, UsageAccumulator, complete_sum
 
 _ANSWER_EVENTS = frozenset({"step_start", "text", "tool_use", "step_finish"})
 type _Identity = tuple[str, str, str]
-type _Counters = tuple[int | None, ...]
+type _Counters = tuple[
+    int | None, int | None, int | None, int | None, int | None, int | None
+]
 
 
 def extract_opencode_output(
@@ -214,5 +216,9 @@ def _normalized_usage(counters: _Counters) -> ProviderTokenUsage:
         cache_write=cache_write,
         output=complete_sum(output, reasoning),
         reasoning=reasoning,
-        total=total if total is not None else complete_sum(*counters[:5]),
+        total=(
+            total
+            if total is not None
+            else complete_sum(input_tokens, output, reasoning, cache_read, cache_write)
+        ),
     )

@@ -80,23 +80,25 @@ def kernel32() -> ctypes.CDLL:
     return api
 
 
+def _last_windows_error() -> OSError:
+    return cast(
+        OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
+    )
+
+
 class WindowsJob:
     def __init__(self) -> None:
         api = kernel32()
         handle = api.CreateJobObjectW(None, None)
         if not handle:
-            raise cast(
-                OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
-            )
+            raise _last_windows_error()
         self._handle = int(handle)
         limits = ExtendedLimits()
         limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         if not api.SetInformationJobObject(
             self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)
         ):
-            error = cast(
-                OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
-            )
+            error = _last_windows_error()
             self.close()
             raise error
 
@@ -104,47 +106,32 @@ class WindowsJob:
         api = kernel32()
         process = api.OpenProcess(0x0100 | 0x0001, False, pid)
         if not process:
-            raise cast(
-                OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
-            )
+            raise _last_windows_error()
         try:
             if not api.AssignProcessToJobObject(self._handle, process):
-                error = cast(
-                    OSError,
-                    vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]())),
-                )
+                error = _last_windows_error()
                 error.add_note(
                     "Provider launch was withheld. Check incompatible enclosing Job Object restrictions."
                 )
                 raise error
         finally:
             if not api.CloseHandle(process):
-                raise cast(
-                    OSError,
-                    vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]())),
-                )
+                raise _last_windows_error()
 
     def active_process_count(self) -> int:
         info = Accounting()
         if not kernel32().QueryInformationJobObject(
             self._handle, 1, ctypes.byref(info), ctypes.sizeof(info), None
         ):
-            raise cast(
-                OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
-            )
+            raise _last_windows_error()
         return int(info.active)
 
     def terminate(self) -> None:
         if not kernel32().TerminateJobObject(self._handle, 1):
-            raise cast(
-                OSError, vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]()))
-            )
+            raise _last_windows_error()
 
     def close(self) -> None:
         if self._handle:
             handle, self._handle = self._handle, 0
             if not kernel32().CloseHandle(handle):
-                raise cast(
-                    OSError,
-                    vars(ctypes)["WinError"](int(vars(ctypes)["get_last_error"]())),
-                )
+                raise _last_windows_error()

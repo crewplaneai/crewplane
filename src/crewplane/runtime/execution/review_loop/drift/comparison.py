@@ -62,29 +62,31 @@ def detect_artifact_drift(
             *expected_publications.keys(),
         }
     )
-    unexpected_paths = [
-        path
-        for path in changed_paths
-        if (
-            before_snapshot.get(path) != after_snapshot.get(path)
-            or (
-                path in expected_publications
-                and after_snapshot.get(path) != expected_publications[path]
-            )
+    unexpected_paths: list[Path] = []
+    for path in changed_paths:
+        changed = before_snapshot.get(path) != after_snapshot.get(path) or (
+            path in expected_publications
+            and after_snapshot.get(path) != expected_publications[path]
         )
-        and not (
-            path in allowed_paths
-            and _snapshot_change_is_allowed(
-                before_snapshot.get(path),
-                after_snapshot.get(path),
-            )
+        if not changed:
+            continue
+        allowed_change = path in allowed_paths and _snapshot_change_is_allowed(
+            before_snapshot.get(path), after_snapshot.get(path)
         )
-        and not (
+        if allowed_change:
+            continue
+        expected_publication = (
             path in expected_publications
             and after_snapshot.get(path) == expected_publications[path]
         )
-        and not any(path == root or root in path.parents for root in runtime_roots)
-    ]
+        if expected_publication:
+            continue
+        in_progress = any(
+            path == root or root in path.parents for root in runtime_roots
+        )
+        if in_progress:
+            continue
+        unexpected_paths.append(path)
     if not unexpected_paths:
         return DriftCheckResult()
 

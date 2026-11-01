@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from crewplane.core.workspace.policy import (
     PROJECT_ROOT_WORKTREE_SELECTOR,
     worktree_declarations_payload,
@@ -137,16 +139,12 @@ def _needs_materialized_selector(
 
 
 def _materialize_worktree_selector(node: ComposedNode) -> ComposedNode:
-    return ComposedNode(
+    return replace(
+        node,
         payload=node.payload.model_copy(
             update={
                 "worktree": node.implicit_worktree_selector
                 or PROJECT_ROOT_WORKTREE_SELECTOR
             }
         ),
-        source_path=node.source_path,
-        source_span=node.source_span,
-        prompt_segment_spans=node.prompt_segment_spans,
-        local_worktree_count=node.local_worktree_count,
-        implicit_worktree_selector=node.implicit_worktree_selector,
     )
