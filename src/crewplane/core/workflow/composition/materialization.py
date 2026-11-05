@@ -52,6 +52,8 @@ def materialize_workflow_payload(
     }
     if workflow.repeat_force_run_count is not None:
         payload["repeat_force_run_count"] = workflow.repeat_force_run_count
+    if workflow.memory is not None:
+        payload["memory"] = workflow.memory
     if composition.worktrees:
         payload["worktrees"] = worktree_declarations_payload(composition.worktrees)
     return payload

@@ -226,6 +226,10 @@ def _append_instance(
     batch.render_plans.extend(
         _remap_render(render, instance) for render in template.render_plans
     )
+    batch.memory_selections.extend(
+        selection.model_copy(update={"node_id": instance.node_ids[selection.node_id]})
+        for selection in template.memory_selections
+    )
     batch.workspace_file_locators.extend(
         _remap_workspace_locator(locator, instance)
         for locator in template.workspace_file_locators

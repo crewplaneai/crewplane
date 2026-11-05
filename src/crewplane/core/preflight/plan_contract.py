@@ -11,6 +11,7 @@ from crewplane.version import SCHEMA_VERSION
 from . import (
     plan_contract_artifacts,
     plan_contract_dependencies,
+    plan_contract_memory,
     plan_contract_nodes,
     plan_contract_records,
     plan_contract_shape,
@@ -64,6 +65,9 @@ def validate_execution_plan_semantics(plan: PreflightExecutionPlan) -> None:
 
 
 def validate_execution_graph_semantics(plan: PreflightExecutionPlan) -> None:
+    plan_contract_memory.validate_memory_contract(
+        plan.nodes, plan.render_plans, plan.memory_selections
+    )
     nodes_by_id = plan_contract_records.unique_records(plan.nodes, "id", "node")
     plan_contract_records.validate_execution_order(plan.execution_order, nodes_by_id)
     render_plans_by_id = plan_contract_records.unique_records(

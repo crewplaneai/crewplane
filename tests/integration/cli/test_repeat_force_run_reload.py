@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 import crewplane.cli.app as cli
+from crewplane.cli.run.completion import CompletedRun
 from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import (
     create_project,
@@ -39,14 +40,14 @@ def test_every_pass_reloads_execution_inputs(
     original = cli.workflow_runner.execute_workflow_run
     completed_runs: list[Path] = []
 
-    async def run_and_edit(**kwargs: Any) -> None:
+    async def run_and_edit(**kwargs: Any) -> CompletedRun:
         previous_runs = set(run_directories(tmp_path))
-        await original(**kwargs)
+        completed = await original(**kwargs)
         new_runs = set(run_directories(tmp_path)) - previous_runs
         assert len(new_runs) == 1
         completed_runs.append(new_runs.pop())
         if len(completed_runs) != 1:
-            return
+            return completed
         if change == "workflow":
             project.prompts["node0"] = "changed"
         elif change == "import":
@@ -56,6 +57,7 @@ def test_every_pass_reloads_execution_inputs(
         else:
             (tmp_path / "input.txt").write_text("changed", encoding="utf-8")
         project.write()
+        return completed
 
     with patch.object(cli.workflow_runner, "execute_workflow_run", new=run_and_edit):
         result = project.run("--no-live")
@@ -101,19 +103,19 @@ def test_invalid_reload_stops_under_current_header_and_keeps_completed_pass(
     original = cli.workflow_runner.execute_workflow_run
     calls = 0
 
-    async def run_and_break(**kwargs: Any) -> None:
+    async def run_and_break(**kwargs: Any) -> CompletedRun:
         nonlocal calls
         calls += 1
-        await original(**kwargs)
+        completed = await original(**kwargs)
         (tmp_path / "retained.txt").write_text("retained edit", encoding="utf-8")
         if change == "invalid_count":
             project.workflow["repeat_force_run_count"] = "3"
         elif change == "delete_workflow":
             project.workflow_path.unlink()
-            return
+            return completed
         elif change == "delete_config":
             project.config_path.unlink()
-            return
+            return completed
         elif change == "invalid_import":
             project.workflow["imports"] = [{"path": "missing.md", "as": "child"}]
         elif change == "missing_input":
@@ -138,6 +140,7 @@ def test_invalid_reload_stops_under_current_header_and_keeps_completed_pass(
             )
             project.workflow["imports"] = [{"path": "child.md", "as": "child"}]
         project.write()
+        return completed
 
     with patch.object(cli.workflow_runner, "execute_workflow_run", new=run_and_break):
         result = project.run("--no-live")

@@ -61,6 +61,7 @@ def resolve_input_source(
         options.terminal_history_reader,
     )
     if terminal_result is not None:
+        state.terminal_result_occurrences.add(occurrence_id)
         record_static_input_source(
             node,
             reference,

@@ -201,7 +201,7 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
         / manifest.run_key_name,
     )
 
-    def fake_compile_preview(*args: object, **kwargs: object) -> object:
+    async def fake_compile_preview(*args: object, **kwargs: object) -> object:
         del args, kwargs
         return preview
 
@@ -237,7 +237,7 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
         )
         return (record_path,)
 
-    monkeypatch.setattr(execution_module, "compile_preview", fake_compile_preview)
+    monkeypatch.setattr(execution_module, "compile_preview_async", fake_compile_preview)
     monkeypatch.setattr(
         execution_module,
         "build_resume_plan",
@@ -314,7 +314,7 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
         encoding="utf-8",
     )
 
-    def fake_compile_preview(*args: object, **kwargs: object) -> object:
+    async def fake_compile_preview(*args: object, **kwargs: object) -> object:
         del args, kwargs
         return preview
 
@@ -363,7 +363,7 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
         assert payload["status"] == "fulfilled"
         raise OutputAllocationReached
 
-    monkeypatch.setattr(execution_module, "compile_preview", fake_compile_preview)
+    monkeypatch.setattr(execution_module, "compile_preview_async", fake_compile_preview)
     monkeypatch.setattr(
         execution_module,
         "build_resume_plan",

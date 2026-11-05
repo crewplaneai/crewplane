@@ -101,6 +101,7 @@ def test_wheel_smoke_imports_in_both_launch_modes(tmp_path, mode) -> None:
         "checkout-origin",
         "outside-prefix",
         "resources",
+        "memory-resource",
         "missing-plugin",
         "plugin-checkout-origin",
     ],
@@ -117,6 +118,7 @@ def test_acceptance_rejects_invalid_installations_before_cli_launch(
         "config_resource": True,
         "default_workflow_resource": True,
         "library_resources": 1,
+        "memory_extraction_resource": True,
         "ollama_version": "0.1.0",
         "ollama_origin": str(prefix / "crewplane_ollama/__init__.py"),
     }
@@ -128,6 +130,8 @@ def test_acceptance_rejects_invalid_installations_before_cli_launch(
         metadata["origin"] = str(tmp_path / "ambient/crewplane/__init__.py")
     elif invalid == "resources":
         metadata["library_resources"] = 0
+    elif invalid == "memory-resource":
+        metadata["memory_extraction_resource"] = False
     elif invalid == "missing-plugin":
         metadata["ollama_version"] = ""
     else:

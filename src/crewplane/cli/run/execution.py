@@ -40,6 +40,12 @@ from crewplane.runtime.workspace.branch_export import (
 )
 
 from .branch_export_output import print_branch_export_fulfillments
+from .completion import (
+    CompletedRun,
+    CompletionDisplay,
+    RunArtifactLocations,
+    persist_memory_completion,
+)
 from .components import allocate_run_output, build_components_for_run
 from .context import WorkflowRunContext, build_workflow_run_context
 from .execution_helpers import (
@@ -62,7 +68,7 @@ from .observability import (
     print_end_of_run_summary,
 )
 from .preflight import (
-    compile_preview,
+    compile_preview_async,
     materialize_preflight_success,
     print_preflight_diagnostics,
     uses_mock_invoker,
@@ -116,6 +122,7 @@ async def run_and_finalize_workflow(
     workflow_identity: str,
     terminalization: TerminalizationCoordinator,
     resumed_node_ids: tuple[str, ...] = (),
+    deferred_display: CompletionDisplay | None = None,
 ) -> None:
     branch_export_records: tuple[Path, ...] = ()
     persistent_logger: PersistentRunLogger | None = None
@@ -132,6 +139,8 @@ async def run_and_finalize_workflow(
 
     try:
         persistent_logger = PersistentRunLogger(output)
+        if deferred_display is not None:
+            deferred_display.logger = persistent_logger
         terminalization.bind_summary_logger(persistent_logger)
         warning_recorder.bind_logger(persistent_logger)
         await execute_workflow_with_observability(
@@ -150,16 +159,22 @@ async def run_and_finalize_workflow(
             resumed_node_ids=resumed_node_ids,
         )
     except asyncio.CancelledError:
-        print_end_of_run_summary(context.console, persistent_logger)
+        if deferred_display is None:
+            print_end_of_run_summary(context.console, persistent_logger)
         raise
     except WorkflowCancelledByUser:
-        print_end_of_run_summary(context.console, persistent_logger)
+        if deferred_display is None:
+            print_end_of_run_summary(context.console, persistent_logger)
         raise
     except Exception:
-        print_end_of_run_summary(context.console, persistent_logger)
+        if deferred_display is None:
+            print_end_of_run_summary(context.console, persistent_logger)
         raise
-    print_branch_export_fulfillments(branch_export_records, context.console)
-    print_end_of_run_summary(context.console, persistent_logger)
+    if deferred_display is not None:
+        deferred_display.branch_exports = branch_export_records
+    else:
+        print_branch_export_fulfillments(branch_export_records, context.console)
+        print_end_of_run_summary(context.console, persistent_logger)
 
 
 def terminalize_component_setup_failure(
@@ -199,7 +214,10 @@ async def execute_workflow_run(
     which_fn: Callable[[str], str | None] | None = None,
     project_root: Path | None = None,
     state_dir: Path | None = None,
-) -> None:
+    runtime_variables: dict[str, str] | None = None,
+    defer_terminal_failure: bool = False,
+    artifact_locations: RunArtifactLocations | None = None,
+) -> CompletedRun:
     """Compile preflight, execute the plan, and finalize the run manifest."""
 
     context = build_workflow_run_context(
@@ -227,12 +245,13 @@ async def execute_workflow_run(
             snapshot_result.invoker_options,
             which_fn,
         )
-        preview = compile_preview(
+        preview = await compile_preview_async(
             context=context,
             snapshot_result=snapshot_result,
             fingerprint_key_policy="persist_if_needed",
             invoker_diagnostics=invoker_diagnostics,
             workspace_real_execution=True,
+            runtime_variables=runtime_variables,
         )
     except AdapterContractError as exc:
         _raise_runtime_config_preflight_failure(context, exc)
@@ -252,6 +271,11 @@ async def execute_workflow_run(
     )
     terminalization: TerminalizationCoordinator | None = None
     running_manifest_written = False
+    display = CompletionDisplay()
+    terminal_error: Exception | None = None
+    completed_plan: PreflightExecutionPlan | None = None
+    completed_output: ArtifactStorePort | None = None
+    cancelled = False
     try:
         resume_plan = build_resume_plan(
             config,
@@ -262,7 +286,7 @@ async def execute_workflow_run(
             force,
         )
         if handle_duplicate_skip(context, preview, resume_plan):
-            return
+            return CompletedRun("dedupe", context.project_root, context.state_dir)
         resume_source = resume_plan.decision.resume_source
         if resume_source is not None:
             fulfill_historical_branch_exports(
@@ -276,6 +300,11 @@ async def execute_workflow_run(
         output = allocate_run_output(context, snapshot_result, warning_recorder)
         same_context_lock.update_run(output.run_id, output.run_key_name)
         plan = materialize_preflight_success(output, preview, context.project_root)
+        completed_plan, completed_output = plan, output
+        if artifact_locations is not None:
+            artifact_locations.plan = plan
+            artifact_locations.stages_dir = output.stages_dir
+            artifact_locations.results_dir = output.results_dir
         write_initial_run_manifest(
             output,
             plan,
@@ -332,13 +361,56 @@ async def execute_workflow_run(
             workflow_identity=resume_plan.workflow_identity,
             terminalization=terminalization,
             resumed_node_ids=resume_plan.resumed_node_ids,
+            deferred_display=display,
         )
+    except (asyncio.CancelledError, WorkflowCancelledByUser, KeyboardInterrupt):
+        cancelled = True
+        raise
+    except Exception as exc:
+        terminal_error = exc
     finally:
         terminal_complete = not running_manifest_written or (
             terminalization is not None and terminalization.committed
         )
-        same_context_lock.release(
-            terminal_complete=terminal_complete,
-            cleanup_unconfirmed=unconfirmed_process_cleanup(sys.exception())
-            is not None,
+        cleanup_confirmed = (
+            unconfirmed_process_cleanup(terminal_error or sys.exception()) is None
         )
+        if artifact_locations is not None:
+            artifact_locations.lock_released = False
+            artifact_locations.cleanup_confirmed = cleanup_confirmed
+        released = same_context_lock.release(
+            terminal_complete=terminal_complete,
+            cleanup_unconfirmed=not cleanup_confirmed,
+        )
+        if artifact_locations is not None:
+            artifact_locations.lock_released = released
+
+        displayed = display.display(context.console)
+    cleanup_confirmed = unconfirmed_process_cleanup(terminal_error) is None
+    completion = CompletedRun(
+        kind="executed"
+        if completed_plan is not None and display.logger is not None
+        else "ineligible",
+        project_root=context.project_root,
+        state_dir=context.state_dir,
+        plan=completed_plan,
+        stages_dir=completed_output.stages_dir
+        if completed_output is not None
+        else None,
+        results_dir=completed_output.results_dir
+        if completed_output is not None
+        else None,
+        outcome="failed" if terminal_error else "succeeded",
+        terminal_error=terminal_error,
+        manifest_committed=terminalization is not None and terminalization.committed,
+        cleanup_confirmed=cleanup_confirmed and not cancelled,
+        lock_released=released,
+        result_displayed=displayed,
+    )
+    if any(node.memory for node in inventory_workflow(source).nodes):
+        completion = persist_memory_completion(completion, context.console)
+    if terminal_error is not None and (
+        not defer_terminal_failure or not completion.can_learn
+    ):
+        raise terminal_error
+    return completion

@@ -66,6 +66,7 @@ Feel free to jump around based on what you need right now:
 - Configure provider roles and reviews: [Node modes and provider roles](guides/node-modes.md), [Review loops](guides/review-loops.md), [Findings artifacts](guides/findings.md)
 - Reuse workflows or isolate file edits: [Workflow composition](guides/workflow-composition.md), [Workspace isolation](guides/workspace-isolation.md)
 - Debug or share a run: [Troubleshooting](guides/troubleshooting.md), [Reproducible support bundle](guides/reproducible-support-bundle.md)
+- Recall accepted lessons and review new ones: [Project memory](guides/project-memory.md)
 - Clean generated state: [Cleanup](guides/cleanup.md)
 
 ## Examples

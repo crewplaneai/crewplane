@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in project memory recalls accepted lessons and proposes new lessons for explicit human review after eligible runs.
+
 ### Changed
 
 - Align runtime and node/provider token comparisons in end-of-run summaries, with requested reasoning labels and clearer reporting coverage.

@@ -106,17 +106,18 @@ class SameContextLock:
 
     def release(
         self, terminal_complete: bool = True, cleanup_unconfirmed: bool = False
-    ) -> None:
+    ) -> bool:
         if not self.policy.can_release(terminal_complete, cleanup_unconfirmed):
-            return
-        owner = read_owner(self.lock_dir)
-        if owner is None or owner.owner_token != self.owner_token:
-            return
+            return False
         try:
+            owner = read_owner(self.lock_dir)
+            if owner is None or owner.owner_token != self.owner_token:
+                return False
             (self.lock_dir / LOCK_OWNER_FILENAME).unlink()
             self.lock_dir.rmdir()
-        except OSError:
-            return
+        except (OSError, ValueError):
+            return False
+        return True
 
 
 def acquire_same_context_lock(

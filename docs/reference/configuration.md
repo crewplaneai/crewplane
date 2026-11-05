@@ -12,6 +12,7 @@ For practical setup, start with [Provider setup](../getting-started/provider-set
 | Full field list | [Top Level](#top-level) and [`agents.<name>`](#agentsname) |
 | Adapter options | [Built-In Integration Options](#built-in-integration-options) |
 | File-template access | [`settings.file_access`](#settingsfile_access) |
+| Project memory | [`settings.memory`](#settingsmemory) |
 | Workspace isolation | [`settings.workspace`](#settingsworkspace) |
 
 ## Minimal Config
@@ -220,6 +221,7 @@ Pricing values are per million tokens.
 | `settings.max_expanded_nodes` | Strict positive integer limiting generated nodes across all `foreach` groups in one run. Defaults to `10000`. Counts composed child nodes, including item inputs; completed groups do not release budget. |
 | `settings.file_access` | Permissions for including files with `{{file:...}}`. |
 | `settings.token_budget` | Global token budget warning/failure thresholds. |
+| `settings.memory` | Recall limits and optional post-run learning policy. |
 | `settings.workspace` | Workspace isolation settings. |
 | `settings.integrations` | Adapter implementation and option settings. |
 
@@ -228,6 +230,25 @@ by the number of nodes in each compiled child. The total must fit
 `max_expanded_nodes`. Lower this limit for smaller machines; node concurrency
 limits running work, while this limit bounds the entire generated graph.
 See [Foreach nodes](workflow-syntax.md#foreach-nodes) for collection limits.
+
+## `settings.memory`
+
+This policy does not enable recall by itself. Set workflow or provider-node
+`memory: true` and explicitly run `crewplane memory init`. With no enabled nodes,
+preflight does not inspect memory or require an extractor.
+
+| Field | Type and default | Description |
+| --- | --- | --- |
+| `learn` | Boolean, `true` | Extract pending lesson candidates after eligible opted-in runs. `false` selects recall-only operation. |
+| `extractor` | Optional nonempty agent ID, unset | Existing `agents` entry used for extraction, including its model and invocation settings. Required when an opted-in workflow learns or `memory extract` is requested; never selected automatically. |
+| `max_records` | Strict positive integer, `5` | Maximum complete accepted records recalled per scheduled node role. |
+| `max_chars` | Strict positive integer, `8000` | Maximum rendered recall characters per role, including framing, provenance, qualifications, and separators. |
+| `extraction_timeout_seconds` | Positive finite number, `120` | Total extraction model/retry/quota-wait deadline. Required cleanup may finish later; human review is outside this deadline. |
+
+Boolean strings, numeric strings, booleans used as numbers, zero/negative limits,
+nonfinite timeouts, and unknown fields are invalid. See
+[Project memory](../guides/project-memory.md) for inheritance, review, evidence
+limits, security considerations, and failure handling.
 
 ## `settings.file_access`
 

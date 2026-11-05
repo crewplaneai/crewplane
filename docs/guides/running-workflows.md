@@ -96,6 +96,7 @@ Preflight resolves the composed workflow into:
 - redacted runtime config snapshot
 - effective runtime config signature
 - value fingerprints
+- frozen role-specific project-memory selections, when opted in
 - fingerprint metadata
 - `workflow_signature`
 
@@ -408,6 +409,11 @@ liveness check on the selected local model. Dry-run skips this check.
 
 > [!TIP]
 > This is a convenient way to run a workflow repeatedly, especially for cases like code audits, cleanup, and refactoring.
+
+## Optional Project Memory
+
+Workflows can opt into recalling accepted lessons and proposing new ones. See
+[Project memory](project-memory.md) for setup, review, and security limitations.
 
 ## Advanced: Artifact Backend
 

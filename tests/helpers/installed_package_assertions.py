@@ -84,6 +84,7 @@ def smoke(
     assert origin.is_relative_to(Path(installed["prefix"]).resolve()), origin
     assert installed["config_resource"] and installed["default_workflow_resource"]
     assert installed["library_resources"] > 0
+    assert installed["memory_extraction_resource"]
     assert installed["ollama_version"]
     plugin_origin = Path(installed["ollama_origin"]).resolve()
     assert not plugin_origin.is_relative_to(checkout.resolve()), plugin_origin
