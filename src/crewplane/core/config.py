@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     Field,
     FiniteFloat,
+    StrictBool,
     ValidationError,
     ValidationInfo,
     field_validator,
@@ -262,6 +263,25 @@ class FileAccessSettings(BaseModel):
         return normalized
 
 
+class MemorySettings(BaseModel):
+    """Project-local recall and explicit post-run learning policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    learn: StrictBool = True
+    extractor: str | None = None
+    max_records: int = Field(default=5, strict=True, gt=0)
+    max_chars: int = Field(default=8000, strict=True, gt=0)
+    extraction_timeout_seconds: FiniteFloat = Field(default=120.0, strict=True, gt=0)
+
+    @field_validator("extractor", mode="before")
+    @classmethod
+    def _validate_extractor(cls, value: object) -> object:
+        if value is None:
+            return None
+        return normalize_provider_name(value, "memory extractor")
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -275,6 +295,7 @@ class Settings(BaseModel):
     token_budget: TokenBudgetSettings = Field(default_factory=TokenBudgetSettings)
     file_access: FileAccessSettings = Field(default_factory=FileAccessSettings)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
 
     @field_validator("sequential_consensus_on_exhaustion", mode="before")
     @classmethod
@@ -337,3 +358,16 @@ def load_config(path: Path) -> Config:
         raise ValueError(model_error_message(error, Config)) from None
     except YAMLError as error:
         raise ValueError(yaml_error_message(error)) from None
+
+
+def require_memory_extractor(config: Config) -> str:
+    """Resolve an explicitly configured extractor when learning is requested."""
+    extractor = config.settings.memory.extractor
+    if extractor is None:
+        raise ValueError(
+            "Memory learning requires settings.memory.extractor to name a configured "
+            "agent; set settings.memory.learn: false for recall-only operation."
+        )
+    if extractor not in config.agents:
+        raise ValueError(f"Memory extractor '{extractor}' is not a configured agent.")
+    return extractor

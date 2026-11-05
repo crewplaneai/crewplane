@@ -35,6 +35,17 @@ def normalize_node_mode(value: object) -> object:
     )
 
 
+def validate_memory_declaration(value: object) -> bool:
+    """Keep omission distinct from authored false without coercing YAML values."""
+    if type(value) is not bool:
+        raise ValueError("memory must be a boolean")
+    return value
+
+
+def resolve_memory_default(declared: bool | None, inherited: bool = False) -> bool:
+    return inherited if declared is None else declared
+
+
 def normalize_review_starts_with(value: object) -> object:
     return validate_exact_keyword(
         value,

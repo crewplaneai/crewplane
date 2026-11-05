@@ -47,6 +47,7 @@ class ParsedWorkflow:
     imports: tuple[ImportSpec, ...]
     nodes: tuple[NodeSpec, ...]
     repeat_force_run_count: int | None = None
+    memory: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class CompositionContext:
     bound_input_nodes: dict[str, str]
     import_stack: tuple[Path, ...]
     implicit_worktree_selector: str | None = None
+    memory_default: bool = False
 
 
 @dataclass(frozen=True)

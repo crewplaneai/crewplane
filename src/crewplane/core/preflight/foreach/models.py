@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from crewplane.core.expansion_state import ExpansionState
+from crewplane.core.memory.retrieval import MemorySelection
 
 from ..compiled_records import (
     DependencyEdge,
@@ -21,3 +22,4 @@ class ExpansionBatch(BaseModel):
     token_catalog: list[TokenCatalogEntry]
     dependency_graph: list[DependencyEdge]
     group_dependencies: list[str]
+    memory_selections: list[MemorySelection] = Field(default_factory=list)

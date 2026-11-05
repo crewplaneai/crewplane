@@ -11,6 +11,7 @@ with [Workflow Authoring](../guides/workflow-authoring.md).
 - [Minimum Valid Workflow](#minimum-valid-workflow)
 - [Multi-Provider Review Workflow](#multi-provider-review-workflow)
 - [Frontmatter Fields](#frontmatter-fields)
+- [Memory](#memory)
 - [Imports](#imports)
 - [Worktrees](#worktrees)
 - [Nodes](#nodes)
@@ -75,6 +76,7 @@ Review the project and report correctness, security, and regression risks.
 | `schema_version` | Workflow schema version. Must match `SCHEMA_VERSION`. |
 | `name` | Workflow name. |
 | `description` | Optional workflow description. |
+| `memory` | Optional strict boolean default inherited by provider nodes, imports, and child workflows; omitted ultimately resolves to `false`. |
 | `repeat_force_run_count` | Optional whole number above zero. Runs the whole workflow this many times, starting from the beginning each time. |
 | `inputs` | Mapping of declared workflow input names to local input node IDs. |
 | `imports` | Markdown workflow imports. |
@@ -100,6 +102,25 @@ even if they are unused. This rule still applies during later runs if the
 workflow removes the count. See
 [run a workflow more than once](../guides/running-workflows.md#run-a-workflow-more-than-once)
 for what happens between runs and when a run fails.
+
+## Memory
+
+`memory: true` enables frozen accepted-memory recall and permits the provider
+node's direct retained output to supply learning evidence. `memory: false` opts
+that node out. Resolution order is explicit node value, explicit defining
+workflow value, inherited enclosing-workflow value, then `false`. Imports and
+`foreach` child workflows preserve this inheritance independently of worktrees.
+
+Only actual booleans are accepted; strings, numbers, and explicit `null` fail.
+Input nodes and `foreach` controllers cannot declare `memory`, even `false`.
+Set a workflow default for their provider children instead. Generated instances
+reuse the child template's role selection; no runtime item-specific retrieval
+occurs.
+
+Initialize the project store explicitly and configure an extractor when learning
+is enabled, or use `settings.memory.learn: false` for recall only. Node opt-out
+is not transitive information filtering and does not switch off provider-native
+memory. See [Project memory](../guides/project-memory.md).
 
 ## Imports
 
@@ -219,6 +240,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `failure_threshold` | Parallel-node failure threshold. Must be less than provider count. |
 | `token_budget` | Node token budget override. |
 | `worktree` | Node worktree selector. Not valid for input or foreach nodes. |
+| `memory` | Optional strict boolean overriding the defining/inherited workflow default for this provider node. |
 
 Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
 reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`.
@@ -235,7 +257,7 @@ reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`
 | `sequential` with one provider | Exactly one executor. | `depth`. | Latest executor round is selected. |
 | `sequential` with multiple providers | One or more executors followed by one or more reviewers. | `depth`, `audit_rounds`, `review_starts_with`, `continue_on_failure`. | Runtime review-loop status selects canonical executor and reviewer artifacts. |
 
-Provider nodes can also use `findings`, `token_budget`, and `worktree` where
+Provider nodes can also use `findings`, `token_budget`, `memory`, and `worktree` where
 the field is otherwise valid.
 
 Parallel nodes render one executor prompt and send it to each provider

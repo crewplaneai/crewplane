@@ -25,6 +25,10 @@ print(
             "config_resource": templates.CONFIG_TEMPLATE.is_file(),
             "default_workflow_resource": templates.DEFAULT_WORKFLOW_TEMPLATE.is_file(),
             "library_resources": len(templates.discover_workflow_library_templates()),
+            "memory_extraction_resource": "{{var:memory_evidence}}"
+            in (
+                templates.TEMPLATE_DIR / "internal/memory-extraction.task.md"
+            ).read_text(encoding="utf-8"),
         }
     )
 )

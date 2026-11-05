@@ -27,6 +27,7 @@ User task guidance lives in the public docs sections linked from
 - [ADR 0018: Native Windows support](adr/0018-native-windows-support.md)
 - [ADR 0019: Explicit plugin system](adr/0019-explicit-plugin-system.md)
 - [ADR 0020: Bounded workflow iteration](adr/0020-bounded-workflow-iteration.md)
+- [ADR 0021: Frozen recall and reviewed project learning](adr/0021-project-memory.md)
 
 Key architectural constraints:
 

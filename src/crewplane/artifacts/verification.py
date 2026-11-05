@@ -16,11 +16,12 @@ def read_verified_node_artifact(
     request: NodeArtifactRequest,
     kind: str,
     max_bytes: int | None = None,
+    state_max_bytes: int | None = None,
 ) -> VerifiedNodeArtifact:
     """Read a compiled result after verifying its persisted descriptor."""
 
     expected_relative = _expected_relative_path(request, kind)
-    state = _load_successful_node_state(stages_dir, request.node_id)
+    state = _load_successful_node_state(stages_dir, request.node_id, state_max_bytes)
     descriptor = _descriptor_for_artifact(state, kind, expected_relative)
     if descriptor is None:
         raise ValueError(
@@ -65,7 +66,9 @@ def _expected_relative_path(
             raise ValueError(f"Unsupported node artifact kind '{kind}'.")
 
 
-def _load_successful_node_state(stages_dir: Path, node_id: str) -> NodeState:
+def _load_successful_node_state(
+    stages_dir: Path, node_id: str, max_bytes: int | None = None
+) -> NodeState:
     state_path = contained_regular_file(
         stages_dir,
         node_state_relative_path(node_id).as_posix(),
@@ -75,7 +78,7 @@ def _load_successful_node_state(stages_dir: Path, node_id: str) -> NodeState:
     try:
         state = NodeState.model_validate_json(
             read_contained_bytes(
-                stages_dir, node_state_relative_path(node_id).as_posix()
+                stages_dir, node_state_relative_path(node_id).as_posix(), max_bytes
             )
         )
     except (OSError, ValueError) as exc:

@@ -333,9 +333,11 @@ def test_workspace_source_policy_strict_clean_start_rejects_untracked_files(
     )
 
 
+@pytest.mark.parametrize("reserved_root", ["execution-stages", "memory"])
 def test_clean_start_reserved_paths_are_project_root_relative(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    reserved_root: str,
 ) -> None:
     git_context = replace(
         git_source_context(tmp_path),
@@ -346,7 +348,7 @@ def test_clean_start_reserved_paths_are_project_root_relative(
         assert project_root == tmp_path / "app"
         assert "status" in args
         return (
-            "? app/.crewplane/execution-stages/log.txt",
+            f"? app/.crewplane/{reserved_root}/log.txt",
             "? app/src/new.py",
             "? root.txt",
         )
@@ -369,7 +371,7 @@ def test_clean_start_reserved_paths_are_project_root_relative(
     assert len(builder.errors) == 1
     assert "app/src/new.py" in builder.errors[0]
     assert "root.txt" not in builder.errors[0]
-    assert ".crewplane/execution-stages" not in builder.errors[0]
+    assert f".crewplane/{reserved_root}" not in builder.errors[0]
 
 
 def test_workspace_source_policy_rejects_gitlinks_and_gitmodules(
@@ -423,9 +425,11 @@ def test_workspace_source_policy_rejects_gitlinks_and_gitmodules(
     )
 
 
+@pytest.mark.parametrize("reserved_root", ["execution-stages", "memory"])
 def test_source_tree_reserved_paths_are_project_root_relative(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    reserved_root: str,
 ) -> None:
     git_context = replace(
         git_source_context(tmp_path),
@@ -438,8 +442,8 @@ def test_source_tree_reserved_paths_are_project_root_relative(
         assert "--full-tree" in args
         assert "--full-name" in args
         return (
-            "100644 blob a\t.crewplane/execution-stages/root.txt",
-            "100644 blob b\tapp/.crewplane/execution-stages/stage.txt",
+            f"100644 blob a\t.crewplane/{reserved_root}/root.txt",
+            f"100644 blob b\tapp/.crewplane/{reserved_root}/stage.txt",
             "100644 blob c\tapp/src/app.py",
         )
 
@@ -470,8 +474,8 @@ def test_source_tree_reserved_paths_are_project_root_relative(
     workspace_repo_policy.validate_source_tree(git_context, builder)
 
     assert len(builder.errors) == 1
-    assert "app/.crewplane/execution-stages/stage.txt" in builder.errors[0]
-    assert ".crewplane/execution-stages/root.txt" not in builder.errors[0]
+    assert f"app/.crewplane/{reserved_root}/stage.txt" in builder.errors[0]
+    assert f".crewplane/{reserved_root}/root.txt" not in builder.errors[0]
 
 
 def test_workspace_source_policy_allows_harmless_tracked_attributes(

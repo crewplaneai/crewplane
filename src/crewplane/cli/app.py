@@ -31,9 +31,12 @@ from .dry_run import (
     print_dry_run_plan,
     print_foreach_summary,
 )
+from .memory import memory_app
 from .onboarding import ONBOARDING_COMMAND_HELP, run_onboarding_command
 from .project_init import initialize_project_templates
+from .run.completion import CompletedRun
 from .run.observability import ObservabilityHubInstance
+from .run.passes import execute_passes
 from .run.resume import print_dry_run_resume_advisory
 from .update import UpdateError, installed_package_identity, update_crewplane
 from .workflow_context import (
@@ -48,6 +51,7 @@ from .workflow_context import (
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
+app.add_typer(memory_app, name="memory")
 
 
 def _configure_output_encoding() -> None:
@@ -119,8 +123,8 @@ async def _execute_workflow(
     force: bool,
     no_live: bool,
     console: Console,
-) -> None:
-    await workflow_runner.execute_workflow_run(
+) -> CompletedRun:
+    return await workflow_runner.execute_workflow_run(
         config=config,
         source=source,
         project_root=project_root,
@@ -130,6 +134,7 @@ async def _execute_workflow(
         console=console,
         execute_workflow_impl=execute_workflow,
         observability_hub_cls=_create_observability_hub,
+        defer_terminal_failure=True,
     )
 
 
@@ -139,28 +144,7 @@ async def _execute_workflow_passes(
     no_live: bool,
     console: Console,
 ) -> None:
-    paths = context.paths
-    repeat_count = context.source.workflow.repeat_force_run_count
-    effective_force = force or repeat_count is not None
-    for pass_index in range(repeat_count or 1):
-        if repeat_count is not None:
-            console.print(f"Run {pass_index + 1} of {repeat_count} (fresh)")
-        if pass_index:
-            try:
-                context = load_cli_workflow_context(paths, require_project_root=True)
-            except Exception as exc:
-                raise_context_loading_failure(
-                    exc, console, paths=paths, write_diagnostics=True
-                )
-        await _execute_workflow(
-            context.config,
-            context.source,
-            project_root=paths.project_root,
-            state_dir=paths.state_dir,
-            force=effective_force,
-            no_live=no_live,
-            console=console,
-        )
+    await execute_passes(context, force, no_live, console, _execute_workflow)
 
 
 def _create_observability_hub(
