@@ -1,6 +1,7 @@
 import importlib.metadata as metadata
 import json
 import sys
+from importlib.resources import files
 
 import crewplane_ollama
 
@@ -26,9 +27,9 @@ print(
             "default_workflow_resource": templates.DEFAULT_WORKFLOW_TEMPLATE.is_file(),
             "library_resources": len(templates.discover_workflow_library_templates()),
             "memory_extraction_resource": "{{var:memory_evidence}}"
-            in (
-                templates.TEMPLATE_DIR / "internal/memory-extraction.task.md"
-            ).read_text(encoding="utf-8"),
+            in files("crewplane")
+            .joinpath("resources/workflows/memory-extraction.task.md")
+            .read_text(encoding="utf-8"),
         }
     )
 )

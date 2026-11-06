@@ -28,7 +28,6 @@ from crewplane.artifacts.verification import read_verified_node_artifact
 from crewplane.cli.run.completion import CompletedRun, RunArtifactLocations
 from crewplane.cli.run.execution import execute_workflow_run
 from crewplane.cli.run.observability import WorkflowCancelledByUser
-from crewplane.cli.templates import TEMPLATE_DIR, render_template_content
 from crewplane.core.config import Config, require_memory_extractor
 from crewplane.core.execution_state import NodeState, RunManifest
 from crewplane.core.memory.candidates import parse_candidates
@@ -39,6 +38,7 @@ from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.markdown import parse_workflow_markdown_text
 from crewplane.core.workflow.models import ProviderSpec, WorkflowPlan
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
+from crewplane.version import SCHEMA_VERSION
 
 from .rendering import print_literal
 
@@ -55,8 +55,15 @@ class ExtractionResult:
 
 def extraction_source(config: Config) -> PreflightWorkflowSource:
     extractor = require_memory_extractor(config)
-    path = TEMPLATE_DIR / "internal" / "memory-extraction.task.md"
-    text = render_template_content(path.read_text(encoding="utf-8"))
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "resources"
+        / "workflows"
+        / "memory-extraction.task.md"
+    )
+    text = path.read_text(encoding="utf-8").replace(
+        "__SCHEMA_VERSION__", SCHEMA_VERSION
+    )
     payload = parse_workflow_markdown_text(path, text)
     workflow = WorkflowPlan.model_validate(
         {key: value for key, value in payload.items() if key != "imports"}

@@ -10,6 +10,7 @@ from crewplane.core.memory.candidates import CandidateDocument, LessonProposal
 from crewplane.core.memory.lifecycle import import_candidates
 from crewplane.core.memory.models import ProposalProvenance
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.platforms import requires_posix
 
 
 def proposal(snapshot):
@@ -101,3 +102,26 @@ def test_waiting_lock_cancellation_does_not_leave_a_worker(tmp_path: Path):
         assert not (await store.snapshot()).records
 
     asyncio.run(scenario())
+
+
+@requires_posix
+@pytest.mark.race
+def test_initialize_rechecks_concurrently_published_safe_lock(tmp_path, monkeypatch):
+    from crewplane.architecture import safe_files_posix
+
+    store = MemoryStore(tmp_path)
+    original_lookup = safe_files_posix.contained_regular_file
+    published = []
+
+    def lookup_then_publish(root, parts):
+        result = original_lookup(root, parts)
+        if root / Path(*parts) == store.lock_path and result is None and not published:
+            store.lock_path.write_bytes(b"")
+            published.append(store.lock_path.stat().st_ino)
+        return result
+
+    monkeypatch.setattr(safe_files_posix, "contained_regular_file", lookup_then_publish)
+    initialized = asyncio.run(store.initialize())
+    assert initialized == asyncio.run(store.snapshot())
+    assert published == [store.lock_path.stat().st_ino]
+    assert store.lock_path.stat().st_nlink == 1
