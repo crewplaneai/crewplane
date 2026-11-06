@@ -93,7 +93,7 @@ def _ensure_single_link_regular_file_attempt(path: Path) -> Path | None:
     if safe_path is not None:
         return safe_path
     try:
-        path.lstat()
+        existing = path.lstat()
     except FileNotFoundError:
         if not _create_regular_file_exclusively(path):
             # Contention requires another lookup to re-check safety invariants.
@@ -105,6 +105,10 @@ def _ensure_single_link_regular_file_attempt(path: Path) -> Path | None:
             return safe_path
         raise ValueError(f"Path must be a single-link regular file: {path}") from None
     else:
+        if is_single_link_regular_file(existing):
+            # A peer may have published after the absent lookup. Recheck the
+            # whole path on the bounded next attempt, not just this metadata.
+            return None
         raise ValueError(f"Path must be a single-link regular file: {path}") from None
 
 

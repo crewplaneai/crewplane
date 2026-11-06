@@ -96,14 +96,20 @@ def test_only_scheduled_roles_receive_memory_even_when_both_streams_exist(
     assert len(preview.render_plans[0].streams[1].fragments) == 1
 
 
+@pytest.mark.parametrize(
+    "padding",
+    ["", "padding " * 5000, " ".join(f"preface{index}" for index in range(300))],
+    ids=["small", "character-pressure", "term-pressure"],
+)
 def test_queries_use_frozen_file_input_and_nonsensitive_variable_bytes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, padding: str
 ) -> None:
     source_file = tmp_path / "context.md"
     source_file.write_bytes(b"captured-context")
     (tmp_path / "input.md").write_bytes(b"captured-input")
     task = memory_workflow(
-        "{{file:context.md}} {{request.output}} {{var:goal}} {{env:TOKEN}} {{var:password}} {{provider.output}}"
+        padding
+        + " {{file:context.md}} {{request.output}} {{var:goal}} {{env:TOKEN}} {{var:password}} {{provider.output}}"
     )
     task.nodes[0].needs = ["request", "provider"]
     task.nodes[:0] = WorkflowPlan.model_validate(

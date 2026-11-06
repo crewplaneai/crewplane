@@ -90,9 +90,17 @@ def test_registry_recheck_blocks_changed_pypi_artifact(
         },
     )
     monkeypatch.setattr(publish, "query_pypi_release", constant(changed))
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(state.NpmRelease(False, "", "", "", "", "", "", "", "")),
+    )
+    runner = FakeRunner()
 
     with pytest.raises(state.ReleaseError, match="PyPI publication is blocked"):
-        publish.publish_pypi(tmp_path, FakeRunner(), execute=True)
+        publish.publish_pypi(tmp_path, runner, execute=True)
+
+    assert runner.commands == []
 
 
 def test_publish_pypi_blocks_mismatched_npm_artifact(

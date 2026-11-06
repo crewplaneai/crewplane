@@ -19,7 +19,7 @@ def test_internal_extraction_resource_is_readable_compiled_and_not_scaffolded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     resource = files("crewplane").joinpath(
-        "example_templates/internal/memory-extraction.task.md"
+        "resources/workflows/memory-extraction.task.md"
     )
     assert "{{var:memory_evidence}}" in resource.read_text(encoding="utf-8")
     assert all(
@@ -29,7 +29,10 @@ def test_internal_extraction_resource_is_readable_compiled_and_not_scaffolded(
     monkeypatch.chdir(tmp_path)
     initialized = CliRunner().invoke(app, ["init"])
     assert initialized.exit_code == 0, initialized.output
-    assert not (tmp_path / ".crewplane/workflows/internal").exists()
+    assert not files("crewplane").joinpath("example_templates/internal").is_dir()
+    assert not list(
+        (tmp_path / ".crewplane/workflows").rglob("memory-extraction.task.md")
+    )
     assert not (tmp_path / ".crewplane/memory").exists()
     config = memory_config()
     config.settings.memory.extractor = "alpha"

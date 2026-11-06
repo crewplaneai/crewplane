@@ -7,11 +7,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from crewplane.core.memory import query as memory_query
 from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.memory.models import MemorySnapshot
 from crewplane.core.memory.query import (
     MAX_QUERY_CHARS,
     MAX_QUERY_TERMS,
+    QUERY_REVISION,
     QueryContribution,
     QueryExclusion,
     build_query,
@@ -176,6 +178,220 @@ def test_authored_priority_and_bounded_query_diagnostics():
     many = query(" ".join(f"term{number}" for number in range(300)))
     assert len(many.terms) == MAX_QUERY_TERMS
     assert any("term limit" in item.reason for item in many.exclusions)
+
+
+@pytest.mark.parametrize("kind", ["file", "input"])
+@pytest.mark.parametrize(
+    "padding,reason",
+    [
+        ("padding " * 5000, "character limit"),
+        (" ".join(f"preface{index}" for index in range(300)), "term limit"),
+    ],
+    ids=["character-pressure", "term-pressure"],
+)
+def test_query_budget_preserves_later_current_context(kind, padding, reason):
+    contributions = (
+        QueryContribution(kind="literal", source="instructions", text=padding),
+        QueryContribution(kind=kind, source="current", text="src/CurrentReader.py"),
+    )
+    result = build_query(contributions)
+
+    assert {"src/currentreader.py", "src", "current", "reader", "py"} <= set(
+        result.terms
+    )
+    assert result.identifiers == ("src/currentreader.py",)
+    assert result.contributions[-1] == contributions[-1]
+    assert result.examined_chars <= MAX_QUERY_CHARS
+    assert len(result.terms) <= MAX_QUERY_TERMS
+    assert any(
+        item.source == "instructions" and reason in item.reason
+        for item in result.exclusions
+    )
+    assert not any(item.source == "current" for item in result.exclusions)
+    reconstructed = build_query(result.contributions)
+    assert reconstructed.terms == result.terms
+    assert reconstructed.identifiers == result.identifiers
+    assert reconstructed.contributions == result.contributions
+    assert reconstructed.examined_chars == result.examined_chars
+    assert build_query(reconstructed.contributions) == reconstructed
+    selection = select_memory(MemorySnapshot(), "work", "executor", result)
+    assert MemorySelection.model_validate_json(selection.model_dump_json()) == selection
+
+
+def test_query_term_budget_shares_capacity_and_keeps_source_order():
+    result = build_query(
+        tuple(
+            QueryContribution(
+                kind=kind,
+                source=prefix,
+                text=" ".join(f"{prefix}{index}" for index in range(256)),
+            )
+            for kind, prefix in (("literal", "left"), ("file", "right"))
+        )
+    )
+
+    assert result.terms == tuple(
+        f"{prefix}{index}" for prefix in ("left", "right") for index in range(128)
+    )
+    assert {item.source for item in result.exclusions} == {"left", "right"}
+    assert all("term limit" in item.reason for item in result.exclusions)
+
+
+def test_query_character_budget_redistributes_unused_shares():
+    result = build_query(
+        (
+            QueryContribution(kind="literal", source="long", text="x " * 32_000),
+            QueryContribution(kind="identifier", source="short", text="node"),
+            QueryContribution(kind="file", source="file", text="y " * 32_000),
+            QueryContribution(kind="input", source="input", text="z " * 32_000),
+        )
+    )
+    lengths = {item.source: len(item.text) for item in result.contributions}
+
+    assert lengths["short"] == 4
+    assert sum(lengths.values()) == result.examined_chars == MAX_QUERY_CHARS
+    assert (
+        max(lengths[key] for key in ("long", "file", "input"))
+        - min(lengths[key] for key in ("long", "file", "input"))
+        <= 1
+    )
+    assert {"x", "node", "y", "z"} <= set(result.terms)
+    assert {item.source for item in result.exclusions} == {"long", "file", "input"}
+    assert build_query(result.contributions).contributions == result.contributions
+
+
+def test_query_tokenization_never_examines_more_than_the_shared_character_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    examined = []
+
+    def counted_tokens(text, include_simple_identifiers=False):
+        examined.append(len(text))
+        return tokens(text, include_simple_identifiers)
+
+    monkeypatch.setattr(memory_query, "tokens", counted_tokens)
+    result = build_query(
+        tuple(
+            QueryContribution(kind=kind, source=kind, text="界 ＦｏｏBar " * 4000)
+            for kind in ("literal", "identifier", "variable", "file", "input")
+        )
+    )
+
+    assert sum(examined) == result.examined_chars == MAX_QUERY_CHARS
+    assert len(result.terms) <= MAX_QUERY_TERMS
+    assert set(result.identifiers) <= set(result.terms)
+    assert {item.source for item in result.exclusions} == {
+        "literal",
+        "identifier",
+        "variable",
+        "file",
+        "input",
+    }
+
+
+def test_query_character_budget_handles_more_sources_than_characters():
+    result = build_query(
+        tuple(
+            QueryContribution(kind="input", source=str(index), text="!")
+            for index in range(MAX_QUERY_CHARS + 2)
+        )
+    )
+
+    assert result.terms == ()
+    assert result.examined_chars == len(result.contributions) == MAX_QUERY_CHARS
+    assert result.exclusions == (
+        QueryExclusion(source="32000", reason="query character limit"),
+        QueryExclusion(source="32001", reason="query character limit"),
+    )
+    reconstructed = build_query(result.contributions)
+    assert reconstructed.contributions == result.contributions
+    assert reconstructed.terms == result.terms
+    assert reconstructed.examined_chars == result.examined_chars
+
+
+def test_query_duplicate_unicode_terms_do_not_waste_shared_capacity():
+    result = build_query(
+        (
+            QueryContribution(
+                kind="literal",
+                source="first",
+                text="Straße " + " ".join(f"left{index}" for index in range(300)),
+            ),
+            QueryContribution(
+                kind="file",
+                source="second",
+                text="STRASSE Ｓｔｒａße src/FooBar.py "
+                + " ".join(f"left{index}" for index in range(300)),
+            ),
+        )
+    )
+
+    assert len(result.terms) == len(set(result.terms)) == MAX_QUERY_TERMS
+    assert result.terms.count("strasse") == 1
+    assert "src/foobar.py" in result.terms
+    assert result.identifiers == ("src/foobar.py",)
+    assert "foo" not in result.identifiers
+    assert build_query(result.contributions).terms == result.terms
+
+
+def test_query_budget_with_more_sources_than_terms_reports_each_omission():
+    result = build_query(
+        tuple(
+            QueryContribution(kind="input", source=str(index), text=f"word{index}")
+            for index in range(MAX_QUERY_TERMS + 2)
+        )
+    )
+
+    assert result.terms == tuple(f"word{index}" for index in range(MAX_QUERY_TERMS))
+    assert {item.source for item in result.exclusions} == {"256", "257"}
+    assert all("term limit" in item.reason for item in result.exclusions)
+    assert build_query(result.contributions).terms == result.terms
+
+
+def test_query_small_inputs_keep_lexical_order_and_all_contribution_kinds():
+    contributions = (
+        QueryContribution(kind="file", source="file", text="Straße filetext"),
+        QueryContribution(kind="literal", source="literal", text="The ReadFile"),
+        QueryContribution(kind="identifier", source="node", text="build"),
+        QueryContribution(kind="variable", source="goal", text="chosen"),
+        QueryContribution(kind="input", source="input", text="inputtext STRASSE"),
+    )
+    excluded = (QueryExclusion(source="env:TOKEN", reason="environment excluded"),)
+    result = build_query(contributions, excluded)
+
+    assert result.terms == (
+        "readfile",
+        "read",
+        "file",
+        "build",
+        "chosen",
+        "strasse",
+        "filetext",
+        "inputtext",
+    )
+    assert result.identifiers == ("readfile", "build")
+    assert result.exclusions == excluded
+    assert result.examined_chars == sum(len(item.text) for item in contributions)
+    assert {item.kind for item in result.contributions} == {
+        "literal",
+        "identifier",
+        "variable",
+        "file",
+        "input",
+    }
+    assert build_query(()).terms == ()
+    assert build_query(()).examined_chars == 0
+
+
+def test_query_budget_policy_is_versioned_in_semantic_identity():
+    selection = select_memory(MemorySnapshot(), "work", "executor", query("read"))
+
+    assert selection.query.policy_revision == QUERY_REVISION
+    assert selection.semantic_payload()["query"]["policy_revision"] == QUERY_REVISION
+    payload = selection.model_dump(mode="json")
+    payload["query"]["policy_revision"] = QUERY_REVISION + 1
+    with pytest.raises(ValidationError, match="policy revision"):
+        MemorySelection.model_validate(payload)
 
 
 def test_accepted_only_deterministic_ranking_and_complete_packing():

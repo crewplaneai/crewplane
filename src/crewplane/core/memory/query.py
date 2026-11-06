@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import deque
 from typing import Literal
 
 from pydantic import Field
@@ -119,13 +120,17 @@ def build_query(
     omitted = list(exclusions)
     examined = 0
     prioritized = sorted(contributions, key=lambda item: item.kind in {"file", "input"})
-    for contribution in prioritized:
-        remaining = MAX_QUERY_CHARS - examined
-        if remaining == 0 or len(terms) == MAX_QUERY_TERMS:
-            reason = "query character limit" if remaining == 0 else "query term limit"
-            omitted.append(QueryExclusion(source=contribution.source, reason=reason))
+    for contribution, limit in zip(
+        prioritized, _character_limits(prioritized), strict=True
+    ):
+        if limit == 0 and contribution.text:
+            omitted.append(
+                QueryExclusion(
+                    source=contribution.source, reason="query character limit"
+                )
+            )
             continue
-        text = contribution.text[:remaining]
+        text = contribution.text[:limit]
         examined += len(text)
         captured.append(contribution.model_copy(update={"text": text}))
         if len(text) < len(contribution.text):
@@ -135,19 +140,24 @@ def build_query(
                     reason="query character limit; remaining text omitted",
                 )
             )
-        found, whole_identifiers = tokens(text, contribution.kind == "identifier")
-        for term in found:
-            if term not in terms and len(terms) == MAX_QUERY_TERMS:
-                omitted.append(
-                    QueryExclusion(
-                        source=contribution.source,
-                        reason="query term limit; remaining terms omitted",
-                    )
+    tokenized = [tokens(item.text, item.kind == "identifier") for item in captured]
+    admitted = _shared_terms(tuple(found for found, _ in tokenized))
+    for contribution, (found, whole_identifiers) in zip(
+        captured, tokenized, strict=True
+    ):
+        whole = set(whole_identifiers)
+        if any(term not in admitted for term in found):
+            omitted.append(
+                QueryExclusion(
+                    source=contribution.source,
+                    reason="query term limit; remaining terms omitted",
                 )
-                break
-            terms[term] = None
-            if term in whole_identifiers:
-                identifiers[term] = None
+            )
+        for term in found:
+            if term in admitted:
+                terms[term] = None
+                if term in whole:
+                    identifiers[term] = None
     return MemoryQuery(
         terms=tuple(terms),
         identifiers=tuple(identifiers),
@@ -155,3 +165,38 @@ def build_query(
         exclusions=tuple(omitted),
         examined_chars=examined,
     )
+
+
+def _character_limits(contributions: list[QueryContribution]) -> list[int]:
+    lengths = [len(item.text) for item in contributions]
+    if sum(lengths) <= MAX_QUERY_CHARS:
+        return lengths
+    # Find an equal prefix allowance, recycling capacity from shorter sources.
+    low, high = 0, MAX_QUERY_CHARS + 1
+    while low + 1 < high:
+        middle = (low + high) // 2
+        if sum(min(length, middle) for length in lengths) <= MAX_QUERY_CHARS:
+            low = middle
+        else:
+            high = middle
+    limits = [min(length, low) for length in lengths]
+    remaining = MAX_QUERY_CHARS - sum(limits)
+    for index, length in enumerate(lengths):
+        if remaining and limits[index] < length:
+            limits[index] += 1
+            remaining -= 1
+    return limits
+
+
+def _shared_terms(contributions: tuple[tuple[str, ...], ...]) -> set[str]:
+    admitted: set[str] = set()
+    active = deque(iter(found) for found in contributions if found)
+    # Each source admits one new term per turn; duplicates consume no capacity.
+    while active and len(admitted) < MAX_QUERY_TERMS:
+        candidates = active.popleft()
+        for term in candidates:
+            if term not in admitted:
+                admitted.add(term)
+                active.append(candidates)
+                break
+    return admitted

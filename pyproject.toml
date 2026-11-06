@@ -57,6 +57,7 @@ include = [
     "src/crewplane/example_templates/**/*.yml",
     "src/crewplane/example_templates/**/*.yaml",
     "src/crewplane/example_templates/**/*.md",
+    "src/crewplane/resources/**/*.md",
 ]
 
 [tool.hatch.build.targets.sdist]

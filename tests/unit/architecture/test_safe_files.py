@@ -317,3 +317,96 @@ def test_contained_directory_preserves_root_aliases_and_safe_raw_paths(
     assert directory.is_dir()
     assert safe_files.contained_directory(root, relative_path) == directory
     assert safe_files.contained_regular_file(root, relative_path) is None
+
+
+@requires_posix
+@pytest.mark.race
+@pytest.mark.parametrize(
+    "entry_kind", ["file", "symlink", "hardlink", "directory", "fifo"]
+)
+def test_safe_file_rechecks_publication_after_absent_lookup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry_kind: str
+) -> None:
+    path = tmp_path / "store.lock"
+    target = tmp_path / "other"
+    target.write_bytes(b"unchanged")
+    original_lookup = safe_files_posix.contained_regular_file
+    published = False
+
+    def lookup_then_publish(root: Path, parts: tuple[str, ...]) -> Path | None:
+        nonlocal published
+        result = original_lookup(root, parts)
+        if not published:
+            assert result is None
+            published = True
+            if entry_kind == "file":
+                path.write_bytes(b"peer lock")
+            elif entry_kind == "symlink":
+                symlink_or_skip(path, target)
+            elif entry_kind == "hardlink":
+                path.hardlink_to(target)
+            elif entry_kind == "directory":
+                path.mkdir()
+            else:
+                os.mkfifo(path)
+        return result
+
+    monkeypatch.setattr(safe_files_posix, "contained_regular_file", lookup_then_publish)
+    if entry_kind == "file":
+        assert ensure_single_link_regular_file(path) == path
+        assert path.read_bytes() == b"peer lock"
+        assert path.stat().st_nlink == 1
+    else:
+        with pytest.raises(ValueError):
+            ensure_single_link_regular_file(path)
+    assert published
+    assert target.read_bytes() == b"unchanged"
+
+
+@requires_posix
+@pytest.mark.race
+def test_safe_file_publication_rechecks_remain_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "store.lock"
+    observations = []
+
+    def interfering_lookup(root: Path, parts: tuple[str, ...]) -> None:
+        observations.append((root, parts))
+        path.write_bytes(b"interference")
+
+    monkeypatch.setattr(safe_files_posix, "contained_regular_file", interfering_lookup)
+    with pytest.raises(ValueError, match="after 3 attempts"):
+        ensure_single_link_regular_file(path)
+    assert len(observations) == 3
+
+
+@requires_posix
+@pytest.mark.race
+def test_publication_recheck_rejects_a_replaced_parent_symlink(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "store.lock"
+    target.write_bytes(b"outside unchanged")
+    path = root / "store.lock"
+    original_lookup = safe_files_posix.contained_regular_file
+    changed = False
+
+    def lookup_then_replace_parent(parent, parts):
+        nonlocal changed
+        result = original_lookup(parent, parts)
+        if not changed:
+            assert result is None
+            root.rename(tmp_path / "original")
+            symlink_or_skip(root, outside, target_is_directory=True)
+            changed = True
+        return result
+
+    monkeypatch.setattr(
+        safe_files_posix, "contained_regular_file", lookup_then_replace_parent
+    )
+    with pytest.raises(ValueError, match="after 3 attempts"):
+        ensure_single_link_regular_file(path)
+    assert changed and target.read_bytes() == b"outside unchanged"
