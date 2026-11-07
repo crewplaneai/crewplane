@@ -1,3 +1,10 @@
+"""Transform immutable memory snapshots without persistence or locking.
+
+Callers own store transactions and supply the current snapshot. Operations raise
+ValueError for invalid or stale requests without mutating their inputs. Changed
+snapshots receive a fresh transaction ID; revisions retain their history order.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +26,11 @@ from .models import (
 
 @dataclass(frozen=True)
 class CandidateIdentity:
+    """Identify an imported revision, its digest, and proposed predecessor.
+
+    These immutable fields are carried into review; construction validates none.
+    """
+
     record_id: str
     revision_id: str
     candidate_digest: str
@@ -27,6 +39,12 @@ class CandidateIdentity:
 
 @dataclass(frozen=True)
 class Decision:
+    """Bind a review action to a revision digest and inspected accepted revision.
+
+    Construction is unchecked; lifecycle operations validate these fields against
+    the current snapshot before applying a decision.
+    """
+
     record_id: str
     revision_id: str
     candidate_digest: str
@@ -40,53 +58,81 @@ def import_candidates(
     provenance: ProposalProvenance,
     evidence: dict[str, EvidenceReceipt],
 ) -> tuple[MemorySnapshot, tuple[CandidateIdentity, ...]]:
+    """Import pending proposals and return identities in document order.
+
+    Resolve evidence in proposal order before deduplication. Retained proposal
+    identities are reused regardless of disposition, including duplicates within
+    this document; a wholly repeated or empty import returns the original snapshot.
+    New corrections must name the current accepted revision. Unknown evidence,
+    missing records, and stale corrections raise ValueError without changing the
+    input snapshot. Imports neither accept nor supersede revisions.
+    """
     records = list(snapshot.records)
     imported: list[CandidateIdentity] = []
     for proposal in document.lessons:
-        missing = set(proposal.evidence_ids) - evidence.keys()
-        if missing:
-            raise ValueError(f"Unknown host evidence IDs: {', '.join(sorted(missing))}")
-        receipts = tuple(evidence[key] for key in proposal.evidence_ids)
-        identity = digest_payload(
-            {
-                "proposal": proposal.model_dump(mode="json"),
-                "provenance": provenance.model_dump(mode="json"),
-                "evidence": [item.semantic_payload() for item in receipts],
-            }
-        )
-        existing = next(
-            (
-                (record, revision)
-                for record in records
-                for revision in record.revisions
-                if revision.proposal_identity == identity
-            ),
-            None,
-        )
+        receipts, identity = _prepare_import(proposal, provenance, evidence)
+        existing = _find_imported_candidate(records, identity)
         if existing is not None:
-            imported.append(candidate_identity(*existing))
+            imported.append(existing)
             continue
         revision = new_revision(proposal, provenance, receipts, identity)
-        if proposal.corrects_record is None:
-            record = MemoryRecord(record_id=f"m-{uuid4().hex}", revisions=(revision,))
-            records.append(record)
-        else:
-            record = find_record(records, proposal.corrects_record)
-            if record.accepted_revision != proposal.expected_accepted_revision:
-                raise ValueError(
-                    "Stale correction: inspect the current accepted revision."
-                )
-            updated = MemoryRecord(
-                record_id=record.record_id,
-                revisions=(*record.revisions, revision),
-                accepted_revision=record.accepted_revision,
-            )
-            records[records.index(record)] = updated
-            record = updated
+        record = _append_imported_revision(records, proposal, revision)
         imported.append(candidate_identity(record, revision))
     if tuple(records) == snapshot.records:
         return snapshot, tuple(imported)
     return changed_snapshot(snapshot, tuple(records)), tuple(imported)
+
+
+def _prepare_import(
+    proposal: LessonProposal,
+    provenance: ProposalProvenance,
+    evidence: dict[str, EvidenceReceipt],
+) -> tuple[tuple[EvidenceReceipt, ...], str]:
+    missing = set(proposal.evidence_ids) - evidence.keys()
+    if missing:
+        raise ValueError(f"Unknown host evidence IDs: {', '.join(sorted(missing))}")
+    receipts = tuple(evidence[key] for key in proposal.evidence_ids)
+    identity = digest_payload(
+        {
+            "proposal": proposal.model_dump(mode="json"),
+            "provenance": provenance.model_dump(mode="json"),
+            "evidence": [item.semantic_payload() for item in receipts],
+        }
+    )
+    return receipts, identity
+
+
+def _find_imported_candidate(
+    records: list[MemoryRecord], proposal_identity: str
+) -> CandidateIdentity | None:
+    return next(
+        (
+            candidate_identity(record, revision)
+            for record in records
+            for revision in record.revisions
+            if revision.proposal_identity == proposal_identity
+        ),
+        None,
+    )
+
+
+def _append_imported_revision(
+    records: list[MemoryRecord], proposal: LessonProposal, revision: MemoryRevision
+) -> MemoryRecord:
+    if proposal.corrects_record is None:
+        record = MemoryRecord(record_id=f"m-{uuid4().hex}", revisions=(revision,))
+        records.append(record)
+        return record
+    record = find_record(records, proposal.corrects_record)
+    if record.accepted_revision != proposal.expected_accepted_revision:
+        raise ValueError("Stale correction: inspect the current accepted revision.")
+    updated = MemoryRecord(
+        record_id=record.record_id,
+        revisions=(*record.revisions, revision),
+        accepted_revision=record.accepted_revision,
+    )
+    records[records.index(record)] = updated
+    return updated
 
 
 def new_revision(
@@ -95,17 +141,22 @@ def new_revision(
     evidence: tuple[EvidenceReceipt, ...],
     proposal_identity: str,
 ) -> MemoryRevision:
+    """Build a pending revision with fresh ID/time and validated content digests.
+
+    Evidence, provenance, and proposal identity must already be resolved by the
+    caller. Model validation errors propagate; no record or predecessor is checked.
+    """
     content = {
         "title": proposal.title,
         "body": proposal.body,
         "tags": list(proposal.tags),
         "qualifications": list(proposal.qualifications),
     }
+    content_digest = digest_payload(content)
+    evidence_digest = digest_payload([item.semantic_payload() for item in evidence])
     identities = {
-        "content_digest": digest_payload(content),
-        "evidence_digest": digest_payload(
-            [item.semantic_payload() for item in evidence]
-        ),
+        "content_digest": content_digest,
+        "evidence_digest": evidence_digest,
         "provenance": provenance.model_dump(mode="json"),
         "expected_accepted_revision": proposal.expected_accepted_revision,
     }
@@ -119,8 +170,8 @@ def new_revision(
         provenance=provenance,
         proposal_identity=proposal_identity,
         expected_accepted_revision=proposal.expected_accepted_revision,
-        content_digest=str(identities["content_digest"]),
-        evidence_digest=str(identities["evidence_digest"]),
+        content_digest=content_digest,
+        evidence_digest=evidence_digest,
         candidate_digest=digest_payload(identities),
         created_at=datetime.now(UTC).isoformat(),
     )
@@ -129,6 +180,7 @@ def new_revision(
 def candidate_identity(
     record: MemoryRecord, revision: MemoryRevision
 ) -> CandidateIdentity:
+    """Copy review identity fields without validating record membership or state."""
     return CandidateIdentity(
         record.record_id,
         revision.revision_id,
@@ -140,6 +192,7 @@ def candidate_identity(
 def find_record(
     records: list[MemoryRecord] | tuple[MemoryRecord, ...], record_id: str
 ) -> MemoryRecord:
+    """Return the first matching record or raise ValueError if it is missing."""
     record = next((item for item in records if item.record_id == record_id), None)
     if record is None:
         raise ValueError(f"Stale or missing memory record {record_id!r}.")
@@ -149,6 +202,13 @@ def find_record(
 def checked_candidate(
     record: MemoryRecord, decision: Decision, require_candidate_predecessor: bool = True
 ) -> MemoryRevision:
+    """Return the exact pending revision selected by a current review decision.
+
+    Revision ID, digest, and the record's current accepted pointer must match.
+    Acceptance also requires the candidate's proposed predecessor to match;
+    rejection and editing pass False to allow stale proposals after inspection of
+    the current accepted revision. Mismatches raise ValueError. Action is unchecked.
+    """
     revision = next(
         (item for item in record.revisions if item.revision_id == decision.revision_id),
         None,
@@ -170,6 +230,15 @@ def checked_candidate(
 def accept_batch(
     snapshot: MemorySnapshot, decisions: tuple[Decision, ...]
 ) -> MemorySnapshot:
+    """Prevalidate all decisions against the input snapshot, then apply in order.
+
+    Duplicate revision selections, multiple accepts per record, unknown actions,
+    and stale candidates raise ValueError before any transitions. Accepting marks
+    the prior accepted revision superseded; rejecting leaves the accepted pointer
+    intact and permits an outdated candidate predecessor. Unselected revisions and
+    history order are preserved. Empty decisions return the original snapshot;
+    callers own atomic persistence of a successful result.
+    """
     if len({(d.record_id, d.revision_id) for d in decisions}) != len(decisions):
         raise ValueError("Duplicate memory decisions are not permitted.")
     accepts = [
@@ -193,40 +262,68 @@ def accept_batch(
     records = list(snapshot.records)
     for decision, revision in zip(decisions, checked, strict=True):
         record = find_record(records, decision.record_id)
-        updates: dict[str, object] = {"disposition": "rejected"}
-        accepted_id = record.accepted_revision
-        if decision.action == "accept":
-            updates = {
-                "disposition": "accepted",
-                "acceptance": Acceptance(
-                    accepted_at=datetime.now(UTC).isoformat(),
-                    candidate_digest=revision.candidate_digest,
-                    expected_accepted_revision=decision.expected_accepted_revision,
-                ),
-            }
-            accepted_id = revision.revision_id
-        revisions = tuple(
-            revise(item, updates)
-            if item.revision_id == revision.revision_id
-            else revise(item, {"disposition": "superseded"})
-            if decision.action == "accept"
-            and item.revision_id == record.accepted_revision
-            else item
-            for item in record.revisions
-        )
-        records[records.index(record)] = MemoryRecord(
-            record_id=record.record_id,
-            revisions=revisions,
-            accepted_revision=accepted_id,
-        )
+        records[records.index(record)] = _apply_decision(record, decision, revision)
     return changed_snapshot(snapshot, tuple(records)) if decisions else snapshot
+
+
+def _apply_decision(
+    record: MemoryRecord, decision: Decision, revision: MemoryRevision
+) -> MemoryRecord:
+    updates: dict[str, object] = {"disposition": "rejected"}
+    accepted_id = record.accepted_revision
+    if decision.action == "accept":
+        updates = {
+            "disposition": "accepted",
+            "acceptance": Acceptance(
+                accepted_at=datetime.now(UTC).isoformat(),
+                candidate_digest=revision.candidate_digest,
+                expected_accepted_revision=decision.expected_accepted_revision,
+            ),
+        }
+        accepted_id = revision.revision_id
+    revisions: list[MemoryRevision] = []
+    for item in record.revisions:
+        if item.revision_id == revision.revision_id:
+            revisions.append(revise(item, updates))
+        elif (
+            decision.action == "accept" and item.revision_id == record.accepted_revision
+        ):
+            revisions.append(revise(item, {"disposition": "superseded"}))
+        else:
+            revisions.append(item)
+    return MemoryRecord(
+        record_id=record.record_id,
+        revisions=tuple(revisions),
+        accepted_revision=accepted_id,
+    )
 
 
 def edit_candidate(
     snapshot: MemorySnapshot, decision: Decision, proposal: LessonProposal
 ) -> MemorySnapshot:
+    """Supersede a selected pending candidate and append a new human revision.
+
+    The decision must match the current record pointer and candidate digest; its
+    action and the old candidate's predecessor are ignored. The proposal must
+    target the current accepted revision and preserve evidence IDs in order.
+    Validation failures raise ValueError before revision creation. Retained host
+    evidence and run IDs carry forward, the accepted pointer stays unchanged, and
+    the input snapshot is untouched.
+    """
     record = find_record(snapshot.records, decision.record_id)
     old = checked_candidate(record, decision, False)
+    _validate_edit(record, old, proposal)
+    revision = _new_edited_revision(record, old, proposal)
+    updated = _replace_edited_revision(record, old, revision)
+    return changed_snapshot(
+        snapshot,
+        tuple(updated if item == record else item for item in snapshot.records),
+    )
+
+
+def _validate_edit(
+    record: MemoryRecord, old: MemoryRevision, proposal: LessonProposal
+) -> None:
     if (proposal.corrects_record, proposal.expected_accepted_revision) != (
         record.record_id if record.accepted_revision else None,
         record.accepted_revision,
@@ -236,13 +333,18 @@ def edit_candidate(
         )
     if proposal.evidence_ids != tuple(item.evidence_id for item in old.evidence):
         raise ValueError("Editing must preserve host evidence references.")
+
+
+def _new_edited_revision(
+    record: MemoryRecord, old: MemoryRevision, proposal: LessonProposal
+) -> MemoryRevision:
     provenance = ProposalProvenance(
         author="human",
         source_identity=f"edit:{record.record_id}:{old.revision_id}",
         run_id=old.provenance.run_id,
         extraction_run_id=old.provenance.extraction_run_id,
     )
-    revision = new_revision(
+    return new_revision(
         proposal,
         provenance,
         old.evidence,
@@ -250,7 +352,12 @@ def edit_candidate(
             {"edit": old.revision_id, "proposal": proposal.model_dump(mode="json")}
         ),
     )
-    updated = MemoryRecord(
+
+
+def _replace_edited_revision(
+    record: MemoryRecord, old: MemoryRevision, revision: MemoryRevision
+) -> MemoryRecord:
+    return MemoryRecord(
         record_id=record.record_id,
         accepted_revision=record.accepted_revision,
         revisions=(
@@ -261,15 +368,16 @@ def edit_candidate(
             revision,
         ),
     )
-    return changed_snapshot(
-        snapshot,
-        tuple(updated if item == record else item for item in snapshot.records),
-    )
 
 
 def forget_record(
     snapshot: MemorySnapshot, record_id: str, expected_state_digest: str
 ) -> MemorySnapshot:
+    """Remove a complete record only if its inspected state digest still matches.
+
+    Missing records and digest mismatches raise ValueError. Other records retain
+    their order; the returned snapshot has a fresh transaction ID.
+    """
     record = find_record(snapshot.records, record_id)
     if record.state_digest != expected_state_digest:
         raise ValueError(
@@ -281,12 +389,18 @@ def forget_record(
 
 
 def revise(revision: MemoryRevision, updates: dict[str, object]) -> MemoryRevision:
+    """Return a validated copy with updates; propagate model validation errors."""
     return MemoryRevision.model_validate({**revision.model_dump(), **updates})
 
 
 def changed_snapshot(
     snapshot: MemorySnapshot, records: tuple[MemoryRecord, ...]
 ) -> MemorySnapshot:
+    """Validate replacement records under the same schema with a fresh transaction.
+
+    Preserve supplied order and input state; model validation errors propagate.
+    A new transaction ID is allocated even when the records are unchanged.
+    """
     return MemorySnapshot(
         schema_version=snapshot.schema_version,
         transaction_id=uuid4().hex,

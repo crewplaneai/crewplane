@@ -1,6 +1,13 @@
+"""Rank accepted memory lexically and freeze bounded, whole-record recall.
+
+Selection is deterministic and reads only the supplied snapshot and query; it
+performs no I/O or mutation. Diagnostic receipts are retained separately from
+the semantic payload used in execution identity.
+"""
+
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -19,12 +26,25 @@ RETRIEVAL_REVISION = 1
 
 
 class SelectedMemory(FrozenModel):
+    """Freeze a record revision and its three-component lexical score.
+
+    Score components count identifier/tag, title/tag term, and body term matches,
+    in descending ranking priority. Eligibility is checked by MemorySelection.
+    """
+
     record_id: str
     revision: MemoryRevision
     score: tuple[int, int, int]
 
 
 class MemorySelection(FrozenModel):
+    """Freeze one node role's query, ranked records, rendering, and omissions.
+
+    Construction raises pydantic.ValidationError for inconsistent query, policy,
+    limits, rendering, revision eligibility, scores, or ranking. Limits must be
+    positive integers, and the role-stream append boundary must be nonnegative.
+    """
+
     node_id: str
     role: Literal["executor", "reviewer"]
     query: MemoryQuery
@@ -39,7 +59,19 @@ class MemorySelection(FrozenModel):
     omissions: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_frozen_selection(self) -> MemorySelection:
+    def validate_frozen_selection(self) -> Self:
+        """Validate query/policy, packing, then revision scores and rank order.
+
+        Raises:
+            ValueError: A frozen recall contract fails, at the first failed check.
+        """
+        self._validate_query_and_policy()
+        self._validate_packing()
+        self._validate_selected_revisions()
+        return self
+
+    def _validate_query_and_policy(self) -> None:
+        """Reconstruct eligible query inputs before checking policy and term bounds."""
         reconstructed = build_query(self.query.contributions)
         if (self.query.terms, self.query.identifiers, self.query.examined_chars) != (
             reconstructed.terms,
@@ -61,6 +93,9 @@ class MemorySelection(FrozenModel):
             or not set(self.query.identifiers) <= set(self.query.terms)
         ):
             raise ValueError("Invalid memory query term identities or bounds.")
+
+    def _validate_packing(self) -> None:
+        """Check uniqueness and limits before verifying complete rendered records."""
         if len({item.record_id for item in self.selected}) != len(self.selected):
             raise ValueError("A memory record can be selected only once per role.")
         if len(self.selected) > self.max_records or len(self.rendered) > self.max_chars:
@@ -71,6 +106,9 @@ class MemorySelection(FrozenModel):
             raise ValueError(
                 "Memory selection rendering disagrees with complete frozen records."
             )
+
+    def _validate_selected_revisions(self) -> None:
+        """Require accepted lexical matches with exact scores, then ranked order."""
         for item in self.selected:
             if (
                 item.revision.disposition != "accepted"
@@ -82,9 +120,16 @@ class MemorySelection(FrozenModel):
                 )
         if tuple(sorted(self.selected, key=selection_order)) != self.selected:
             raise ValueError("Memory selection is not in deterministic rank order.")
-        return self
 
     def semantic_payload(self) -> dict[str, object]:
+        """Return recall inputs and selected context used in execution identity.
+
+        Deliberately exclude query contributions, exclusions, examined-character
+        diagnostics, omissions, scores, and the redundant rendered-character count.
+        Selected revisions contribute IDs and content/evidence digests rather than
+        full metadata, so creation, acceptance, observation, and capture timestamps
+        do not affect identity. The complete rendered context remains included.
+        """
         return {
             "node_id": self.node_id,
             "role": self.role,
@@ -114,6 +159,13 @@ class MemorySelection(FrozenModel):
 def score_revision(
     query: MemoryQuery, revision: MemoryRevision
 ) -> tuple[int, int, int]:
+    """Count unique identifier/tag, title/tag term, and body term matches.
+
+    Exact identifiers match title/body identifiers or normalized whole tags. The
+    second component matches query terms against title and tags; the third uses
+    body, qualifications, and evidence source locators. Evidence excerpts are
+    excluded. All-zero scores do not match; disposition is not checked here.
+    """
     title_terms, title_ids = tokens(" ".join((revision.title, *revision.tags)))
     body_terms, body_ids = tokens(
         " ".join(
@@ -139,6 +191,7 @@ def score_revision(
 
 
 def selection_order(item: SelectedMemory) -> tuple[int, int, int, str]:
+    """Rank scores descending lexicographically, breaking ties by ascending record ID."""
     return (-item.score[0], -item.score[1], -item.score[2], item.record_id)
 
 
@@ -151,39 +204,18 @@ def select_memory(
     max_chars: int = 8000,
     append_after_fragment_count: int = 0,
 ) -> MemorySelection:
-    ranked = []
-    for record in snapshot.records:
-        for revision in record.revisions:
-            if revision.revision_id == record.accepted_revision:
-                score = score_revision(query, revision)
-                if any(score):
-                    ranked.append(
-                        SelectedMemory(
-                            record_id=record.record_id, revision=revision, score=score
-                        )
-                    )
-    selected: list[SelectedMemory] = []
-    omissions: list[str] = []
-    for item in sorted(ranked, key=selection_order):
-        if len(selected) == max_records:
-            omissions.append(f"{item.record_id}: record limit")
-            continue
-        candidate = (*selected, item)
-        rendered = render_block(
-            tuple((entry.record_id, entry.revision) for entry in candidate)
-        )
-        if len(rendered) > max_chars:
-            omissions.append(
-                f"{item.record_id}: complete record does not fit character limit"
-            )
-            continue
-        selected.append(item)
-    if not query.terms:
-        omissions.append("Insufficient frozen task context: no eligible query terms.")
-    elif not ranked:
-        omissions.append("No accepted records match the frozen query.")
-    elif not selected:
-        omissions.append("No whole matching record fits the recall limits.")
+    """Select current accepted matches in rank order without splitting records.
+
+    Pack whole rendered records within both limits, including block framing.
+    Skip oversized records and continue trying later matches. Per-record omissions
+    retain rank order, with the record limit checked before the character limit;
+    any no-context, no-match, or no-fit explanation follows them. Model validation
+    errors propagate for invalid limits, query/policy, or frozen selection data.
+    The supplied snapshot and query remain unchanged.
+    """
+    ranked = _rank_matching_revisions(snapshot, query)
+    selected, omissions = _pack_ranked_records(ranked, max_records, max_chars)
+    omissions.extend(_empty_selection_omissions(query, ranked, selected))
     rendered = render_block(tuple((item.record_id, item.revision) for item in selected))
     return MemorySelection(
         node_id=node_id,
@@ -197,3 +229,59 @@ def select_memory(
         rendered_chars=len(rendered),
         omissions=tuple(omissions),
     )
+
+
+def _rank_matching_revisions(
+    snapshot: MemorySnapshot, query: MemoryQuery
+) -> list[SelectedMemory]:
+    """Score only accepted-pointer revisions and sort their nonzero matches."""
+    ranked: list[SelectedMemory] = []
+    for record in snapshot.records:
+        for revision in record.revisions:
+            if revision.revision_id != record.accepted_revision:
+                continue
+            score = score_revision(query, revision)
+            if not any(score):
+                continue
+            ranked.append(
+                SelectedMemory(
+                    record_id=record.record_id, revision=revision, score=score
+                )
+            )
+    return sorted(ranked, key=selection_order)
+
+
+def _pack_ranked_records(
+    ranked: list[SelectedMemory], max_records: int, max_chars: int
+) -> tuple[list[SelectedMemory], list[str]]:
+    """Pack complete records and report skipped records in their ranked order."""
+    selected: list[SelectedMemory] = []
+    omissions: list[str] = []
+    for item in ranked:
+        if len(selected) == max_records:
+            omissions.append(f"{item.record_id}: record limit")
+            continue
+        candidate = (*selected, item)
+        rendered = render_block(
+            tuple((entry.record_id, entry.revision) for entry in candidate)
+        )
+        if len(rendered) > max_chars:
+            omissions.append(
+                f"{item.record_id}: complete record does not fit character limit"
+            )
+            continue
+        selected.append(item)
+    return selected, omissions
+
+
+def _empty_selection_omissions(
+    query: MemoryQuery, ranked: list[SelectedMemory], selected: list[SelectedMemory]
+) -> tuple[str, ...]:
+    """Explain empty recall with no-context, no-match, then no-fit precedence."""
+    if not query.terms:
+        return ("Insufficient frozen task context: no eligible query terms.",)
+    if not ranked:
+        return ("No accepted records match the frozen query.",)
+    if not selected:
+        return ("No whole matching record fits the recall limits.",)
+    return ()

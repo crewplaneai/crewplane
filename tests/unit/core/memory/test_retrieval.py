@@ -19,6 +19,7 @@ from crewplane.core.memory.query import (
     build_query,
     tokens,
 )
+from crewplane.core.memory.rendering import render_block
 from crewplane.core.memory.retrieval import (
     MemorySelection,
     score_revision,
@@ -429,6 +430,111 @@ def test_oversized_first_record_does_not_hide_later_fit():
     result = select_memory(snapshot, "build", "executor", query("src/file.py"))
     assert [item.revision.title for item in result.selected] == ["File"]
     assert "complete record" in result.omissions[0]
+
+
+def test_exact_fit_keeps_ranked_omissions_and_record_limit_precedence():
+    snapshot = accepted_snapshot(
+        LessonProposal(title="src/file.py", body="x" * 9000),
+        LessonProposal(title="File", body="Retain checks."),
+        LessonProposal(title="File", body="y" * 9000),
+        LessonProposal(title="Ocean", body="Inspect file."),
+    )
+    records = tuple(
+        record.model_copy(update={"record_id": record_id})
+        for record, record_id in zip(
+            snapshot.records,
+            ("a-oversized", "b-fit", "c-oversized", "d-body"),
+            strict=True,
+        )
+    )
+    expected_rendered = render_block((("b-fit", records[1].revisions[0]),))
+    snapshot = MemorySnapshot(records=tuple(reversed(records)))
+    before = snapshot.model_dump_json()
+
+    result = select_memory(
+        snapshot,
+        "build",
+        "reviewer",
+        query("src/file.py"),
+        max_records=1,
+        max_chars=len(expected_rendered),
+        append_after_fragment_count=3,
+    )
+
+    assert [item.record_id for item in result.selected] == ["b-fit"]
+    assert result.rendered == expected_rendered
+    assert result.rendered_chars == result.max_chars
+    assert result.omissions == (
+        "a-oversized: complete record does not fit character limit",
+        "c-oversized: record limit",
+        "d-body: record limit",
+    )
+    assert (result.node_id, result.role, result.append_after_fragment_count) == (
+        "build",
+        "reviewer",
+        3,
+    )
+    assert snapshot.model_dump_json() == before
+
+
+@pytest.mark.parametrize(
+    "tamper,message",
+    [
+        ("query", "Memory query disagrees with its frozen eligible contributions."),
+        ("policy", "Unsupported memory retrieval/rendering policy revision."),
+        ("duplicate", "A memory record can be selected only once per role."),
+        ("limit", "Memory selection exceeds recall limits."),
+        (
+            "rendering",
+            "Memory selection rendering disagrees with complete frozen records.",
+        ),
+        (
+            "score",
+            "Selected memory must be an accepted matching revision with its lexical score.",
+        ),
+        (
+            "disposition",
+            "Selected memory must be an accepted matching revision with its lexical score.",
+        ),
+        ("order", "Memory selection is not in deterministic rank order."),
+    ],
+)
+def test_frozen_selection_validation_preserves_error_precedence(tamper, message):
+    selection = select_memory(
+        accepted_snapshot(
+            LessonProposal(title="Files", body="Protect reads."),
+            LessonProposal(title="Reads", body="Protect files."),
+        ),
+        "build",
+        "executor",
+        query("files"),
+    )
+    payload = selection.model_dump(mode="json")
+    payload["selected"].reverse()
+    payload["rendered"] = render_block(
+        tuple((item.record_id, item.revision) for item in reversed(selection.selected))
+    )
+    payload["rendered_chars"] = len(payload["rendered"])
+    if tamper in {"query", "policy"}:
+        payload["retrieval_revision"] += 1
+    if tamper == "query":
+        payload["query"]["terms"] = ["other"]
+    if tamper in {"query", "policy", "duplicate"}:
+        payload["selected"].append(payload["selected"][0])
+    if tamper in {"query", "policy", "duplicate", "limit"}:
+        payload["max_records"] = 1
+    if tamper in {"query", "policy", "duplicate", "limit", "rendering"}:
+        payload["rendered"] += "tampered"
+    if tamper in {"rendering", "score"}:
+        payload["selected"][0]["score"] = [0, 0, 0]
+    if tamper == "disposition":
+        payload["selected"][0]["revision"]["disposition"] = "pending"
+        payload["selected"][0]["revision"]["acceptance"] = None
+
+    with pytest.raises(ValidationError) as error:
+        MemorySelection.model_validate(payload)
+
+    assert [item["msg"] for item in error.value.errors()] == [f"Value error, {message}"]
 
 
 @pytest.mark.parametrize(

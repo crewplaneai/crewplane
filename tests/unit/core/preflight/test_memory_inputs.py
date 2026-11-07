@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from crewplane.adapters.artifacts.terminal_history import (
@@ -14,6 +15,7 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import WorkflowPlan
 from tests.helpers.platforms import requires_workspace_support
 from tests.helpers.project_memory import (
@@ -24,6 +26,71 @@ from tests.helpers.project_memory import (
 )
 from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.helpers.workspace_preflight import init_git_repo
+
+
+@pytest.mark.parametrize("source_location", ["absent", "project", "external"])
+def test_query_contributions_preserve_order_sources_and_literal_whitespace(
+    tmp_path: Path, source_location: str
+) -> None:
+    task = memory_workflow("execute", "review")
+    task.nodes[0].prompt_segments = [
+        PromptSegment(
+            role=PromptSegmentRole.SHARED,
+            content="Start\n{{var:goal}}{{env:TOKEN}}tail\t",
+        ),
+        PromptSegment(role=PromptSegmentRole.REVIEWER, content="Review{{var:goal}}."),
+        PromptSegment(role=PromptSegmentRole.EXECUTOR, content="Plain\ttext\n"),
+        PromptSegment(role=PromptSegmentRole.SHARED, content="{{var:goal}}"),
+    ]
+    source_paths = {
+        "absent": {},
+        "project": {"work": tmp_path / "workflows/task.md"},
+        "external": {"work": tmp_path.parent / "external/task.md"},
+    }
+    source = PreflightWorkflowSource.from_workflow(
+        task, node_source_paths=source_paths[source_location]
+    )
+
+    preview = compile_memory_workflow(
+        tmp_path, source, MemorySnapshot(), variables={"goal": "chosen-goal"}
+    )
+
+    assert not preview.has_errors(), preview.diagnostics
+    assert [selection.role for selection in preview.memory_selections] == [
+        "executor",
+        "reviewer",
+    ]
+    for selection in preview.memory_selections:
+        role = selection.role
+        expected = [("identifier", "node", "work")]
+        if source_location != "absent":
+            identifier = (
+                "workflows/task.md"
+                if source_location == "project"
+                else (tmp_path.parent / "external/task.md").as_posix()
+            )
+            expected.append(("identifier", "workflow", identifier))
+        role_index, role_literal = (
+            (2, "Plain\ttext\n") if role == "executor" else (1, "Review .")
+        )
+        expected.extend(
+            [
+                ("literal", f"work:{role}:0", "Start\n  tail\t"),
+                ("literal", f"work:{role}:{role_index}", role_literal),
+                ("literal", f"work:{role}:3", " "),
+                ("variable", f"work:{role}:0:0", "chosen-goal"),
+            ]
+        )
+        if role == "reviewer":
+            expected.append(("variable", "work:reviewer:1:0", "chosen-goal"))
+        expected.append(("variable", f"work:{role}:3:0", "chosen-goal"))
+        assert [
+            (item.kind, item.source, item.text)
+            for item in selection.query.contributions
+        ] == expected
+        assert [(item.source, item.reason) for item in selection.query.exclusions] == [
+            (f"work:{role}:0:1", "environment values are excluded")
+        ]
 
 
 def test_query_limit_records_omitted_captured_unicode_file_text(tmp_path: Path) -> None:

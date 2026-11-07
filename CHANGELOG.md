@@ -8,6 +8,10 @@ All notable user-facing changes are recorded here.
 
 - Opt-in project memory recalls accepted lessons and proposes new lessons for explicit human review after eligible runs.
 
+### Fixed
+
+- Preserve cancellation during run publication and memory learning, keeping locks until pending writes finish.
+
 ## [0.4.1] - 2026-10-29
 
 ### Added

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from rich.console import Console
@@ -15,8 +16,13 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.artifacts.manager import OutputManager
 from crewplane.cli.run import execution as execution_module
+from crewplane.cli.run import execution_publication
+from crewplane.cli.run.completion import CompletionDisplay
 from crewplane.cli.run.context import WorkflowRunContext
-from crewplane.cli.run.observability import WorkflowWarningRecorder
+from crewplane.cli.run.observability import (
+    WorkflowCancelledByUser,
+    WorkflowWarningRecorder,
+)
 from crewplane.cli.run.terminalization import (
     TerminalizationCoordinator,
 )
@@ -35,6 +41,155 @@ from tests.helpers.resume import (
     make_plan,
     make_run_manifest,
 )
+
+
+@pytest.mark.parametrize("defer_display", [False, True])
+@pytest.mark.parametrize(
+    "error_type", [asyncio.CancelledError, WorkflowCancelledByUser, RuntimeError]
+)
+def test_execution_failure_preserves_error_and_summary_ownership(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    defer_display: bool,
+    error_type: type[BaseException],
+) -> None:
+    plan = make_plan()
+    output = OutputManager("Workflow", base_dir=tmp_path, template_base_dir=tmp_path)
+    console = Console(file=io.StringIO(), force_terminal=False)
+    context = WorkflowRunContext(
+        config=Config(version=SCHEMA_VERSION, agents={}),
+        source=PreflightWorkflowSource.from_workflow(
+            WorkflowPlan(name=plan.workflow_name, nodes=[])
+        ),
+        console=console,
+        project_root=tmp_path,
+        state_dir=tmp_path,
+    )
+    components = RuntimeComponents(output, object(), (), False)
+    error = error_type("execution interrupted")
+    observed_execution = AsyncMock(side_effect=error)
+    summary = Mock()
+    monkeypatch.setattr(
+        execution_module, "execute_workflow_with_observability", observed_execution
+    )
+    monkeypatch.setattr(execution_module, "print_end_of_run_summary", summary)
+    display = CompletionDisplay() if defer_display else None
+    terminalization = TerminalizationCoordinator(output, plan.workflow_name)
+    warnings = WorkflowWarningRecorder(context.workflow, console)
+
+    with pytest.raises(error_type) as raised:
+        asyncio.run(
+            execution_module.run_and_finalize_workflow(
+                context,
+                output,
+                components,
+                plan,
+                SecretContext(),
+                AsyncMock(),
+                warnings,
+                None,
+                ".crewplane/workflows/workflow.task.md",
+                terminalization,
+                deferred_display=display,
+            )
+        )
+
+    assert raised.value is error
+    assert terminalization.summary_logger is warnings.persistent_logger
+    assert terminalization.summary_logger is not None
+    if display is None:
+        summary.assert_called_once_with(console, terminalization.summary_logger)
+    else:
+        summary.assert_not_called()
+        assert display.logger is terminalization.summary_logger
+        assert display.branch_exports == ()
+
+
+@pytest.mark.parametrize("defer_display", [False, True])
+@pytest.mark.parametrize("publication_fails", [False, True])
+def test_logger_cancellation_retains_replacement_summary_logger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    defer_display: bool,
+    publication_fails: bool,
+) -> None:
+    plan = make_plan()
+    output = OutputManager("Workflow", base_dir=tmp_path, template_base_dir=tmp_path)
+    output.write_run_manifest(
+        make_run_manifest(output.run_id, output.run_key_name, status="running")
+    )
+    console = Console(file=io.StringIO(), force_terminal=False)
+    context = WorkflowRunContext(
+        config=Config(version=SCHEMA_VERSION, agents={}),
+        source=PreflightWorkflowSource.from_workflow(
+            WorkflowPlan(name=plan.workflow_name, nodes=[])
+        ),
+        console=console,
+        project_root=tmp_path,
+        state_dir=tmp_path,
+    )
+    initial_logger = PersistentRunLogger(output)
+    replacement_logger = PersistentRunLogger(output)
+    cancellation = asyncio.CancelledError("logger allocation cancelled")
+    publication_error = OSError("cancelled outcome publication failed")
+    monkeypatch.setattr(
+        execution_module,
+        "settle_run_publication",
+        AsyncMock(return_value=(initial_logger, cancellation)),
+    )
+    monkeypatch.setattr(
+        execution_publication,
+        "PersistentRunLogger",
+        Mock(return_value=replacement_logger),
+    )
+    if publication_fails:
+        monkeypatch.setattr(
+            execution_publication,
+            "commit_terminalization_with_retry",
+            Mock(side_effect=publication_error),
+        )
+    summary = Mock()
+    observed_execution = AsyncMock()
+    monkeypatch.setattr(execution_module, "print_end_of_run_summary", summary)
+    monkeypatch.setattr(
+        execution_module, "execute_workflow_with_observability", observed_execution
+    )
+    terminalization = TerminalizationCoordinator(output, plan.workflow_name)
+    warnings = WorkflowWarningRecorder(context.workflow, console)
+    display = CompletionDisplay() if defer_display else None
+    expected_error = publication_error if publication_fails else cancellation
+
+    with pytest.raises(type(expected_error)) as raised:
+        asyncio.run(
+            execution_module.run_and_finalize_workflow(
+                context,
+                output,
+                RuntimeComponents(output, object(), (), False),
+                plan,
+                SecretContext(),
+                AsyncMock(),
+                warnings,
+                None,
+                ".crewplane/workflows/workflow.task.md",
+                terminalization,
+                deferred_display=display,
+            )
+        )
+
+    assert raised.value is expected_error
+    assert (
+        terminalization.summary_logger
+        is warnings.persistent_logger
+        is replacement_logger
+    )
+    assert terminalization.committed is not publication_fails
+    observed_execution.assert_not_awaited()
+    if display is None:
+        summary.assert_called_once_with(console, replacement_logger)
+    else:
+        summary.assert_not_called()
+        assert display.logger is replacement_logger
+        assert display.branch_exports == ()
 
 
 class _RequiredStopFailureObserver:
