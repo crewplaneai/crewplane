@@ -27,6 +27,7 @@ from crewplane.runtime.agent.process.drain import (
 from crewplane.runtime.execution import execute_workflow
 from scripts.validation_policy import load_policy
 from tests.helpers.memory import initialize_memory
+from tests.helpers.platforms import requires_project_memory
 from tests.integration.cli.workflow_runner_support import (
     mock_runner_config,
     run_directories,
@@ -55,7 +56,7 @@ TIMEOUTS = load_policy().timeouts
         ("setup_failure", "failed"),
         ("terminal_manifest", "succeeded"),
         ("release", "succeeded"),
-        ("completion", "succeeded"),
+        pytest.param("completion", "succeeded", marks=requires_project_memory),
     ],
 )
 def test_cancellation_drains_publication_and_finishes_ownership(

@@ -15,7 +15,9 @@ from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.memory.lifecycle import Decision, accept_batch, import_candidates
 from crewplane.core.memory.models import MemorySnapshot, ProposalProvenance
 from tests.helpers.memory import evidence_receipt, initialize_memory, lesson_document
-from tests.helpers.platforms import symlink_or_skip
+from tests.helpers.platforms import requires_project_memory, symlink_or_skip
+
+pytestmark = requires_project_memory
 
 
 def test_archived_originals_do_not_invalidate_retained_accepted_recall(

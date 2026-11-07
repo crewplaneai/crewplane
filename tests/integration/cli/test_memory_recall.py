@@ -14,11 +14,14 @@ from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.execution.review_loop.prompts import REVIEWER_ONLY_INSTRUCTION
 from tests.helpers.memory import accepted_snapshot, initialize_memory, lesson_document
+from tests.helpers.platforms import requires_project_memory
 from tests.integration.cli.repeat_force_run_support import (
     create_project,
     filesystem_snapshot,
 )
 from tests.integration.cli.workflow_runner_support import run_directories
+
+pytestmark = requires_project_memory
 
 
 def test_recall_advisory_commands_are_read_only_then_actual_role_prompts_are_opaque(

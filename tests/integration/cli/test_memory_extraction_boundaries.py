@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -25,8 +26,10 @@ from crewplane.runtime.agent.process.drain import (
 from crewplane.runtime.execution import execute_workflow
 from tests.helpers.memory import lesson_document
 from tests.helpers.memory_processes import line, release, worker
-from tests.helpers.memory_runtime import setup_parent
-from tests.helpers.platforms import requires_posix
+from tests.helpers.memory_runtime import extraction_timeout_on_invocation, setup_parent
+from tests.helpers.platforms import requires_posix, requires_project_memory
+
+pytestmark = requires_project_memory
 
 
 @pytest.mark.parametrize("failure", ["provider", "timeout", "task", "user", "process"])
@@ -237,11 +240,18 @@ def test_exceptional_child_completion_preserves_unconfirmed_own_release(
         return False
 
     monkeypatch.setattr(SameContextLock, "release", refused)
-    if timeout:
-        config.settings.memory.extraction_timeout_seconds = 0.05
-        config.settings.integrations.invoker.options["delay_seconds"] = 1
+    timeout_context = (
+        extraction_timeout_on_invocation(
+            monkeypatch, config.settings.memory.extraction_timeout_seconds
+        )
+        if timeout
+        else nullcontext()
+    )
     try:
-        with pytest.raises(extraction.ExtractionCleanupError, match="release"):
+        with (
+            timeout_context,
+            pytest.raises(extraction.ExtractionCleanupError, match="release"),
+        ):
             asyncio.run(extraction.extract_memory(config, parent, console))
         assert len(handles) == 1
         assert handles[0].lock_dir.is_dir()

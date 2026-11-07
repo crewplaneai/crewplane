@@ -17,6 +17,9 @@ from crewplane.core.memory.models import digest_payload
 from crewplane.core.memory.packets import EvidencePacket
 from scripts.validation_policy import load_policy
 from tests.helpers.memory import evidence_receipt, lesson_document
+from tests.helpers.platforms import requires_project_memory
+
+pytestmark = requires_project_memory
 
 TIMEOUTS = load_policy().timeouts
 

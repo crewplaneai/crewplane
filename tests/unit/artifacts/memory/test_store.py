@@ -12,7 +12,9 @@ from crewplane.core.memory.candidates import CandidateDocument, LessonProposal
 from crewplane.core.memory.lifecycle import import_candidates
 from crewplane.core.memory.models import MemorySnapshot, ProposalProvenance
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.platforms import requires_posix
+from tests.helpers.platforms import requires_posix, requires_project_memory
+
+pytestmark = requires_project_memory
 
 
 def proposal(snapshot):

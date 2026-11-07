@@ -22,6 +22,9 @@ from crewplane.cli.memory.history import completed_parent
 from crewplane.core.memory.candidates import LessonProposal
 from tests.helpers.memory import lesson_document
 from tests.helpers.memory_runtime import setup_parent
+from tests.helpers.platforms import requires_project_memory
+
+pytestmark = requires_project_memory
 
 
 def test_explicit_extract_by_run_id_reuses_saved_result_without_parent_changes(

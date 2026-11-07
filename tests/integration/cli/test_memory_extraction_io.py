@@ -18,7 +18,10 @@ from crewplane.core.preflight.source import PreflightWorkflowSource
 from scripts.validation_policy import load_policy
 from tests.helpers.memory import lesson_document
 from tests.helpers.memory_runtime import setup_parent
+from tests.helpers.platforms import requires_project_memory
 from tests.integration.cli.workflow_runner_support import runner_workflow
+
+pytestmark = requires_project_memory
 
 TIMEOUTS = load_policy().timeouts
 

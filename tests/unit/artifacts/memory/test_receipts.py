@@ -17,9 +17,11 @@ from crewplane.artifacts.memory.receipts import (
     save_extraction,
 )
 from tests.helpers.memory_runtime import setup_parent
+from tests.helpers.platforms import requires_project_memory
 
 
 @pytest.mark.parametrize("field", ["schema_version", "omissions", "provenance"])
+@requires_project_memory
 def test_saved_packet_missing_current_fields_is_not_default_filled(
     tmp_path: Path, field
 ):
@@ -45,6 +47,7 @@ def test_saved_packet_missing_current_fields_is_not_default_filled(
         "result_displayed",
     ],
 )
+@requires_project_memory
 def test_saved_extraction_missing_current_field_is_not_default_filled(
     tmp_path: Path, field
 ):
@@ -81,6 +84,7 @@ def test_extraction_completion_facts_require_actual_booleans(field):
     "change",
     [{"schema_version": "future"}, {"cleanup_confirmed": 1}, {"unknown": True}],
 )
+@requires_project_memory
 def test_completion_receipt_rejects_unsupported_or_malformed_proof(
     tmp_path: Path, change
 ):
@@ -93,6 +97,7 @@ def test_completion_receipt_rejects_unsupported_or_malformed_proof(
         read_completion(parent.stages_dir)
 
 
+@requires_project_memory
 def test_extraction_receipt_requires_live_owner_and_preserves_stable_lock(
     tmp_path: Path,
 ):

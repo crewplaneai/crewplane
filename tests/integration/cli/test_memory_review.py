@@ -17,6 +17,7 @@ from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.memory.lifecycle import Decision, edit_candidate, import_candidates
 from crewplane.core.memory.models import MemorySnapshot, ProposalProvenance
 from tests.helpers.memory import accepted_snapshot, initialize_memory, lesson_document
+from tests.helpers.platforms import requires_project_memory
 
 
 def review_setup(tmp_path: Path, monkeypatch):
@@ -37,6 +38,7 @@ def review_setup(tmp_path: Path, monkeypatch):
     return MemoryStore(tmp_path), console, stream
 
 
+@requires_project_memory
 def test_review_starts_unselected_and_defers_on_eof(tmp_path: Path, monkeypatch):
     store, console, stream = review_setup(tmp_path, monkeypatch)
     before = store.path.read_bytes()
@@ -54,6 +56,7 @@ def test_review_starts_unselected_and_defers_on_eof(tmp_path: Path, monkeypatch)
 
 
 @pytest.mark.parametrize("action", ["accept", "reject", "defer"])
+@requires_project_memory
 def test_explicit_review_decisions_not_unchecked_cards(
     tmp_path: Path, monkeypatch, action
 ):
@@ -73,6 +76,7 @@ def test_explicit_review_decisions_not_unchecked_cards(
     )
 
 
+@requires_project_memory
 def test_edit_creates_revision_and_returns_unselected_to_preview(
     tmp_path: Path, monkeypatch
 ):
@@ -108,6 +112,7 @@ def test_review_without_terminal_does_not_open_memory(tmp_path: Path):
     assert "crewplane memory review --run parent" in stream.getvalue()
 
 
+@requires_project_memory
 def test_review_filters_by_run_and_record_without_reordering(
     tmp_path: Path, monkeypatch
 ):
@@ -164,6 +169,7 @@ def test_review_filters_by_run_and_record_without_reordering(
     assert "Excluded" not in stream.getvalue()
 
 
+@requires_project_memory
 def test_cancelled_editor_preserves_selected_decision(tmp_path: Path, monkeypatch):
     store, console, stream = review_setup(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -186,6 +192,7 @@ def test_cancelled_editor_preserves_selected_decision(tmp_path: Path, monkeypatc
 
 
 @pytest.mark.parametrize("ending", ["quit", EOFError, typer.Abort, KeyboardInterrupt])
+@requires_project_memory
 def test_edit_is_persisted_when_unapplied_review_ends(
     tmp_path: Path, monkeypatch, ending
 ):
@@ -215,6 +222,7 @@ def test_edit_is_persisted_when_unapplied_review_ends(
     assert ("Review deferred" in stream.getvalue()) == (ending != "quit")
 
 
+@requires_project_memory
 def test_edit_conflict_clears_only_edited_selection(tmp_path: Path, monkeypatch):
     store, console, stream = review_setup(tmp_path, monkeypatch)
     asyncio.run(
@@ -252,6 +260,7 @@ def test_edit_conflict_clears_only_edited_selection(tmp_path: Path, monkeypatch)
     assert "Applied 1 explicit memory decisions atomically." in stream.getvalue()
 
 
+@requires_project_memory
 def test_invalid_commands_and_deferral_leave_store_unchanged(
     tmp_path: Path, monkeypatch
 ):
@@ -292,6 +301,7 @@ def test_invalid_commands_and_deferral_leave_store_unchanged(
 @pytest.mark.parametrize(
     "failure", [OSError("unreadable"), ValueError("invalid store")]
 )
+@requires_project_memory
 def test_review_propagates_snapshot_errors(tmp_path: Path, monkeypatch, failure):
     store, console, _stream = review_setup(tmp_path, monkeypatch)
     before = store.path.read_bytes()
@@ -306,6 +316,7 @@ def test_review_propagates_snapshot_errors(tmp_path: Path, monkeypatch, failure)
 @pytest.mark.parametrize("action", ["inspect", "accept"])
 @pytest.mark.parametrize("field", ["qualifications", "tags"])
 @pytest.mark.parametrize("replacement", [(), ("Changed applicability",)])
+@requires_project_memory
 def test_correction_review_compares_semantic_fields_before_confirmation(
     tmp_path: Path, monkeypatch, action, field, replacement
 ):
@@ -365,6 +376,7 @@ def test_correction_review_compares_semantic_fields_before_confirmation(
 
 
 @pytest.mark.race
+@requires_project_memory
 def test_review_conflict_commits_nothing_and_preserves_concurrent_decision(
     tmp_path: Path, monkeypatch
 ):
@@ -412,6 +424,7 @@ def test_review_conflict_commits_nothing_and_preserves_concurrent_decision(
 
 @pytest.mark.race
 @pytest.mark.parametrize("concurrent_action", ["accept", "reject", "edit", "forget"])
+@requires_project_memory
 def test_review_conflict_retires_removed_selection_and_preserves_other_choices(
     tmp_path: Path, monkeypatch, concurrent_action: str
 ):

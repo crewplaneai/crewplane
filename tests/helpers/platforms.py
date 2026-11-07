@@ -22,6 +22,10 @@ requires_lock_recovery = pytest.mark.skipif(
     is_native_windows(),
     reason="Automatic lock recovery is unsupported on native Windows",
 )
+requires_project_memory = pytest.mark.skipif(
+    is_native_windows(),
+    reason="Project memory requires POSIX flock support (Linux, macOS, or WSL)",
+)
 requires_self_update = pytest.mark.skipif(
     is_native_windows(), reason="Native Windows self-update is unsupported"
 )
