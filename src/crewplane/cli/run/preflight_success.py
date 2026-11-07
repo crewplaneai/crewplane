@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.memory.selections import (
+    frozen_memory_selections,
+    memory_selection_receipt,
+)
 from crewplane.artifacts.naming import (
     preflight_plan_relative_path,
     preflight_runtime_config_snapshot_relative_path,
@@ -43,6 +47,10 @@ def write_preflight_success_artifacts(
     output.write_preflight_metadata(metadata_payload)
     output.write_preflight_manifest(manifest_payload)
     output.write_preflight_render_plan(plan.render_plans)
+    if frozen_memory_selections(plan):
+        output.write_preflight_json(
+            "memory-selection.json", memory_selection_receipt(plan)
+        )
     output.write_preflight_json("static-resources.json", plan.static_resources)
     output.write_preflight_json("token-catalog.json", plan.token_catalog)
     output.write_preflight_json("dependency-graph.json", plan.dependency_graph)

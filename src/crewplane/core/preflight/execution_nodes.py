@@ -72,6 +72,7 @@ def compile_execution_node(
         source_root=source_root(node, options).as_posix(),
         source_span=node_source_span(node, options),
         mode=node.mode,
+        memory=node.memory is True,
         findings=node.findings,
         dependencies=list(node.needs),
         render_plan_id=render_plan.render_plan_id if render_plan is not None else None,

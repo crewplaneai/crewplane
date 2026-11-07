@@ -10,6 +10,7 @@ from rich.console import Console
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.loader import is_builtin_implementation
 from crewplane.artifacts.expansions import reconstruct_expansions
+from crewplane.artifacts.memory.selections import validate_historical_memory_selection
 from crewplane.artifacts.resume.decision import ResumeDecision
 from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
@@ -240,6 +241,7 @@ def artifact_valid_history_plan(
     for record in records:
         if record.manifest.status != "succeeded":
             continue
+        validate_historical_memory_selection(validation_plan, record.run_dir)
         frontier = validate_resume_frontier(record, validation_plan)
         effective = frontier.effective_plan or validation_plan
         if len(frontier.resumed_node_ids) == len(effective.nodes) and len(
@@ -268,6 +270,7 @@ def artifact_valid_history_plan(
     for record in records:
         if record.manifest.status not in {"failed", "cancelled"}:
             continue
+        validate_historical_memory_selection(validation_plan, record.run_dir)
         frontier = validate_resume_frontier(
             record, validation_plan, observation, fences
         )

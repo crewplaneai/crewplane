@@ -15,7 +15,6 @@ from crewplane.observability.run_summary.accumulator import (
     MAX_RETAINED_INVOCATION_USAGE_DETAILS,
 )
 from crewplane.observability.run_summary.logger import MAX_RETAINED_SUMMARY_EVENTS
-from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.agent.usage import InvocationUsageAccumulator
 from tests.helpers.observability import make_execution_event, topology_from_workflow
@@ -30,15 +29,16 @@ def test_persistent_run_logger_bounds_retained_event_details(tmp_path: Path) -> 
     tmp_dir = mkdtemp(dir=tmp_path)
     output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
     persistent_logger = PersistentRunLogger(output)
-
-    with ObservabilityHub(
-        workflow_topology=topology_from_workflow(workflow),
-        run_id=output.run_id,
-        observers=[persistent_logger],
-        refresh_per_second=0,
-    ) as hub:
+    persistent_logger.start(
+        RunContext(
+            workflow_topology=topology_from_workflow(workflow),
+            run_id=output.run_id,
+            refresh_per_second=0,
+        )
+    )
+    try:
         for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
-            hub.emit(
+            persistent_logger.record_event(
                 make_execution_event(
                     event_type=EventType.RUNTIME_LOG,
                     workflow_name=workflow.name,
@@ -48,6 +48,8 @@ def test_persistent_run_logger_bounds_retained_event_details(tmp_path: Path) -> 
                     operation="summary_retention_test",
                 )
             )
+    finally:
+        persistent_logger.stop(RunResult(status="succeeded"))
 
     assert persistent_logger.retained_event_count == MAX_RETAINED_SUMMARY_EVENTS
     assert persistent_logger.dropped_event_count == overflow_count

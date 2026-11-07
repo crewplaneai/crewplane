@@ -217,7 +217,8 @@ crewplane/
 │       ├── runtime/        # Agent invocation and workflow execution
 │       ├── artifacts/      # Output directories, manifests, results, resume, workspace state
 │       ├── observability/  # Runtime event model, layout/rendering, tmux dashboard
-│       └── example_templates/
+│       ├── example_templates/ # Files copied into projects by crewplane init
+│       └── resources/         # Internal package data, including built-in workflows
 ├── plugins/                # Independently packaged extensions
 ├── tests/
 ├── docs/                   # User and architecture documentation

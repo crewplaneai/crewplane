@@ -225,6 +225,7 @@ def try_resolve_terminal_file_reference(
     )
     if result is None:
         return False
+    state.terminal_result_occurrences.add(occurrence_id)
     record_static_file_reference(node, reference, state, occurrence_id, result)
     return True
 

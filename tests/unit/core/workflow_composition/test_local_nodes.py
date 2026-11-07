@@ -54,7 +54,7 @@ def test_composition_preserves_explicit_fields_and_source_metadata(
         "id",
         "needs",
         "worktree",
-    }
+    } | (set() if input_node else {"memory"})
     assert payload.model_fields_set == original_fields
     assert payload.id == "local"
     assert composed.source_path == source_path

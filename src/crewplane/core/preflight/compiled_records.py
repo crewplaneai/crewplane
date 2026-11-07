@@ -393,6 +393,7 @@ class PreflightExecutionNode(BaseModel):
     source_root: str | None = None
     source_span: SourceSpan | None = None
     mode: NodeMode
+    memory: bool = Field(default=False, strict=True)
     findings: bool = False
     dependencies: list[str] = Field(default_factory=list)
     render_plan_id: str | None = None
@@ -407,6 +408,10 @@ class PreflightExecutionNode(BaseModel):
 
     @model_validator(mode="after")
     def _validate_mode_payload(self) -> PreflightExecutionNode:
+        if self.memory and self.mode in {"input", "foreach"}:
+            raise ValueError(
+                "Only provider-executed preflight nodes can enable memory."
+            )
         if self.mode == "input":
             if self.render_plan_id is not None:
                 raise ValueError(

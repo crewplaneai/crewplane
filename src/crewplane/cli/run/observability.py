@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
+from inspect import isawaitable
 from typing import Protocol
 
 from rich.console import Console
@@ -29,6 +30,7 @@ from crewplane.observability.types import WorkflowTopology
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from .best_effort_thread import run_best_effort_thread
+from .execution_publication import settle_run_publication
 from .terminalization import (
     TerminalizationCommitter,
     commit_terminalization_with_retry,
@@ -298,6 +300,15 @@ def _selected_progress_mode(
     )
 
 
+def _terminal_error_after_publication(
+    error: BaseException, cancellation: asyncio.CancelledError | None
+) -> BaseException:
+    if cancellation is None:
+        return error
+    cancellation.__cause__ = error
+    return cancellation
+
+
 async def _execute_observed_workflow(
     execute_workflow_impl: ExecuteWorkflowCallable,
     plan: PreflightExecutionPlan,
@@ -327,7 +338,8 @@ async def _execute_observed_workflow(
             hub,
         )
     except asyncio.CancelledError as exc:
-        commit_terminalization_with_retry(
+        await settle_run_publication(
+            commit_terminalization_with_retry,
             terminalization,
             hub,
             "cancelled",
@@ -335,46 +347,61 @@ async def _execute_observed_workflow(
         )
         return exc
     except WorkflowCancelledByUser as exc:
-        commit_terminalization_with_retry(
+        _, cancellation = await settle_run_publication(
+            commit_terminalization_with_retry,
             terminalization,
             hub,
             "cancelled",
             UI_STOP_CANCEL_REASON,
         )
-        return exc
+        return _terminal_error_after_publication(exc, cancellation)
     except Exception as exc:
-        commit_terminalization_with_retry(
+        _, cancellation = await settle_run_publication(
+            commit_terminalization_with_retry,
             terminalization,
             hub,
             "failed",
             str(exc),
         )
-        return exc
+        return _terminal_error_after_publication(exc, cancellation)
 
 
-def _run_scheduler_post_hook(
+async def _run_scheduler_post_hook(
     plan: PreflightExecutionPlan,
-    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], None],
+    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], Awaitable[None] | None],
     terminalization: TerminalizationCoordinatorProtocol,
     hub: ObservabilityHubInstance,
 ) -> BaseException | None:
     try:
-        on_scheduler_succeeded(plan)
+        completion = on_scheduler_succeeded(plan)
+        if isawaitable(completion):
+            await completion
+    except asyncio.CancelledError as exc:
+        await settle_run_publication(
+            commit_terminalization_with_retry,
+            terminalization,
+            hub,
+            "cancelled",
+            EXTERNAL_CANCEL_REASON,
+        )
+        return exc
     except Exception as exc:
-        commit_terminalization_with_retry(
+        _, cancellation = await settle_run_publication(
+            commit_terminalization_with_retry,
             terminalization,
             hub,
             "failed",
             str(exc),
         )
-        return exc
+        return _terminal_error_after_publication(exc, cancellation)
 
-    commit_terminalization_with_retry(
+    _, cancellation = await settle_run_publication(
+        commit_terminalization_with_retry,
         terminalization,
         hub,
         "succeeded",
     )
-    return None
+    return cancellation
 
 
 def _handle_shutdown(
@@ -396,7 +423,7 @@ async def execute_workflow_with_observability(
     persistent_logger: PersistentRunLogger,
     warning_recorder: WorkflowWarningRecorder,
     observability_hub_cls: ObservabilityHubFactory | None,
-    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], None],
+    on_scheduler_succeeded: Callable[[PreflightExecutionPlan], Awaitable[None] | None],
     terminalization: TerminalizationCoordinatorProtocol,
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
@@ -436,7 +463,7 @@ async def execute_workflow_with_observability(
             if isinstance(completion, BaseException):
                 terminal_error = completion
             else:
-                terminal_error = _run_scheduler_post_hook(
+                terminal_error = await _run_scheduler_post_hook(
                     completion,
                     on_scheduler_succeeded,
                     terminalization,
@@ -445,6 +472,10 @@ async def execute_workflow_with_observability(
     except BaseException as shutdown_error:
         _handle_shutdown(shutdown_error, terminal_error)
 
-    terminalization.acknowledge_observer_shutdown()
+    _, cancellation = await settle_run_publication(
+        terminalization.acknowledge_observer_shutdown
+    )
     if terminal_error is not None:
-        raise terminal_error
+        raise _terminal_error_after_publication(terminal_error, cancellation)
+    if cancellation is not None:
+        raise cancellation

@@ -12,6 +12,7 @@ from pydantic import (
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.expansion_state import ExpansionState
+from crewplane.core.memory.retrieval import MemorySelection
 from crewplane.version import SCHEMA_VERSION
 
 from .compiled_records import (
@@ -61,6 +62,7 @@ class CompiledForeach(BaseModel):
     workspace_file_locators: list[WorkspaceFileLocator]
     token_catalog: list[TokenCatalogEntry]
     dependency_graph: list[DependencyEdge]
+    memory_selections: list[MemorySelection] = Field(default_factory=list)
 
     def semantic_digest(self) -> str:
         from .plan_signatures import (
@@ -69,6 +71,15 @@ class CompiledForeach(BaseModel):
         )
         from .signatures import signature_for_payload
 
+        memory_payload = (
+            {
+                "memory_selections": [
+                    selection.semantic_payload() for selection in self.memory_selections
+                ]
+            }
+            if self.memory_selections
+            else {}
+        )
         return signature_for_payload(
             {
                 "nodes": semantic_node_payloads(self.nodes),
@@ -81,6 +92,7 @@ class CompiledForeach(BaseModel):
                 "item_node_id": self.item_node_id,
                 "bindings": self.shared_bindings,
                 "parameters": self.parameters,
+                **memory_payload,
             }
         )
 
@@ -100,6 +112,7 @@ class PreflightCompilationPreview(BaseModel):
     foreach_templates: list[CompiledForeach] = Field(default_factory=list)
     nodes: list[PreflightExecutionNode] = Field(default_factory=list)
     render_plans: list[RenderPlan] = Field(default_factory=list)
+    memory_selections: list[MemorySelection] = Field(default_factory=list)
     static_resources: list[StaticResource] = Field(default_factory=list)
     workspace_file_locators: list[WorkspaceFileLocator] = Field(default_factory=list)
     token_catalog: list[TokenCatalogEntry] = Field(default_factory=list)
@@ -148,6 +161,7 @@ class PreflightExecutionPlan(BaseModel):
     foreach_templates: list[CompiledForeach] = Field(default_factory=list)
     nodes: list[PreflightExecutionNode]
     render_plans: list[RenderPlan]
+    memory_selections: list[MemorySelection] = Field(default_factory=list)
     static_resources: list[StaticResource]
     workspace_file_locators: list[WorkspaceFileLocator] = Field(default_factory=list)
     token_catalog: list[TokenCatalogEntry]
@@ -203,6 +217,7 @@ class PreflightExecutionPlan(BaseModel):
             nodes=list(preview.nodes),
             foreach_templates=list(preview.foreach_templates),
             render_plans=list(preview.render_plans),
+            memory_selections=list(preview.memory_selections),
             static_resources=list(preview.static_resources),
             workspace_file_locators=list(preview.workspace_file_locators),
             token_catalog=list(preview.token_catalog),

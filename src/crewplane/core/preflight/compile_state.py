@@ -4,6 +4,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
+from crewplane.core.memory.models import MemorySnapshot
+from crewplane.core.memory.retrieval import MemorySelection
 from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
 
@@ -67,6 +69,7 @@ class PreflightCompileOptions:
     additional_validation_warnings: tuple[str, ...] = ()
     additional_diagnostics: tuple[PreflightDiagnostic, ...] = ()
     workspace_source_snapshot: WorkspaceSourceSnapshot | None = None
+    memory_snapshot: MemorySnapshot | None = None
 
     def with_source_metadata(
         self,
@@ -103,6 +106,8 @@ class ValueFingerprintRecord(TypedDict):
 
 @dataclass
 class CompileState:
+    memory_selections: list[MemorySelection] = field(default_factory=list)
+    terminal_result_occurrences: set[str] = field(default_factory=set)
     diagnostics: list[PreflightDiagnostic] = field(default_factory=list)
     diagnostic_keys: set[tuple[str, str, str | None, str | None, str]] = field(
         default_factory=set

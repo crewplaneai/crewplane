@@ -33,6 +33,20 @@ def test_working_tree_estimate_handles_missing_root(tmp_path: Path) -> None:
     assert estimated_working_tree_size_bytes(tmp_path / "missing") == 0
 
 
+def test_working_tree_estimate_excludes_memory_but_keeps_authored_state(
+    tmp_path: Path,
+) -> None:
+    memory = tmp_path / ".crewplane" / "memory"
+    memory.mkdir(parents=True)
+    (memory / "store.json").write_bytes(b"ignored memory")
+    (memory / "store.lock").write_bytes(b"ignored lock")
+    (memory.parent / "config.yml").write_bytes(b"123")
+    authored = memory.parent / "memory-notes"
+    authored.mkdir()
+    (authored / "guide.md").write_bytes(b"45")
+    assert estimated_working_tree_size_bytes(tmp_path) == 5
+
+
 def test_working_tree_estimate_keeps_readable_files_when_an_entry_disappears(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

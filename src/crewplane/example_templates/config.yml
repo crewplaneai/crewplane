@@ -196,6 +196,14 @@ agents:
   #   prompt_transport: stdin
 
 settings:
+  # Opt-in project memory: first run `crewplane memory init` and add memory: true
+  # to a workflow or provider node. No extractor is chosen automatically.
+  # memory:
+  #   learn: true  # false means recall only; no extractor is required then
+  #   extractor: codex  # must name an agent configured above
+  #   max_records: 5
+  #   max_chars: 8000  # complete rendered characters, including framing
+  #   extraction_timeout_seconds: 120  # cleanup can take longer
   # Total generated nodes across all foreach groups, including their item inputs.
   max_expanded_nodes: 10000
   # Foreach requires an explicit finite cap on running nodes. Choose for your host.
