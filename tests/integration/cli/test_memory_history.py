@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -70,6 +71,79 @@ def test_historical_parent_requires_matching_terminal_manifest_and_released_lock
     payload["workflow_signature"] = "0" * 64
     atomic_write_json(path, payload)
     with pytest.raises(ValueError, match="matching completed"):
+        completed_parent(tmp_path, parent.plan.run_key_name)
+
+
+@pytest.mark.parametrize("outcome", ["succeeded", "failed"])
+def test_historical_parent_preserves_completion_and_artifacts(tmp_path: Path, outcome):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    manifest_path = parent.stages_dir / "manifests/run.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["status"] = outcome
+    manifest["failure_message"] = "Execution failed." if outcome == "failed" else None
+    atomic_write_json(manifest_path, manifest)
+    completion_path = parent.stages_dir / "manifests/completion.json"
+    completion = json.loads(completion_path.read_bytes())
+    completion["outcome"] = outcome
+    atomic_write_json(completion_path, completion)
+    before = {
+        path: path.read_bytes()
+        for path in parent.stages_dir.rglob("*")
+        if path.is_file()
+    }
+
+    for selector in (
+        parent.plan.run_key_name,
+        parent.plan.run_id,
+        parent.plan.run_key_name.rsplit("-", 1)[-1],
+    ):
+        assert completed_parent(tmp_path, selector) == replace(parent, outcome=outcome)
+
+    assert {
+        path: path.read_bytes()
+        for path in parent.stages_dir.rglob("*")
+        if path.is_file()
+    } == before
+
+
+@pytest.mark.parametrize("selector_kind", ["run_id", "run_key_name"])
+def test_historical_parent_rejects_ambiguous_selector_before_loading(
+    tmp_path: Path, selector_kind
+):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    selector = getattr(parent.plan, selector_kind)
+    parent.stages_dir.with_name("other-" + selector).write_bytes(b"")
+
+    with pytest.raises(ValueError, match="Run selector is missing or ambiguous"):
+        completed_parent(tmp_path, selector)
+
+
+def test_historical_parent_preserves_eligibility_failure_precedence(tmp_path: Path):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    manifest_path = parent.stages_dir / "manifests/run.json"
+    original_manifest = manifest_path.read_bytes()
+    manifest = json.loads(original_manifest)
+    manifest["workflow_signature"] = "0" * 64
+    atomic_write_json(manifest_path, manifest)
+    selection_path = parent.stages_dir / "preflight/memory-selection.json"
+    original_selection = selection_path.read_bytes()
+    atomic_write_json(selection_path, {})
+    (parent.stages_dir / "manifests/completion.json").unlink()
+    lock = acquire_same_context_lock(parent.state_dir, "other", "identity", "signature")
+    try:
+        lock.update_run(parent.plan.run_id, parent.plan.run_key_name)
+        with pytest.raises(ValueError, match="Memory selection receipt disagrees"):
+            completed_parent(tmp_path, parent.plan.run_key_name)
+        selection_path.write_bytes(original_selection)
+        with pytest.raises(ValueError, match="matching completed"):
+            completed_parent(tmp_path, parent.plan.run_key_name)
+        manifest_path.write_bytes(original_manifest)
+        with pytest.raises(ValueError, match="release is unconfirmed"):
+            completed_parent(tmp_path, parent.plan.run_key_name)
+    finally:
+        assert lock.release()
+
+    with pytest.raises(ValueError, match="completion proof is missing"):
         completed_parent(tmp_path, parent.plan.run_key_name)
 
 

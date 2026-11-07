@@ -1,3 +1,5 @@
+"""Resolve retained parent runs and verify memory extraction eligibility."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,11 +11,56 @@ from crewplane.artifacts.memory.completion import read_completion
 from crewplane.artifacts.memory.selections import validate_memory_selection_receipt
 from crewplane.artifacts.naming import validate_run_key_name
 from crewplane.cli.run.completion import CompletedRun
-from crewplane.core.execution_state import RunManifest
+from crewplane.core.execution_state import RunManifest, TerminalRunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
+
+_PARENT_ARTIFACT_MAX_BYTES = 16 * 1024 * 1024
 
 
 def completed_parent(project_root: Path, selector: str) -> CompletedRun:
+    """Load a completed parent eligible for explicit memory extraction.
+
+    The selector must uniquely match a stage-root entry by exact artifact key
+    or hyphen-prefixed suffix (normally a run ID). Exact matches do not take
+    precedence over suffix matches.
+
+    The manifest and frozen plan must identify the same succeeded or failed
+    run, with matching memory selections, no current run lock, and retained
+    proof of manifest commit, cleanup, own-handle release, and result display.
+    No artifacts are modified and no execution lock is acquired.
+
+    Raises:
+        ValueError: The selector or retained artifacts are invalid, ambiguous,
+            or do not prove eligibility.
+        OSError: A protected artifact read or directory lookup fails.
+    """
+    stages = _find_parent_stages(project_root, selector)
+    state_dir = project_root / ".crewplane"
+    manifest = RunManifest.model_validate_json(
+        read_contained_bytes(stages, "manifests/run.json", _PARENT_ARTIFACT_MAX_BYTES)
+    )
+    plan = PreflightExecutionPlan.model_validate_json(
+        read_contained_bytes(
+            stages, "preflight/execution-plan.json", _PARENT_ARTIFACT_MAX_BYTES
+        )
+    )
+    outcome = _validate_parent_eligibility(state_dir, stages, manifest, plan)
+    return CompletedRun(
+        "executed",
+        project_root,
+        state_dir,
+        plan,
+        stages,
+        state_dir / "execution-results" / stages.name,
+        outcome,
+        manifest_committed=True,
+        cleanup_confirmed=True,
+        lock_released=True,
+        result_displayed=True,
+    )
+
+
+def _find_parent_stages(project_root: Path, selector: str) -> Path:
     stages_root = contained_directory(project_root, ".crewplane/execution-stages")
     if stages_root is None or "/" in selector or "\\" in selector or not selector:
         raise ValueError(
@@ -29,14 +76,16 @@ def completed_parent(project_root: Path, selector: str) -> CompletedRun:
             "Run selector is missing or ambiguous; use the exact parent artifact key."
         )
     key = validate_run_key_name(matches[0].name)
-    stages = stages_root / key
-    state_dir = project_root / ".crewplane"
-    manifest = RunManifest.model_validate_json(
-        read_contained_bytes(stages, "manifests/run.json", 16 * 1024 * 1024)
-    )
-    plan = PreflightExecutionPlan.model_validate_json(
-        read_contained_bytes(stages, "preflight/execution-plan.json", 16 * 1024 * 1024)
-    )
+    return stages_root / key
+
+
+def _validate_parent_eligibility(
+    state_dir: Path,
+    stages: Path,
+    manifest: RunManifest,
+    plan: PreflightExecutionPlan,
+) -> TerminalRunStatus:
+    key = stages.name
     validate_memory_selection_receipt(plan, stages)
     if (
         manifest.status not in {"succeeded", "failed"}
@@ -62,16 +111,4 @@ def completed_parent(project_root: Path, selector: str) -> CompletedRun:
         raise ValueError(
             "Retained completion proof does not confirm matching parent outcome, cleanup, own-handle release, and result display; extraction is ineligible."
         )
-    return CompletedRun(
-        "executed",
-        project_root,
-        state_dir,
-        plan,
-        stages,
-        state_dir / "execution-results" / key,
-        manifest.status,
-        manifest_committed=True,
-        cleanup_confirmed=True,
-        lock_released=True,
-        result_displayed=True,
-    )
+    return manifest.status

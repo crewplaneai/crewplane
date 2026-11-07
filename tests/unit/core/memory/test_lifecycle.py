@@ -15,6 +15,7 @@ from crewplane.core.memory.lifecycle import (
 )
 from crewplane.core.memory.models import MemorySnapshot, ProposalProvenance
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.memory import evidence_receipt, lesson_document
 
 PROVENANCE = ProposalProvenance(author="human", source_identity="manual")
 
@@ -286,8 +287,25 @@ def test_correction_accept_and_reject_batch_is_independent_of_selection_order(
     updated = accept_batch(
         pending, (accept, reject) if accept_first else (reject, accept)
     )
+    assert tuple(item.revision_id for item in updated.records[0].revisions) == tuple(
+        item.revision_id for item in pending.records[0].revisions
+    )
+    assert (
+        updated.records[0].revisions[0].acceptance
+        == pending.records[0].revisions[0].acceptance
+    )
+    assert (
+        updated.records[0].revisions[1].acceptance.candidate_digest
+        == winner.candidate_digest
+    )
+    assert (
+        updated.records[0].revisions[1].acceptance.expected_accepted_revision
+        == initial.revision_id
+    )
     assert updated.records[0].accepted_revision == winner.revision_id
     assert updated.records[0].revisions[-1].disposition == "rejected"
+    assert pending.records[0].revisions[0].disposition == "accepted"
+    assert pending.records[0].revisions[1].disposition == "pending"
     with pytest.raises(ValueError, match="Multiple accepted"):
         accept_batch(
             pending,
@@ -302,3 +320,150 @@ def test_correction_accept_and_reject_batch_is_independent_of_selection_order(
                 ),
             ),
         )
+
+
+def test_reimport_accepted_correction_deduplicates_before_stale_predecessor_check():
+    snapshot, ids = import_candidates(MemorySnapshot(), document(), PROVENANCE, {})
+    initial = ids[0]
+    accepted = accept_batch(
+        snapshot,
+        (
+            Decision(
+                initial.record_id,
+                initial.revision_id,
+                initial.candidate_digest,
+                None,
+                "accept",
+            ),
+        ),
+    )
+    correction = lesson_document(
+        LessonProposal(
+            title="Protected reads",
+            body="Check symlinks too.",
+            corrects_record=initial.record_id,
+            expected_accepted_revision=initial.revision_id,
+        )
+    )
+    pending, imported = import_candidates(accepted, correction, PROVENANCE, {})
+    candidate = imported[0]
+    corrected = accept_batch(
+        pending,
+        (
+            Decision(
+                candidate.record_id,
+                candidate.revision_id,
+                candidate.candidate_digest,
+                initial.revision_id,
+                "accept",
+            ),
+        ),
+    )
+    repeated, identities = import_candidates(corrected, correction, PROVENANCE, {})
+    assert repeated is corrected
+    assert identities == imported
+
+
+def test_import_preserves_evidence_order_and_checks_it_before_deduplication():
+    first = evidence_receipt().model_copy(update={"evidence_id": "first"})
+    second = evidence_receipt("A second claim.").model_copy(
+        update={"evidence_id": "second"}
+    )
+    proposal = LessonProposal(
+        title="Evidence", body="Keep both claims.", evidence_ids=("second", "first")
+    )
+    candidates = lesson_document(proposal, proposal)
+    evidence = {"first": first, "second": second}
+    snapshot, ids = import_candidates(
+        MemorySnapshot(), candidates, PROVENANCE, evidence
+    )
+    assert len(snapshot.records) == 1
+    assert ids[0] == ids[1]
+    assert snapshot.records[0].revisions[0].evidence == (second, first)
+    with pytest.raises(ValueError, match="Unknown host evidence IDs: first, second"):
+        import_candidates(snapshot, candidates, PROVENANCE, {})
+    assert len(snapshot.records[0].revisions) == 1
+
+
+@pytest.mark.parametrize("wrong_predecessor", [False, True])
+def test_edit_validates_predecessor_before_ordered_evidence(wrong_predecessor):
+    receipt = evidence_receipt()
+    proposal = LessonProposal(
+        title="Evidence", body="Keep the claim.", evidence_ids=(receipt.evidence_id,)
+    )
+    snapshot, ids = import_candidates(
+        MemorySnapshot(),
+        lesson_document(proposal),
+        PROVENANCE,
+        {receipt.evidence_id: receipt},
+    )
+    candidate = ids[0]
+    edits = {"evidence_ids": ()}
+    if wrong_predecessor:
+        edits.update(
+            corrects_record=candidate.record_id, expected_accepted_revision="missing"
+        )
+    replacement = LessonProposal.model_validate({**proposal.model_dump(), **edits})
+    message = (
+        "currently inspected accepted revision"
+        if wrong_predecessor
+        else "preserve host evidence"
+    )
+    with pytest.raises(ValueError, match=message):
+        edit_candidate(
+            snapshot,
+            Decision(
+                candidate.record_id,
+                candidate.revision_id,
+                candidate.candidate_digest,
+                None,
+                "reject",
+            ),
+            replacement,
+        )
+    assert snapshot.records[0].revisions[0].disposition == "pending"
+
+
+def test_edit_retains_host_evidence_and_run_provenance_in_new_pending_revision():
+    receipt = evidence_receipt()
+    proposal = LessonProposal(
+        title="Evidence", body="Keep the claim.", evidence_ids=(receipt.evidence_id,)
+    )
+    provenance = ProposalProvenance(
+        author="extractor",
+        source_identity="extract",
+        run_id="parent",
+        extraction_run_id="child",
+    )
+    snapshot, ids = import_candidates(
+        MemorySnapshot(),
+        lesson_document(proposal),
+        provenance,
+        {receipt.evidence_id: receipt},
+    )
+    candidate = ids[0]
+    edited = edit_candidate(
+        snapshot,
+        Decision(
+            candidate.record_id,
+            candidate.revision_id,
+            candidate.candidate_digest,
+            None,
+            "reject",
+        ),
+        proposal.model_copy(update={"body": "Keep the qualified claim."}),
+    )
+    old, new = edited.records[0].revisions
+    assert old.revision_id == candidate.revision_id
+    assert old.disposition == "superseded"
+    assert new.revision_id != old.revision_id
+    assert new.disposition == "pending"
+    assert new.evidence == (receipt,)
+    assert new.provenance == ProposalProvenance(
+        author="human",
+        source_identity=f"edit:{candidate.record_id}:{candidate.revision_id}",
+        run_id="parent",
+        extraction_run_id="child",
+    )
+    assert edited.transaction_id != snapshot.transaction_id
+    assert snapshot.records[0].revisions[0].disposition == "pending"

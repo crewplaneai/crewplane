@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from rich.console import Console
@@ -20,11 +22,12 @@ from crewplane.artifacts.memory.outcomes import (
     read_process_evidence,
     review_qualifiers,
 )
-from crewplane.artifacts.memory.receipts import PACKET_LIMIT_BYTES
+from crewplane.artifacts.memory.receipts import PACKET_LIMIT_BYTES, read_packet
 from crewplane.artifacts.naming import node_state_relative_path
 from crewplane.cli.run.execution import execute_workflow_run
 from crewplane.core.config import MemorySettings
 from crewplane.core.execution_state import ResumeOrigin, ReviewCheckpointResumeSummary
+from crewplane.core.memory.models import digest_payload
 from crewplane.core.memory.packets import EvidencePacket
 from crewplane.core.preflight.source import load_workflow_source_for_preflight
 from tests.helpers.foreach import (
@@ -59,8 +62,9 @@ def test_verified_sources_tamper_rejection_and_saved_packet_reuse(tmp_path: Path
         capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
 
 
-def test_generated_evidence_omits_mismatched_node_expansion(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("corruption", ["expansion", "findings"])
+def test_generated_evidence_isolates_invalid_retained_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str
 ):
     root = tmp_path / "project"
     workflow = copy_foreach_fixture(root)
@@ -114,15 +118,136 @@ def test_generated_evidence_omits_mismatched_node_expansion(
     state_path = parent.stages_dir / node_state_relative_path(node.id)
     state = json.loads(state_path.read_bytes())
     assert state["expansion"] == node.expansion.model_dump(mode="json")
-    state["expansion"]["digest"] = "0" * 64
+    expected_qualifications = packet.qualifications
+    if corruption == "expansion":
+        state["expansion"]["digest"] = "0" * 64
+        atomic_write_json(state_path, state)
+        expected_receipts = packet.evidence[2:]
+        expected_qualifications = tuple(
+            value
+            for value in expected_qualifications
+            if not value.startswith(f"{node.id}: ")
+        )
+        expected_error = "node state identity mismatch"
+    else:
+        Path(packet.evidence[1].source_locator).unlink()
+        expected_receipts = (packet.evidence[0], *packet.evidence[2:])
+        expected_error = "findings artifact is unavailable"
+
+    packet = capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
+
+    assert [
+        receipt.model_dump(exclude={"captured_at"}) for receipt in packet.evidence
+    ] == [receipt.model_dump(exclude={"captured_at"}) for receipt in expected_receipts]
+    assert packet.qualifications == expected_qualifications
+    assert len(packet.omissions) == 1
+    assert node_ids[0] in packet.omissions[0]
+    assert expected_error in packet.omissions[0]
+    assert read_packet(parent.stages_dir) == packet
+
+
+def test_unexpected_artifact_failure_propagates_without_saving(tmp_path: Path):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    clear_packet(parent)
+
+    with (
+        patch(
+            "crewplane.artifacts.memory.evidence.read_verified_node_artifact",
+            side_effect=RuntimeError("artifact verifier failed"),
+        ),
+        pytest.raises(RuntimeError, match="artifact verifier failed"),
+    ):
+        capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
+
+    assert not (parent.stages_dir / "manifests/memory/evidence.json").exists()
+
+
+@pytest.mark.parametrize("field", ["run_id", "run_key_name", "workflow_signature"])
+def test_saved_packet_rejects_mismatched_plan_without_overwriting(
+    tmp_path: Path, field: str
+):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    packet_path = parent.stages_dir / "manifests/memory/evidence.json"
+    saved = packet_path.read_bytes()
+    plan = parent.plan.model_copy(update={field: "other"})
+
+    with pytest.raises(ValueError, match="Saved memory packet does not belong"):
+        capture_evidence(plan, parent.stages_dir, parent.results_dir)
+
+    assert packet_path.read_bytes() == saved
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("run_id", "other"), ("workflow_signature", "0" * 64), ("status", "cancelled")],
+)
+def test_capture_rejects_ineligible_manifest_without_saving(
+    tmp_path: Path, field: str, value: str
+):
+    _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
+    clear_packet(parent)
+    manifest_path = parent.stages_dir / "manifests/run.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest[field] = value
+    if field == "status":
+        manifest["cancel_reason"] = "cancelled before learning"
+    atomic_write_json(manifest_path, manifest)
+
+    with pytest.raises(NoEligibleEvidence, match="matching completed, non-cancelled"):
+        capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
+
+    assert not (parent.stages_dir / "manifests/memory/evidence.json").exists()
+
+
+@pytest.mark.parametrize("length", [4096, 4097])
+def test_receipt_preserves_unicode_excerpt_bounds_and_workspace_provenance(
+    tmp_path: Path, length: int
+):
+    _config, parent, original, _fixtures, _console = setup_parent(tmp_path)
+    clear_packet(parent)
+    node = parent.plan.nodes[0]
+    state_path = parent.stages_dir / node_state_relative_path(node.id)
+    state = json.loads(state_path.read_bytes())
+    payload = ("é" * length).encode("utf-8")
+    source = Path(original.evidence[0].source_locator)
+    source.write_bytes(payload)
+    descriptor = next(item for item in state["artifacts"] if item["kind"] == "output")
+    descriptor.update(
+        size_bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest()
+    )
+    state["workspace"] = {"z": "last", "a": "first"}
     atomic_write_json(state_path, state)
 
     packet = capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
 
-    assert [receipt.node_id for receipt in packet.evidence] == [node_ids[1]] * 2
-    assert len(packet.omissions) == 1
-    assert node_ids[0] in packet.omissions[0]
-    assert "node state identity mismatch" in packet.omissions[0]
+    assert len(packet.evidence) == 1
+    receipt = packet.evidence[0]
+    assert receipt.excerpt == "é" * 4096
+    assert (
+        receipt.excerpt_sha256 == hashlib.sha256(receipt.excerpt.encode()).hexdigest()
+    )
+    assert receipt.source_sha256 == descriptor["sha256"]
+    assert receipt.source_locator == source.as_posix()
+    assert (
+        receipt.evidence_id
+        == "e-"
+        + digest_payload(
+            {"node": node.id, "kind": "output", "source": descriptor["sha256"]}
+        )[:24]
+    )
+    assert receipt.observed_at == state["completed_at"]
+    assert receipt.captured_at == packet.captured_at
+    expected_limits = original.evidence[0].qualifications
+    if length > 4096:
+        expected_limits += (
+            "Excerpt includes only the first 4096 characters; original source SHA256 covers the complete retained artifact.",
+        )
+    assert receipt.qualifications == expected_limits
+    assert receipt.provenance == (
+        *original.evidence[0].provenance,
+        'Retained workspace provenance: {"a": "first", "z": "last"}',
+    )
+    assert read_packet(parent.stages_dir) == packet
 
 
 def test_missing_invocation_evidence_is_unknown_not_success_proof(tmp_path: Path):

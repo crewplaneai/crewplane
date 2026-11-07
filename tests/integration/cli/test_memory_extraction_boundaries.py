@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from crewplane.artifacts.locks import SameContextLock
-from crewplane.artifacts.memory.receipts import read_extraction
+from crewplane.artifacts.memory.receipts import (
+    ExtractionReceipt,
+    extraction_attempt,
+    read_extraction,
+)
 from crewplane.artifacts.memory.store import MemoryStore
 from crewplane.cli.memory import extraction
 from crewplane.cli.run.observability import WorkflowCancelledByUser
@@ -23,6 +27,122 @@ from tests.helpers.memory import lesson_document
 from tests.helpers.memory_processes import line, release, worker
 from tests.helpers.memory_runtime import setup_parent
 from tests.helpers.platforms import requires_posix
+
+
+@pytest.mark.parametrize("failure", ["provider", "timeout", "task", "user", "process"])
+@pytest.mark.parametrize("cleanup_confirmed", [False, True])
+@pytest.mark.parametrize("receipt_failure", [False, True])
+def test_exceptional_extraction_preserves_failure_precedence(
+    tmp_path: Path, monkeypatch, failure, cleanup_confirmed, receipt_failure
+):
+    config, parent, _packet, _fixtures, console = setup_parent(tmp_path)
+    errors = {
+        "provider": RuntimeError("provider failed"),
+        "timeout": TimeoutError("deadline expired"),
+        "task": asyncio.CancelledError("task cancelled"),
+        "user": WorkflowCancelledByUser(),
+        "process": ProcessDrainError(
+            ProcessDrainEvidence(123, 123, True, False), "not drained"
+        ),
+    }
+    error = errors[failure]
+    storage_error = OSError("receipt unavailable")
+    original = extraction.save_extraction
+
+    async def fail(*_args, **kwargs):
+        del _args
+        kwargs["artifact_locations"].cleanup_confirmed = cleanup_confirmed
+        raise error
+
+    def save(attempt, receipt):
+        if receipt_failure and receipt.provider_status != "not_started":
+            raise storage_error
+        original(attempt, receipt)
+
+    monkeypatch.setattr(extraction, "execute_workflow_run", fail)
+    monkeypatch.setattr(extraction, "save_extraction", save)
+    manifest = (parent.stages_dir / "manifests/run.json").read_bytes()
+    if not cleanup_confirmed:
+        with pytest.raises(extraction.ExtractionCleanupError) as captured:
+            asyncio.run(extraction.extract_memory(config, parent, console))
+        assert captured.value.__cause__ is error
+    elif failure in {"task", "user", "process"}:
+        with pytest.raises(type(error)) as captured:
+            asyncio.run(extraction.extract_memory(config, parent, console))
+        assert captured.value is error
+    elif receipt_failure:
+        with pytest.raises(OSError) as captured:
+            asyncio.run(extraction.extract_memory(config, parent, console))
+        assert captured.value is storage_error
+    else:
+        result = asyncio.run(extraction.extract_memory(config, parent, console))
+        status = "timeout" if failure == "timeout" else "failed"
+        assert result.message == f"Memory extraction {status}: {error}"
+        assert not result.candidates
+    receipt = read_extraction(parent.stages_dir)
+    assert receipt.provider_status == (
+        "not_started"
+        if receipt_failure
+        else "timeout"
+        if failure == "timeout"
+        else "failed"
+    )
+    if not receipt_failure:
+        assert receipt.cleanup_confirmed is (cleanup_confirmed and failure != "process")
+        assert receipt.lock_released is True
+    assert (parent.stages_dir / "manifests/run.json").read_bytes() == manifest
+
+
+@pytest.mark.parametrize("evidence_ids", [(), ("unknown",)])
+@pytest.mark.parametrize("receipt_failure", [False, True])
+def test_candidate_evidence_validation_rejects_before_import(
+    tmp_path: Path, monkeypatch, evidence_ids, receipt_failure
+):
+    _config, parent, packet, _fixtures, _console = setup_parent(tmp_path)
+    document = lesson_document(
+        LessonProposal(title="Lesson", body="Keep evidence.", evidence_ids=evidence_ids)
+    )
+    markdown = f"```crewplane-memory-candidates\n{document.model_dump_json()}\n```"
+    receipt = ExtractionReceipt(
+        packet_digest=packet.packet_digest,
+        provider_status="succeeded",
+        extraction_run_id="child",
+        manifest_committed=True,
+        cleanup_confirmed=True,
+        lock_released=True,
+        result_displayed=True,
+    )
+    importer = AsyncMock()
+    monkeypatch.setattr(extraction, "import_extraction", importer)
+    if receipt_failure:
+
+        def fail_save(_attempt, _receipt):
+            del _attempt, _receipt
+            raise OSError("receipt unavailable")
+
+        monkeypatch.setattr(extraction, "save_extraction", fail_save)
+
+    async def validate():
+        async with extraction_attempt(parent.stages_dir) as attempt:
+            return await extraction.validate_and_import(
+                parent, packet, receipt, markdown, attempt
+            )
+
+    if receipt_failure:
+        with pytest.raises(OSError, match="receipt unavailable"):
+            asyncio.run(validate())
+    else:
+        result = asyncio.run(validate())
+        assert result.message == (
+            "Memory candidate validation failed: Every extracted lesson must cite known host evidence IDs.. "
+            "Retry revalidates this retained result; use --regenerate explicitly for a new model call."
+        )
+        assert not result.candidates
+        retained = read_extraction(parent.stages_dir)
+        assert retained.validation_status == "failed"
+        assert retained.import_status == "not_attempted"
+    importer.assert_not_called()
+    assert not asyncio.run(MemoryStore(tmp_path).snapshot()).records
 
 
 @pytest.mark.parametrize("cancel", ["task", "user"])

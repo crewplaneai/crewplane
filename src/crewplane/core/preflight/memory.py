@@ -33,6 +33,20 @@ def append_memory_context(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> RenderPlan:
+    """Append frozen memory context for provider roles scheduled on this node.
+
+    Record each scheduled stream's selection in ``state.memory_selections``,
+    including empty selections. Append nonempty rendered selections as shared
+    literal fragments, preserving stream order and leaving unscheduled streams
+    unchanged.
+
+    Returns:
+        An updated render plan, or the original plan without changing state
+        when memory is disabled for the node.
+
+    Raises:
+        ValueError: If memory is enabled without a supplied memory snapshot.
+    """
     if not node.memory:
         return render_plan
     if options.memory_snapshot is None:
@@ -76,6 +90,23 @@ def _query_inputs(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> tuple[list[QueryContribution], list[QueryExclusion]]:
+    contributions = _identifier_contributions(node, options)
+    contributions.extend(_prompt_literal_contributions(node, role))
+    exclusions = []
+    for occurrence in iter_node_render_token_occurrences(node):
+        if occurrence.target_role == role:
+            contribution = _captured_contribution(occurrence, options, state)
+            if isinstance(contribution, QueryContribution):
+                contributions.append(contribution)
+            else:
+                exclusions.append(contribution)
+    return contributions, exclusions
+
+
+def _identifier_contributions(
+    node: WorkflowNode,
+    options: PreflightCompileOptions,
+) -> list[QueryContribution]:
     contributions = [QueryContribution(kind="identifier", source="node", text=node.id)]
     source = options.node_source_files.get(node.id)
     if source is not None:
@@ -89,6 +120,14 @@ def _query_inputs(
                 kind="identifier", source="workflow", text=source_path.as_posix()
             )
         )
+    return contributions
+
+
+def _prompt_literal_contributions(
+    node: WorkflowNode,
+    role: ProviderRole,
+) -> list[QueryContribution]:
+    contributions = []
     for index, segment in enumerate(node.prompt_segments):
         if role not in target_roles_for_segment(segment):
             continue
@@ -106,15 +145,7 @@ def _query_inputs(
                 text=" ".join(literals),
             )
         )
-    exclusions = []
-    for occurrence in iter_node_render_token_occurrences(node):
-        if occurrence.target_role == role:
-            contribution = _captured_contribution(occurrence, options, state)
-            if isinstance(contribution, QueryContribution):
-                contributions.append(contribution)
-            else:
-                exclusions.append(contribution)
-    return contributions, exclusions
+    return contributions
 
 
 def _captured_contribution(
