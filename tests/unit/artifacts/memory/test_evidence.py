@@ -38,6 +38,7 @@ from tests.helpers.foreach import (
 from tests.helpers.memory import evidence_receipt, initialize_memory
 from tests.helpers.memory_runtime import setup_parent
 from tests.helpers.mock_resume import write_executor_fixture
+from tests.helpers.platforms import requires_project_memory
 from tests.integration.cli.workflow_runner_support import mock_runner_config
 from tests.unit.artifacts.review_loop_status_support import (
     create_referenced_outputs,
@@ -50,6 +51,7 @@ def clear_packet(parent):
     (parent.stages_dir / "manifests/memory/evidence.json").unlink()
 
 
+@requires_project_memory
 def test_verified_sources_tamper_rejection_and_saved_packet_reuse(tmp_path: Path):
     _config, parent, packet, _fixtures, _console = setup_parent(tmp_path)
     source = Path(packet.evidence[0].source_locator)
@@ -63,6 +65,7 @@ def test_verified_sources_tamper_rejection_and_saved_packet_reuse(tmp_path: Path
 
 
 @pytest.mark.parametrize("corruption", ["expansion", "findings"])
+@requires_project_memory
 def test_generated_evidence_isolates_invalid_retained_sources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str
 ):
@@ -146,6 +149,7 @@ def test_generated_evidence_isolates_invalid_retained_sources(
     assert read_packet(parent.stages_dir) == packet
 
 
+@requires_project_memory
 def test_unexpected_artifact_failure_propagates_without_saving(tmp_path: Path):
     _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
     clear_packet(parent)
@@ -163,6 +167,7 @@ def test_unexpected_artifact_failure_propagates_without_saving(tmp_path: Path):
 
 
 @pytest.mark.parametrize("field", ["run_id", "run_key_name", "workflow_signature"])
+@requires_project_memory
 def test_saved_packet_rejects_mismatched_plan_without_overwriting(
     tmp_path: Path, field: str
 ):
@@ -181,6 +186,7 @@ def test_saved_packet_rejects_mismatched_plan_without_overwriting(
     ("field", "value"),
     [("run_id", "other"), ("workflow_signature", "0" * 64), ("status", "cancelled")],
 )
+@requires_project_memory
 def test_capture_rejects_ineligible_manifest_without_saving(
     tmp_path: Path, field: str, value: str
 ):
@@ -200,6 +206,7 @@ def test_capture_rejects_ineligible_manifest_without_saving(
 
 
 @pytest.mark.parametrize("length", [4096, 4097])
+@requires_project_memory
 def test_receipt_preserves_unicode_excerpt_bounds_and_workspace_provenance(
     tmp_path: Path, length: int
 ):
@@ -250,6 +257,7 @@ def test_receipt_preserves_unicode_excerpt_bounds_and_workspace_provenance(
     assert read_packet(parent.stages_dir) == packet
 
 
+@requires_project_memory
 def test_missing_invocation_evidence_is_unknown_not_success_proof(tmp_path: Path):
     _config, parent, _packet, _fixtures, _console = setup_parent(
         tmp_path, log_output=False
@@ -263,6 +271,7 @@ def test_missing_invocation_evidence_is_unknown_not_success_proof(tmp_path: Path
 
 
 @pytest.mark.parametrize("new_invocations", [False, True])
+@requires_project_memory
 def test_checkpoint_reuse_distinguishes_mixed_new_work(
     tmp_path: Path, new_invocations: bool
 ):
@@ -317,6 +326,7 @@ def test_checkpoint_reuse_distinguishes_mixed_new_work(
             capture_evidence(parent.plan, parent.stages_dir, parent.results_dir)
 
 
+@requires_project_memory
 def test_complete_unit_packing_and_mandatory_context_overflow(tmp_path: Path):
     _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
     evidence = tuple(
@@ -388,6 +398,7 @@ def test_structured_events_are_bounded_and_never_best_effort_skipped(
     assert "unknown" in node_invocation_qualifiers("node", evidence)[0]
 
 
+@requires_project_memory
 def test_partial_invocation_failure_is_preserved_despite_completed_node(tmp_path: Path):
     _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
     clear_packet(parent)
@@ -414,6 +425,7 @@ def test_partial_invocation_failure_is_preserved_despite_completed_node(tmp_path
     assert any("second_provider" in value for value in packet.evidence[0].provenance)
 
 
+@requires_project_memory
 def test_review_status_retains_unresolved_consensus_and_selected_hashes(tmp_path: Path):
     _config, parent, _packet, _fixtures, _console = setup_parent(tmp_path)
     node = parent.plan.nodes[0]

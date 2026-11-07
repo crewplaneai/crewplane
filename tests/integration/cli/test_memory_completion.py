@@ -28,8 +28,10 @@ from crewplane.runtime.agent.process.drain import (
 from crewplane.runtime.execution import execute_workflow
 from tests.helpers.memory_processes import line, release, worker
 from tests.helpers.memory_runtime import setup_parent
-from tests.helpers.platforms import requires_lock_recovery
+from tests.helpers.platforms import requires_lock_recovery, requires_project_memory
 from tests.integration.cli.workflow_runner_support import runner_workflow
+
+pytestmark = requires_project_memory
 
 
 @requires_lock_recovery

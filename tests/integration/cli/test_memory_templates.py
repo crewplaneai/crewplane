@@ -11,6 +11,7 @@ from crewplane.cli.app import app
 from crewplane.cli.memory.extraction import extraction_config, extraction_source
 from crewplane.cli.run.preflight import compile_workflow_preview
 from crewplane.cli.templates import discover_workflow_library_assets
+from tests.helpers.platforms import requires_project_memory
 from tests.helpers.project_memory import memory_config
 from tests.integration.cli.repeat_force_run_support import filesystem_snapshot
 
@@ -62,6 +63,7 @@ def test_internal_extraction_resource_is_readable_compiled_and_not_scaffolded(
     )
 
 
+@requires_project_memory
 def test_public_opt_in_example_requires_explicit_setup_and_advisory_stays_read_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

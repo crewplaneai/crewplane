@@ -17,7 +17,10 @@ from crewplane.artifacts.memory.store import (
 from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.memory.models import MemorySnapshot
 from tests.helpers.memory import accepted_snapshot, initialize_memory
+from tests.helpers.platforms import requires_project_memory
 from tests.unit.artifacts.memory.test_store import proposal
+
+pytestmark = requires_project_memory
 
 
 @pytest.mark.parametrize("kind", ["symlink", "hardlink", "directory", "fifo"])

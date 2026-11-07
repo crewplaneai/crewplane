@@ -8,7 +8,10 @@ import pytest
 from crewplane.artifacts.memory import store as storage
 from crewplane.artifacts.memory.locking import memory_lock
 from scripts.validation_policy import load_policy
+from tests.helpers.platforms import requires_project_memory
 from tests.unit.artifacts.memory.test_store import proposal
+
+pytestmark = requires_project_memory
 
 TIMEOUTS = load_policy().timeouts
 

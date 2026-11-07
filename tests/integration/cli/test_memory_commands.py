@@ -11,8 +11,10 @@ from crewplane.artifacts.memory.store import MemoryStore
 from crewplane.cli.app import app
 from crewplane.core.memory.candidates import LessonProposal
 from tests.helpers.memory import lesson_document
+from tests.helpers.platforms import requires_project_memory
 
 
+@requires_project_memory
 def test_explicit_commands_lifecycle_and_read_only_inspection(
     tmp_path: Path, monkeypatch
 ):
@@ -114,6 +116,7 @@ def test_invalid_manual_documents_do_not_initialize(
     assert not (tmp_path / ".crewplane").exists()
 
 
+@requires_project_memory
 def test_scripted_rejection_and_reimport_preserve_rejected_identity(
     tmp_path: Path, monkeypatch
 ):

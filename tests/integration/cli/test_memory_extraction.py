@@ -11,7 +11,10 @@ from crewplane.artifacts.memory.store import MemoryStore
 from crewplane.cli.memory.extraction import extract_memory
 from crewplane.core.memory.candidates import LessonProposal
 from tests.helpers.memory import lesson_document
-from tests.helpers.memory_runtime import setup_parent
+from tests.helpers.memory_runtime import extraction_timeout_on_invocation, setup_parent
+from tests.helpers.platforms import requires_project_memory
+
+pytestmark = requires_project_memory
 
 
 @pytest.mark.parametrize("log_output", [False, True])
@@ -104,22 +107,18 @@ def test_malformed_success_is_reused_until_explicit_regeneration(tmp_path: Path)
     assert read_packet(parent.stages_dir) == packet
 
 
-def test_extraction_timeout_and_provider_failure_preserve_parent(tmp_path: Path):
-    config, parent, _packet, fixtures, console = setup_parent(tmp_path)
+def test_extraction_timeout_and_provider_failure_preserve_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    config, parent, _packet, _fixtures, console = setup_parent(tmp_path)
     original = (parent.stages_dir / "manifests/run.json").read_bytes()
     failed = asyncio.run(extract_memory(config, parent, console))
     assert "failed" in failed.message
     assert read_extraction(parent.stages_dir).provider_status == "failed"
-    (fixtures / "extract.md").write_text(
-        "```crewplane-memory-candidates\n"
-        + lesson_document().model_dump_json()
-        + "\n```",
-        encoding="utf-8",
-        newline="\n",
-    )
-    config.settings.memory.extraction_timeout_seconds = 0.05
-    config.settings.integrations.invoker.options["delay_seconds"] = 1
-    timed = asyncio.run(extract_memory(config, parent, console))
+    with extraction_timeout_on_invocation(
+        monkeypatch, config.settings.memory.extraction_timeout_seconds
+    ):
+        timed = asyncio.run(extract_memory(config, parent, console))
     assert "timeout" in timed.message
     receipt = read_extraction(parent.stages_dir)
     assert receipt.provider_status == "timeout"

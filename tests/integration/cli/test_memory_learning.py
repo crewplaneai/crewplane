@@ -20,7 +20,10 @@ from crewplane.core.config import MemorySettings
 from crewplane.core.memory.candidates import LessonProposal
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.memory import initialize_memory, lesson_document
+from tests.helpers.platforms import requires_project_memory
 from tests.integration.cli.workflow_runner_support import mock_runner_config
+
+pytestmark = requires_project_memory
 
 
 def learning_project(tmp_path: Path, repeat: int | None = None, failed: bool = False):
