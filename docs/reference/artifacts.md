@@ -29,6 +29,9 @@ generated files intended for inspection or downstream handoff.
   preflight/
     fingerprint.key
   locks/
+  memory/                 # only after explicit memory init
+    store.json
+    store.lock
   execution-stages/
   execution-results/
 ```
@@ -57,6 +60,7 @@ Stage run contents can include:
 logs/events.ndjson
 logs/summary.md
 preflight/execution-plan.json
+preflight/memory-selection.json
 preflight/dependency-graph.json
 preflight/manifest.json
 preflight/metadata.json
@@ -68,6 +72,11 @@ preflight/static-files/*
 preflight/summary.md
 preflight/token-catalog.json
 manifests/run.json
+manifests/completion.json
+manifests/memory/evidence.json
+manifests/memory/extraction.lock
+manifests/memory/extraction.json
+manifests/memory/candidates.json
 manifests/nodes/*.json
 manifests/review-checkpoints/*.json
 <node-id>/logs/<provider>/*.log
@@ -149,6 +158,56 @@ config snapshots, and the `workflow_signature`.
 
 Runtime execution consumes compiled preflight artifacts and same-process secret
 handles. It does not re-read original `{{file:...}}` source paths.
+
+## Project Memory Records
+
+`.crewplane/memory/store.json` contains records with immutable lesson revisions,
+retained evidence and proposal identities, dispositions, acceptance metadata, and
+one current accepted pointer per record. `store.lock` is a persistent advisory
+lock; normal release never unlinks or replaces it. Only `memory init` creates
+these files. The mutable memory directory is excluded from source capture and
+file-token access, including aliases and allowlisted attempts.
+
+The store uses the shared schema version. Its actual serialized size is limited
+to 16 MiB; each record including retained revisions is limited to 32 KiB. Invalid
+or oversized state is rejected, not trimmed. See
+[Project memory](../guides/project-memory.md#retry-extraction-and-handle-failures)
+for uncertain publication and initialization handling.
+
+For enabled workflows, `preflight/memory-selection.json` records query
+contributions/exclusions, effective limits, policy revisions, selected
+record/revision/content/evidence identities, exact rendered context, rendered
+size, and omission explanations. It is present even for no-match/no-fit results;
+disabled workflows do not write it. The execution plan contains the corresponding
+typed selections, including frozen child templates. Plan/receipt disagreement
+blocks execution or reuse rather than consulting the current store for repair.
+
+For executed memory-enabled workflows, `manifests/completion.json` records
+completion facts when available, including in recall-only mode. This execution
+receipt binds the run/plan identity and outcome
+to confirmed manifest commit, cleanup, release by that execution-lock handle,
+and result display. Explicit extraction requires matching, safe completion
+evidence; a terminal manifest or an absent lock alone is insufficient. Missing,
+invalid, or unconfirmed completion evidence fails closed. This is not a learning
+receipt and does not change the parent terminal manifest. Failure to retain it
+skips automatic learning without changing the parent outcome.
+
+Post-run learning writes auxiliary files under the completed parent's
+`manifests/memory/`, separate from its immutable terminal outcome:
+
+- `evidence.json`: the bounded host packet, retained source/excerpt identities,
+  outcome limitations, provenance, and omissions; serialized size at most 64 KiB.
+- `extraction.json`: separate provider-execution, candidate-validation, and import
+  status, packet identity, and extraction-run reference.
+- `extraction.lock`: persistent per-parent attempt lock. Only its active owner
+  may publish extraction status; concurrent extraction commands are rejected
+  before reading or replacing another attempt's cleanup proof.
+- `candidates.json`: validated proposals and imported candidate identities.
+
+The extraction run has its own normal plan, manifests, results, and usage records.
+A node named `memory` still uses its ordinary stage/node-manifest paths; it does
+not collide with this reserved auxiliary directory. These records can contain
+sensitive task/output content. Forgetting a store record does not erase them.
 
 ## Manifests
 

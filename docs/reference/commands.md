@@ -9,6 +9,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | `crewplane onboarding` | Prepare real providers after the provider-free first run. |
 | `crewplane validate` | Check workflow/config validity and provider availability, including configured diagnostic probes. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
+| `crewplane memory` | Initialize, inspect, propose, extract, and explicitly review project-local lessons. |
 | `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
 
 ## Global Options
@@ -203,6 +204,55 @@ runs the whole workflow three times, one after another. Each run starts from
 the beginning. Crewplane stops if a run fails or is cancelled. `--force` does
 not add more runs. See
 [run a workflow more than once](../guides/running-workflows.md#run-a-workflow-more-than-once).
+
+## `crewplane memory`
+
+Run memory commands from the project root. They operate on
+`.crewplane/memory/store.json` and its persistent lock. Only `memory init`
+creates them. Inspection and review never invoke a provider; `extract` is an
+explicit separately recorded extraction workflow. For setup and the review
+interaction, see [Project memory](../guides/project-memory.md).
+
+| Command | Arguments/options | Behavior |
+| --- | --- | --- |
+| `memory init` | None | Initialize without overwriting records; finish a lock-only interrupted initialization. An existing store without its lock is an integrity error. |
+| `memory propose` | Optional `--file PATH` | Interactively author, or import a strict candidate JSON document containing zero to five human-authored pending lessons. Interactive proposal requires input and output terminals. Never accepts lessons. |
+| `memory list` | Optional `--pending` | List all retained revisions, or only pending revisions. |
+| `memory show RECORD_ID` | Record ID | Display complete revisions, evidence, candidate digests, predecessor identities, and the record state digest. |
+| `memory search QUERY` | `--max-records` (default `5`), `--max-chars` (default `8000`) | Inspect lexical accepted-memory selection. Both limits must be positive integers. |
+| `memory review` | Optional `--run PARENT_RUN_ID` | Inspect, edit, select acceptance/rejection, or defer pending candidates. No default consent; noninteractive execution leaves them pending. This filter uses the parent run ID, not the artifact key. |
+| `memory accept RECORD_ID` | Required `--revision`, `--digest`, `--expected-accepted` | Accept exactly the inspected candidate against its inspected predecessor. |
+| `memory reject RECORD_ID` | Required `--revision`, `--digest`, `--expected-accepted` | Explicitly reject that inspected candidate against the currently inspected accepted pointer, even if its original correction predecessor is stale. Defer is not rejection. |
+| `memory forget RECORD_ID` | Required `--state-digest` | Delete the inspected record, all revisions, retained evidence, and proposal-deduplication identities from the store. |
+| `memory extract` | Required `--run`; optional `--regenerate`, `--config PATH` | Extract from a completed parent selected by unambiguous run ID or exact artifact key. Uses the configured extractor and retained evidence. Config defaults to `.crewplane/config.yml`. |
+
+Copy identities from `memory show` or the proposal receipt. In the following
+syntax, replace uppercase placeholders with inspected values. Use the literal
+`none` for `--expected-accepted` when there is no accepted predecessor:
+
+```bash
+crewplane memory accept RECORD_ID --revision REVISION_ID --digest CANDIDATE_DIGEST --expected-accepted none
+crewplane memory reject RECORD_ID --revision REVISION_ID --digest CANDIDATE_DIGEST --expected-accepted ACCEPTED_REVISION_ID
+crewplane memory forget RECORD_ID --state-digest RECORD_STATE_DIGEST
+```
+
+For acceptance, `--expected-accepted` must match both the candidate's original
+predecessor and the record's current accepted pointer. For rejection, use the
+record's currently inspected pointer; a stale pending correction can be rejected
+without accepting or rebasing its content. Other stale revision, digest,
+disposition, or current-pointer checks fail without mutation.
+Do not automatically retry a rejected or uncertain acceptance. Forgetting does
+not erase existing plans, logs, backups, or active invocations; reimport creates
+a new pending candidate.
+
+`memory extract --run …` requires matching retained completion evidence for the
+parent, including confirmed cleanup and execution-lock release. Missing or
+unconfirmed completion receipts fail closed; an absent lock alone is not proof.
+It reuses a saved evidence packet and available canonical result. A malformed successful result is revalidated, not silently regenerated.
+`--regenerate` explicitly requests a new model attempt. Valid imports remain
+pending, and repeated import returns the existing proposal identity. Ordinary
+learning failures do not rewrite the parent outcome; unconfirmed extraction
+cleanup remains a fatal command-level condition.
 
 ## `crewplane cleanup workspaces`
 

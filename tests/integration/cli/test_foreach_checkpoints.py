@@ -20,6 +20,7 @@ from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.app import app
 from crewplane.cli.run.resume import artifact_valid_history_plan
 from crewplane.core.execution_state import RunManifest
+from crewplane.core.memory.candidates import LessonProposal
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.review_checkpoint import (
     ClosedReviewCheckpoint,
@@ -32,6 +33,7 @@ from tests.helpers.foreach import (
     workflow_document,
     write_workflow_document,
 )
+from tests.helpers.memory import accepted_snapshot, initialize_memory
 from tests.helpers.mock_resume import write_executor_fixture, write_mock_config
 from tests.helpers.platforms import requires_resume_support
 
@@ -197,6 +199,7 @@ def test_findings_producer_review_resume_retains_collection_constraint(
 
 
 @requires_resume_support
+@pytest.mark.parametrize("memory_enabled", [False, True])
 @pytest.mark.parametrize("shift_child_lines", [False, True])
 @pytest.mark.parametrize("literal", [False, True])
 @pytest.mark.parametrize(
@@ -214,9 +217,23 @@ def test_generated_review_checkpoint_resumes_only_unfinished_phases(
     expected_roles: list[str],
     shift_child_lines: bool,
     literal: bool,
+    memory_enabled: bool,
 ) -> None:
     root = tmp_path / "project"
     config, workflow = review_project(root, tmp_path / "fixtures", phase == "executors")
+    if memory_enabled:
+        payload, body = workflow_document(workflow)
+        payload["memory"] = True
+        write_workflow_document(workflow, payload, body)
+        settings = yaml.safe_load(config.read_bytes())
+        settings["settings"]["memory"] = {"learn": False}
+        config.write_text(yaml.safe_dump(settings), encoding="utf-8", newline="\n")
+        initialize_memory(
+            root,
+            accepted_snapshot(
+                LessonProposal(title="Review chunks", body="Check each chunk.")
+            ),
+        )
     if literal:
         payload, body = workflow_document(workflow)
         payload["nodes"][2]["items"] = [{"chunk": "a"}, {"chunk": "b"}]
@@ -284,6 +301,23 @@ def test_generated_review_checkpoint_resumes_only_unfinished_phases(
         and event["node_id"] == "chunks.i0.part.analyze"
         for event in events
     )
+    if memory_enabled:
+        plans = [
+            PreflightExecutionPlan.model_validate_json(
+                (run / "preflight/execution-plan.json").read_bytes()
+            )
+            for run in runs
+        ]
+        assert plans[0].foreach_templates[0].memory_selections
+        assert (
+            plans[0].foreach_templates[0].memory_selections
+            == plans[1].foreach_templates[0].memory_selections
+        )
+        reconstructed = reconstruct_expansions(plans[1], runs[1]).plan
+        assert any(
+            selection.node_id == "chunks.i1.part.analyze"
+            for selection in reconstructed.memory_selections
+        )
 
 
 @requires_resume_support

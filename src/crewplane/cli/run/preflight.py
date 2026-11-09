@@ -17,11 +17,14 @@ from crewplane.architecture.ports import (
     ArtifactStorePort,
 )
 from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.memory.selections import validate_memory_selection_receipt
+from crewplane.artifacts.memory.store import MemoryStore
 from crewplane.bootstrap import (
     RuntimeConfigSnapshotBuildResult,
     build_runtime_config_snapshot,
 )
-from crewplane.core.config import Config
+from crewplane.core.config import Config, require_memory_extractor
+from crewplane.core.memory.models import MemorySnapshot
 from crewplane.core.preflight import (
     PREFLIGHT_STATUS_FAILED,
     PreflightCompilationPreview,
@@ -81,6 +84,7 @@ def compile_workflow_preview(
     check_cli_availability: bool = False,
     which_fn: Callable[[str], str | None] | None = None,
     workspace_real_execution: bool = False,
+    runtime_variables: dict[str, str] | None = None,
 ) -> PreflightCompilationPreview:
     context = build_workflow_run_context(
         config, source, console, project_root, state_dir
@@ -114,6 +118,7 @@ def compile_workflow_preview(
         fingerprint_key_policy=fingerprint_key_policy,
         invoker_diagnostics=diagnostics,
         workspace_real_execution=workspace_real_execution,
+        runtime_variables=runtime_variables,
     )
 
 
@@ -218,7 +223,31 @@ def compile_preview(
     additional_validation_errors: tuple[str, ...] = (),
     invoker_diagnostics: InvokerDiagnostics = InvokerDiagnostics(),
     workspace_real_execution: bool = False,
+    runtime_variables: dict[str, str] | None = None,
 ) -> PreflightCompilationPreview:
+    return asyncio.run(
+        compile_preview_async(
+            context,
+            snapshot_result,
+            fingerprint_key_policy,
+            additional_validation_errors,
+            invoker_diagnostics,
+            workspace_real_execution,
+            runtime_variables,
+        )
+    )
+
+
+async def compile_preview_async(
+    context: WorkflowRunContext,
+    snapshot_result: RuntimeConfigSnapshotBuildResult,
+    fingerprint_key_policy: FingerprintKeyPolicy,
+    additional_validation_errors: tuple[str, ...] = (),
+    invoker_diagnostics: InvokerDiagnostics = InvokerDiagnostics(),
+    workspace_real_execution: bool = False,
+    runtime_variables: dict[str, str] | None = None,
+) -> PreflightCompilationPreview:
+    memory_snapshot, memory_diagnostics = await _load_memory_snapshot(context)
     workspace_check = collect_workspace_source_policy(
         config=context.config,
         workflow=inventory_workflow(context.source),
@@ -255,10 +284,32 @@ def compile_preview(
             additional_diagnostics=(
                 workspace_preflight_diagnostics(workspace_check)
                 + invoker_preflight_warning_diagnostics(invoker_diagnostics.warnings)
+                + memory_diagnostics
             ),
             workspace_source_snapshot=workspace_check.source_snapshot,
+            memory_snapshot=memory_snapshot,
+            runtime_variables=dict(runtime_variables or {}),
         ),
     )
+
+
+async def _load_memory_snapshot(
+    context: WorkflowRunContext,
+) -> tuple[MemorySnapshot | None, tuple[PreflightDiagnostic, ...]]:
+    if not any(node.memory for node in inventory_workflow(context.source).nodes):
+        return None, ()
+    try:
+        if context.config.settings.memory.learn:
+            require_memory_extractor(context.config)
+        return await MemoryStore(context.project_root).snapshot(), ()
+    except (OSError, ValueError) as exc:
+        return None, (
+            PreflightDiagnostic(
+                code=PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+                phase=PreflightDiagnosticPhase.VALIDATION,
+                message=f"Project memory preflight failed: {exc}",
+            ),
+        )
 
 
 def write_preflight_diagnostics(
@@ -353,4 +404,5 @@ def materialize_preflight_success(
         output.write_preflight_static_file(content_ref, payload)
     output.write_preflight_plan(plan)
     write_preflight_success_artifacts(output, plan)
+    validate_memory_selection_receipt(plan, output.stages_dir)
     return plan

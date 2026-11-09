@@ -20,6 +20,7 @@ from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .execution_nodes import compile_execution_node, nodes_with_graph_dependencies
 from .foreach.compilation import compilation_source, finish_foreach_preview
 from .foreach.prompts import with_collection_constraints
+from .memory import append_memory_context
 from .models import PreflightCompilationPreview
 from .plan_contract_artifacts import validate_artifact_contract_uniqueness
 from .plan_signatures import (
@@ -226,6 +227,7 @@ def _compile_preflight_inventory(
         dependency_graph=dependency_graph,
         nodes=nodes,
         value_fingerprints=value_fingerprints,
+        memory_selections=state.memory_selections,
     )
     return _build_preview(
         source,
@@ -247,6 +249,7 @@ def _compile_template_plan(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> tuple[list[RenderPlan], list[PreflightExecutionNode], list[DependencyEdge]]:
+    authored_nodes = {node.id: node for node in workflow.nodes}
     workflow = with_collection_constraints(workflow)
     render_plans: list[RenderPlan] = []
     nodes: list[PreflightExecutionNode] = []
@@ -264,6 +267,13 @@ def _compile_template_plan(
             append_dependency_edge(state, producer, node.id, artifact)
         render_plan = compile_render_plan(node, options, state)
         if render_plan is not None:
+            render_plan = append_memory_context(
+                authored_nodes[node.id],
+                render_plan,
+                config.settings.memory,
+                options,
+                state,
+            )
             render_plans.append(render_plan)
         nodes.append(
             compile_execution_node(
@@ -303,6 +313,7 @@ def _build_preview(
         execution_order=execution_order,
         nodes=resolved_nodes,
         render_plans=resolved_render_plans,
+        memory_selections=state.memory_selections,
         static_resources=state.static_resources,
         workspace_file_locators=state.workspace_file_locators,
         token_catalog=state.token_catalog,
@@ -334,6 +345,13 @@ def _collect_validation_diagnostics(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> None:
+    if any(node.memory for node in workflow.nodes) and options.memory_snapshot is None:
+        append_diagnostic(
+            state,
+            PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+            PreflightDiagnosticPhase.VALIDATION,
+            "Opted-in compilation requires a supplied memory snapshot.",
+        )
     extend_diagnostics(
         state, collect_preflight_workflow_reference_diagnostics(workflow)
     )

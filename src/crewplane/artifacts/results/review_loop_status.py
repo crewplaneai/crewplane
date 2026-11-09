@@ -198,6 +198,7 @@ def validate_status_metadata(
 def resolve_status_outputs(
     payload: dict[str, object],
     stage_dir: Path,
+    max_output_bytes: int | None = None,
 ) -> tuple[
     tuple[ReviewLoopStatusEntry, ...],
     tuple[ReviewLoopStatusEntry, ...],
@@ -207,12 +208,14 @@ def resolve_status_outputs(
         "canonical_executor_outputs",
         ProviderRole.EXECUTOR,
         stage_dir,
+        max_output_bytes,
     )
     reviewer_outputs = parse_status_entries(
         payload,
         "reviewer_outputs",
         ProviderRole.REVIEWER,
         stage_dir,
+        max_output_bytes,
     )
     return canonical_outputs, reviewer_outputs
 
@@ -270,12 +273,15 @@ def parse_status_entries(
     field_name: str,
     expected_role: ProviderRole,
     stage_dir: Path,
+    max_output_bytes: int | None = None,
 ) -> tuple[ReviewLoopStatusEntry, ...]:
     raw_entries = payload.get(field_name)
     if not isinstance(raw_entries, list):
         raise status_error(f"{field_name} must be a list")
     return tuple(
-        parse_status_entry(raw_entry, field_name, index, expected_role, stage_dir)
+        parse_status_entry(
+            raw_entry, field_name, index, expected_role, stage_dir, max_output_bytes
+        )
         for index, raw_entry in enumerate(raw_entries)
     )
 
@@ -286,6 +292,7 @@ def parse_status_entry(
     index: int,
     expected_role: ProviderRole,
     stage_dir: Path,
+    max_output_bytes: int | None = None,
 ) -> ReviewLoopStatusEntry:
     if not isinstance(raw_entry, dict):
         raise status_error(f"{field_name}[{index}] must be an object")
@@ -314,7 +321,9 @@ def parse_status_entry(
     output_file = resolve_status_output_file(
         stage_dir, relative_path, field_name, index
     )
-    payload = read_contained_bytes(output_file.parent, output_file.name)
+    payload = read_contained_bytes(
+        output_file.parent, output_file.name, max_output_bytes
+    )
     if len(payload) != size_bytes or hashlib.sha256(payload).hexdigest() != sha256:
         raise status_error(f"{field_name}[{index}] bytes do not match its descriptor")
     return ReviewLoopStatusEntry(

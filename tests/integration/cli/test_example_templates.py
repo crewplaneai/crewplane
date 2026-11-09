@@ -29,6 +29,7 @@ from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.memory import initialize_memory
 from tests.helpers.platforms import requires_workspace_support
 
 LEGACY_PROMPT_FIELDS = {"prompt_arg", "quota_parser", "stdin_prompt_arg", "use_stdin"}
@@ -255,6 +256,9 @@ def test_initialized_workflow_compiles(
             config.agents[provider.provider] = config.agents["mock"].model_copy(
                 deep=True
             )
+    if any(node.memory for node in workflow.nodes):
+        initialize_memory(root)
+        config.settings.memory.extractor = "mock"
     preview = workflow_runner.compile_workflow_preview(
         config=config,
         source=source,

@@ -13,7 +13,7 @@ from .stream_capture import ProcessOutputCapture
 
 
 async def wait_for_owned_task[Result](
-    task: asyncio.Task[Result],
+    task: asyncio.Future[Result],
     cancellation: asyncio.CancelledError | None = None,
 ) -> asyncio.CancelledError | None:
     """Await settlement without cancelling the worker or raising its error.

@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.core.workspace.policy import PROJECT_ROOT_WORKTREE_SELECTOR
 
 from ..models import WorkflowNode
+from ..normalization import resolve_memory_default
 from .models import ComposedNode, CompositionContext, NodeSpec
 from .rewrites import (
     qualify_id,
@@ -50,6 +51,9 @@ def compose_local_node(
                 node_payload.items, context.namespace_prefix, context.bound_input_nodes
             )
     elif node_payload.mode != "input":
+        updates["memory"] = resolve_memory_default(
+            node_payload.memory, context.memory_default
+        )
         resolved_segments, consumed_params = rewrite_prompt_segments(
             node_payload.prompt_segments,
             namespace_prefix=context.namespace_prefix,
