@@ -54,11 +54,15 @@ make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
 
-For code changes, run focused tests during development and `make check` before
-handoff. Documentation-only changes require checks of affected links, paths,
-commands, and examples. Run the additional automation or packaging checks below
-when the changed files affect those areas. Use `make format` when formatting
-needs correction; it modifies files and is separate from the validation gate.
+For code changes, run focused tests for the affected behavior and its consumers.
+Use `make check` when focused checks cannot cover the change's impact or when
+reproducing the full development checks. CI and release gates still apply.
+
+For prose-only documentation changes, inspect affected links, paths, commands,
+and examples without running application tests. Validate executable examples
+and workflow templates according to their behavior. Run additional automation
+or packaging checks below when those areas are affected. Use `make format` when
+formatting needs correction; it modifies files.
 
 ### Test suite contract
 
@@ -130,8 +134,11 @@ when the Homebrew formula checksum has been regenerated for the source archive.
 ## Repository Automation
 
 GitHub Actions, issue templates, label automation, and community files are
-tailored for the public `crewplane` repository. Use the same entry points
-locally and in CI:
+tailored for the public `crewplane` repository. The commands below cover full
+repository-automation validation. For local changes, select checks for the
+affected files and behavior: use `make actionlint` for workflow definitions and
+applicable pre-commit hooks for changed files. Run `make check` when the broader
+checks described in [Local Workflows](#local-workflows) are needed:
 
 ```bash
 make setup
@@ -245,7 +252,7 @@ of truth for shipped provider models. Verify changes against the provider
 documentation linked there and preserve intentional omissions. Existing project
 configs and workflow overrides retain their values.
 
-Run `make provider-defaults-check`, then `make check`; model changes should
+Run `make provider-defaults-check`; model changes should
 require no synchronized test edits. Use the [package checks](#local-workflows)
 to validate distributions. These checks do not verify live model access.
 
@@ -467,7 +474,7 @@ Follow the canonical [coding standards](AGENTS.md#coding-standards) and
 
 When changing agent behavior rules, verify the change with a representative
 task in a fresh session. Confirm that the intended instructions load and the
-expected checks run. Revise rules in response to observed failures, and remove
+checks match the task scope. Revise rules in response to observed failures, and remove
 obsolete or duplicated guidance. Record any behavior that could not be verified
 in the handoff.
 
@@ -482,7 +489,7 @@ runtime contracts.
 2. Register an alias in `src/crewplane/architecture/registry.py` or use a dotted path override in config.
 3. Add adapter behavior tests under `tests/integration/adapters/`.
 4. Add architecture wiring tests under `tests/integration/architecture/`.
-5. Run focused adapter and architecture tests, then `make check`.
+5. Run focused adapter and architecture tests.
 
 ### CLI capability packages
 

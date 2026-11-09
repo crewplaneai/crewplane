@@ -124,21 +124,23 @@ inputs separate from shared defaults. Derive related CI job limits from phase
 budgets plus setup/cleanup allowances; the policy-loading job alone needs an
 independent bootstrap limit before it can read the file.
 
-When setup is needed, run `make setup` from the repository root.
+- Skip tests, dependency installation, and application builds for prose-only
+  documentation or agent-instruction work (including review), planning, and
+  general codebase exploration or research.
+- For code, refactor, test, or fixture changes, run the smallest relevant tests,
+  including affected consumers. Classify examples, templates, workflows, and
+  configuration by execution impact, regardless of file extension.
+- During code review or bug investigation, run targeted tests only when needed
+  to reproduce a defect or resolve a concrete behavior question.
+- Do not run broad validation by default, including `make check` or unscoped
+  `make test`. Broaden only for an explicit request for that scope, a procedure
+  requiring that local gate, or a concrete impact that narrower checks cannot
+  adequately verify; explain why. Preserve required CI and release checks.
+- Reuse successful results while relevant inputs and environment are unchanged.
+  Rerun affected checks after relevant changes, not solely for review or handoff.
 
-For code changes, run focused tests during development and `make check` before
-handoff. Run additional [repository-automation checks](DEVELOPMENT.md#repository-automation)
-or [package checks](DEVELOPMENT.md#release-workflow) when the change affects
-those areas. For documentation-only changes, verify affected links, paths,
-commands, and examples. The [command reference](DEVELOPMENT.md#local-workflows)
-identifies checks and commands that modify files.
-
-Review the final diff for correctness and unintended changes. Report the checks
-performed, their results, and anything left unverified.
-
-Use the [mock invoker validation flow](DEVELOPMENT.md#mock-invoker-local-validation)
-for local orchestration checks. Confirm artifact contents and, when affected,
-manifest dedupe behavior against the intended `workflow_signature` rules.
+Use the [focused-test commands](DEVELOPMENT.md#testing-expectations). Review the
+final diff and report check results, intentional skips, and material gaps.
 
 ## Documentation Expectations
 
