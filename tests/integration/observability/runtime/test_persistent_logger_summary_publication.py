@@ -13,7 +13,6 @@ from crewplane.observability.events import (
 )
 from crewplane.observability.persistent import (
     render_run_summary_markdown,
-    render_run_summary_terminal,
 )
 from crewplane.observability.run_summary.models import (
     RunSummary,
@@ -24,6 +23,7 @@ from crewplane.observability.types import (
 )
 from tests.helpers.observability import (
     make_execution_event,
+    render_summary_terminal,
     topology_from_workflow,
 )
 from tests.integration.observability.runtime.observability_runtime_helpers import (
@@ -69,7 +69,7 @@ def test_refresh_summary_reloads_exact_totals_from_disk(tmp_path: Path) -> None:
     assert aggregate.input == 7
     assert aggregate.output == 3
     assert summary.workflow_status == "failed"
-    terminal = render_run_summary_terminal(summary)
+    terminal = render_summary_terminal(summary)
     assert "Provider-reported tokens: 10 across 2 reports" in terminal
 
 
@@ -226,4 +226,4 @@ def test_exact_summary_wins_over_late_bounded_stop_write(tmp_path: Path) -> None
     assert final_aggregate is not None
     assert final_aggregate.total == 10
     summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-    assert "Provider-reported tokens: 10 across 1 reports" in summary_text
+    assert "| Provider-reported tokens | 10 across 1 reports |" in summary_text

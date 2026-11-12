@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from io import StringIO
 from typing import Any
+
+from rich.console import Console
 
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.observability.events import (
@@ -17,6 +20,8 @@ from crewplane.observability.events import (
     workflow_event,
     workspace_event,
 )
+from crewplane.observability.run_summary.models import RunSummary
+from crewplane.observability.run_summary.terminal import render_run_summary_terminal
 from crewplane.observability.types import (
     TopologyNode,
     TopologyProvider,
@@ -118,3 +123,12 @@ def topology_from_workflow(workflow: WorkflowPlan) -> WorkflowTopology:
             for node in workflow.nodes
         ),
     )
+
+
+def render_summary_terminal(summary: RunSummary, width: int = 120) -> str:
+    stream = StringIO()
+    console = Console(file=stream, width=width, force_terminal=False, color_system=None)
+    console.print(
+        render_run_summary_terminal(summary, console), markup=False, highlight=False
+    )
+    return stream.getvalue()

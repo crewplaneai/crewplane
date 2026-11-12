@@ -1,425 +1,469 @@
+"""Render run reports as LF-separated Markdown without writing artifacts.
+
+Section renderers escape dynamic text and omit a trailing newline. Table cells
+and details markup must already be prepared by callers.
+"""
+
 from __future__ import annotations
 
-from crewplane.architecture.contracts.run_summary import run_summary_header_lines
+import re
+from collections.abc import Sequence
+from html import escape
 
+from crewplane.architecture.contracts.run_summary import run_summary_header_lines
+from crewplane.observability.log_presentation.sanitize import sanitize_text
+from crewplane.observability.text_layout import fit_text, pad_text
+
+from . import models as _models
+from . import workspace_markdown as _workspace_markdown
 from .formatting import (
+    ISSUE_LIMIT,
+    call_identity,
+    format_call_duration,
     format_cost,
     format_count,
-    format_provider_token_aggregate_lines,
+    format_duration,
     format_provider_tokens,
     format_visible_estimate,
+    invocation_coverage_label,
     invocation_label,
+    selected_stages,
+    selected_timings,
+    stage_counts_label,
+    stage_status,
 )
-from .models import RunSummary, WorkspaceInvocationSummary, WorkspacePlanSummary
+from .markdown_links import artifact_link, markdown_text
+from .models import (
+    InvocationTimingSummary,
+    InvocationUsageSummary,
+    NodeOutcomeSummary,
+    ProviderTokenAggregate,
+    RunSummary,
+)
 from .spend import spend_overview_rows
+
+ATTENTION_MESSAGE_LIMIT = 400
+TIMING_IDENTITY_WIDTH = 36
+TIMING_PROVIDER_WIDTH = 28
+TIMING_STATUS_WIDTH = 10
+TIMING_BAR_WIDTH = 20
+
+
+workspace_markdown_lines = _workspace_markdown.workspace_markdown_lines
+workspace_rendered_file_label = _workspace_markdown.workspace_rendered_file_label
+workspace_invocation_line = _workspace_markdown.workspace_invocation_line
+workspace_source_label = _workspace_markdown.workspace_source_label
+worktree_contract_label = _workspace_markdown.worktree_contract_label
+plan_worktree_contract_label = _workspace_markdown.plan_worktree_contract_label
+child_environment_label = _workspace_markdown.child_environment_label
+workspace_execution_label = _workspace_markdown.workspace_execution_label
+workspace_setup_label = _workspace_markdown.workspace_setup_label
+workspace_reuse_label = _workspace_markdown.workspace_reuse_label
+workspace_snapshot_drift_label = _workspace_markdown.workspace_snapshot_drift_label
+workspace_branch_export_label = _workspace_markdown.workspace_branch_export_label
+workspace_result_label = _workspace_markdown.workspace_result_label
+workspace_bundle_label = _workspace_markdown.workspace_bundle_label
+detail = _workspace_markdown.detail
+bool_label = _workspace_markdown.bool_label
+seconds_label = _workspace_markdown.seconds_label
+joined_optional = _workspace_markdown.joined_optional
+comma_optional = _workspace_markdown.comma_optional
+compact = _workspace_markdown.compact
+workspace_links = _workspace_markdown.workspace_links
+WorkspaceInvocationSummary = _models.WorkspaceInvocationSummary
+WorkspacePlanSummary = _models.WorkspacePlanSummary
 
 
 def render_run_summary_markdown(summary: RunSummary) -> str:
-    """Render a complete persisted run summary as Markdown."""
-
-    lines = [
-        f"{line}\n"
-        for line in run_summary_header_lines(
+    """Return a compact report with closed evidence details and one final LF."""
+    header = "\n".join(
+        run_summary_header_lines(
             summary.workflow_name, summary.run_id, summary.workflow_status
         )
+    )
+    sections = [
+        header,
+        "## Overview\n\n" + overview_markdown(summary),
+        "## Needs attention\n\n" + attention_markdown(summary),
+        "## Stages\n\n" + stages_markdown(summary, selected_stages(summary)),
+        "## Spend Observability\n\n" + spend_markdown(summary),
+        "## Agent call durations\n\n" + timing_chart_markdown(summary),
+        "## Results and reports\n\n" + results_markdown(summary),
+        details(
+            "Invocation usage and timing details", invocation_details_markdown(summary)
+        ),
+        details(
+            "Workspace Observability",
+            "".join(workspace_markdown_lines(summary)) + workspace_links(summary),
+        ),
     ]
+    if len(summary.issues) > ISSUE_LIMIT:
+        sections.append(
+            details(
+                "All retained issues",
+                "".join(issue_markdown_lines(summary)),
+                "retained-issues",
+            )
+        )
+    if len(summary.node_outcomes) > len(selected_stages(summary)):
+        sections.append(
+            details(
+                "Complete stage table",
+                stages_markdown(summary, summary.node_outcomes),
+                "all-stages",
+            )
+        )
+    sections.append(
+        details(
+            "Artifact References", "".join(artifact_reference_markdown_lines(summary))
+        )
+    )
+    return "\n\n".join(sections) + "\n"
+
+
+def table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> str:
+    """Join pre-escaped cells into a Markdown table without a trailing LF."""
+    return "\n".join(
+        [
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+            *("| " + " | ".join(row) + " |" for row in rows),
+        ]
+    )
+
+
+def details(title: str, content: str, anchor: str | None = None) -> str:
+    """Wrap trusted markup in closed details, stripping content's trailing space."""
+    prefix = f'<a id="{anchor}"></a>\n\n' if anchor is not None else ""
+    return f"{prefix}<details>\n<summary>{title}</summary>\n\n{content.rstrip()}\n\n</details>"
+
+
+def overview_markdown(summary: RunSummary) -> str:
+    """Render escaped overview values, using n/a for unavailable metrics."""
+    overall = summary.provider_token_aggregates.overall
+    spend = summary.spend
+    tokens = (
+        f"{format_count(overall.total)} across {overall.report_count} reports"
+        if overall is not None
+        else "n/a (no provider reports captured)"
+    )
+    values = [
+        ("Elapsed", format_duration(summary.elapsed_seconds)),
+        ("Started", summary.started_at),
+        ("Completed", summary.completed_at),
+        ("Stages", stage_counts_label(summary)),
+        ("Calls observed", format_count(summary.invocation_count)),
+        ("Recorded attempts", format_count(spend.total_attempts if spend else None)),
+        ("Usage coverage", invocation_coverage_label(summary)),
+        ("Provider-reported tokens", tokens),
+        (
+            "Visible-text estimate (lower-bound)",
+            format_count(spend.visible_estimate_tokens if spend else None),
+        ),
+        (
+            "Configured cost estimate",
+            f"{format_cost(spend.configured_cost_usd)} (confidence: {spend.configured_cost_confidence})"
+            if spend
+            else "n/a (confidence: none)",
+        ),
+    ]
+    return table(
+        ("Metric", "Value"), [(label, markdown_text(value)) for label, value in values]
+    )
+
+
+def attention_markdown(summary: RunSummary) -> str:
+    """Bound escaped issue previews while retaining complete long messages."""
+    lines = []
+    has_long_message = False
     if summary.review_consensus_unresolved:
-        lines.append("- Review consensus: unresolved; continued after exhaustion\n")
-    lines.extend(
-        [
-            f"- Started: {summary.started_at}\n",
-            f"- Completed: {summary.completed_at}\n",
-        ]
-    )
-    if summary.elapsed_label is not None:
-        lines.append(f"- Elapsed: {summary.elapsed_label}\n")
-    lines.append("\n## Spend Observability\n\n")
-    lines.extend(spend_markdown_lines(summary))
-    lines.append("\n## Node Outcomes\n\n")
-    lines.extend(node_outcome_markdown_lines(summary))
-    lines.append("\n## Workspace Observability\n\n")
-    lines.extend(workspace_markdown_lines(summary))
-    lines.append("\n## Warnings and Errors\n\n")
-    lines.extend(issue_markdown_lines(summary))
-    lines.append("\n## Artifact References\n\n")
-    lines.extend(artifact_reference_markdown_lines(summary))
-    return "".join(lines)
-
-
-def spend_markdown_lines(summary: RunSummary) -> list[str]:
-    lines = exact_provider_token_markdown_lines(summary)
-    if summary.spend is None:
-        return lines or ["No spend observability captured.\n"]
-
-    lines.extend(
-        [
-            f"- {row.label}: {row.markdown_value()}\n"
-            for row in spend_overview_rows(summary.spend)
-        ]
-    )
-    if summary.omitted_invocation_usage_count > 0:
-        lines.append(invocation_usage_retention_line(summary))
-
-    for invocation_usage in summary.invocation_usages:
-        details = [
-            f"captured: {'yes' if invocation_usage.cli_captured else 'no'}",
-            f"output extraction: {invocation_usage.output_extraction_status}",
-            f"provider report: {invocation_usage.provider_usage_status}",
-            f"attempts: {invocation_usage.attempt_count}",
-            f"visible estimate: {format_visible_estimate(invocation_usage)}",
-            f"configured cost: {format_cost(invocation_usage.configured_cost_usd)}",
-            f"confidence: {invocation_usage.invocation_cost_confidence}",
-        ]
-        if invocation_usage.provider_usage_report_count is not None:
-            details.append(
-                f"provider report count: {invocation_usage.provider_usage_report_count}"
+        lines.append(
+            "- Review consensus: unresolved; execution continued after consensus exhaustion or a no-progress stop."
+        )
+    for issue in summary.issues[:ISSUE_LIMIT]:
+        message = markdown_text(issue.message)
+        if len(message) > ATTENTION_MESSAGE_LIMIT:
+            has_long_message = True
+            message = (
+                message[:ATTENTION_MESSAGE_LIMIT]
+                + "... (complete message in retained issues below)"
             )
-        details.append(
-            "provider tokens: "
-            f"{format_provider_tokens(invocation_usage.provider_tokens)}"
+        lines.append(f"- {message}")
+    omitted = len(summary.issues) - ISSUE_LIMIT
+    if omitted > 0:
+        lines.append(
+            f"- {omitted} more retained issues in [all retained issues](#retained-issues)."
         )
-        if invocation_usage.usage_parse_error is not None:
-            details.append(f"usage parse error: {invocation_usage.usage_parse_error}")
-        if invocation_usage.failure_kind is not None:
-            details.append(f"failure: {invocation_usage.failure_kind}")
-        label = invocation_label(
-            node_id=invocation_usage.node_id,
-            task_id=invocation_usage.task_id,
-            audit_round_num=invocation_usage.audit_round_num,
-            round_num=invocation_usage.round_num,
+    # Long messages need their full evidence even when the list itself is short.
+    if has_long_message and omitted <= 0:
+        lines.append(
+            details("Complete retained issues", "".join(issue_markdown_lines(summary)))
         )
-        lines.append(f"- {label}: {'; '.join(details)}\n")
-    return lines
+    return "\n".join(lines) if lines else "No warnings or errors recorded."
 
 
-def exact_provider_token_markdown_lines(summary: RunSummary) -> list[str]:
-    aggregates = summary.provider_token_aggregates
-    if aggregates.overall is None:
-        return []
-    lines = [
-        f"- {line}\n"
-        for line in format_provider_token_aggregate_lines(aggregates.overall)
+def stages_markdown(summary: RunSummary, nodes: tuple[NodeOutcomeSummary, ...]) -> str:
+    """Render selected stages in supplied order, with escaped labels and links."""
+    if not nodes:
+        return (
+            "No node state captured."
+            if summary.node_counts is None
+            else "No stages recorded."
+        )
+    rows = [
+        (
+            markdown_text(node.node_id),
+            markdown_text(stage_status(node)),
+            format_duration(node.duration_seconds),
+            artifact_link(summary, node.result_path, "result")
+            if node.result_path is not None
+            else "not produced",
+        )
+        for node in nodes
     ]
-    for aggregate in aggregates.providers:
-        if aggregate.provider is None:
-            continue
-        lines.append(f"- Provider `{aggregate.provider}`:\n")
-        lines.extend(
-            f"  - {line}\n"
-            for line in format_provider_token_aggregate_lines(
-                aggregate,
-                label="Provider-reported tokens",
-            )
+    result = table(("Stage", "Execution", "Duration", "Result"), rows)
+    omitted = len(summary.node_outcomes) - len(nodes)
+    if omitted:
+        result += (
+            f"\n\n{omitted} more stages in the [complete stage table](#all-stages)."
         )
-    return lines
+    return result
+
+
+def spend_markdown(summary: RunSummary) -> str:
+    """Render usage, token, and provider tables in order, then retention notes."""
+    sections = [_spend_overview_markdown(summary)]
+    if tokens := _provider_tokens_markdown(summary):
+        sections.append(tokens)
+    if summary.provider_rollups:
+        sections.append(_provider_rollups_markdown(summary))
+    sections.append(
+        "Provider buckets are reported independently; cached input and reasoning are not added to totals. Visible-text estimates are separate lower bounds, not provider-reported usage."
+    )
+    if summary.omitted_invocation_usage_count:
+        sections.append(invocation_usage_retention_line(summary))
+    return "\n\n".join(sections)
+
+
+def _spend_overview_markdown(summary: RunSummary) -> str:
+    if summary.spend is None:
+        return "No spend observability captured."
+    return table(
+        ("Usage metric", "Recorded value"),
+        [
+            (row.label, markdown_text(row.markdown_value()))
+            for row in spend_overview_rows(summary.spend)
+        ],
+    )
+
+
+def _provider_tokens_markdown(summary: RunSummary) -> str:
+    aggregates = summary.provider_token_aggregates
+    rows = [
+        _provider_token_row(aggregate)
+        for aggregate in (
+            (aggregates.overall,) if aggregates.overall is not None else ()
+        )
+        + aggregates.providers
+    ]
+    if not rows:
+        return ""
+    return table(
+        (
+            "Provider",
+            "Reports",
+            "Input",
+            "Cached input",
+            "Cache write",
+            "Output",
+            "Reasoning",
+            "Total",
+        ),
+        rows,
+    )
+
+
+def _provider_token_row(aggregate: ProviderTokenAggregate) -> tuple[str, ...]:
+    return (
+        markdown_text(aggregate.provider or "Overall"),
+        str(aggregate.report_count),
+        format_count(aggregate.input),
+        format_count(aggregate.cached_input),
+        format_count(aggregate.cache_write),
+        format_count(aggregate.output),
+        format_count(aggregate.reasoning),
+        format_count(aggregate.total),
+    )
+
+
+def _provider_rollups_markdown(summary: RunSummary) -> str:
+    return table(
+        (
+            "Provider",
+            "Usage calls / recorded attempts",
+            "CLI captured",
+            "Full / partial / malformed",
+            "Visible estimate (lower-bound)",
+            "Configured cost / confidence",
+        ),
+        [
+            (
+                markdown_text(rollup.provider),
+                f"{rollup.terminal_invocations} / {rollup.total_attempts}",
+                str(rollup.cli_captured_invocations),
+                f"{rollup.provider_usage_full_invocations} / {rollup.provider_usage_partial_invocations} / {rollup.provider_usage_malformed_invocations}",
+                format_count(rollup.visible_estimate_tokens),
+                f"{format_cost(rollup.configured_cost_usd)} / {rollup.configured_cost_confidence}",
+            )
+            for rollup in summary.provider_rollups
+        ],
+    )
+
+
+def timing_chart_markdown(summary: RunSummary) -> str:
+    """Render longest calls in a safe text fence; unknown durations have no bar."""
+    rows = selected_timings(summary)
+    if not rows:
+        return "No invocation timing captured."
+    longest = max((row.duration_ms or 0 for row in rows), default=0)
+    chart = "\n".join(_timing_chart_line(row, longest) for row in rows)
+    fence = "`" * max(
+        3,
+        max((len(match.group()) + 1 for match in re.finditer(r"`+", chart)), default=0),
+    )
+    result = f"Longest recorded calls. Individual durations may overlap; bars are not a workflow timeline or elapsed time.\n\n{fence}text\n{chart}\n{fence}"
+    omitted = len(summary.invocation_timings) - len(rows)
+    if omitted:
+        result += f"\n\n{omitted} more calls in invocation timing details below."
+    return result
+
+
+def _timing_chart_line(row: InvocationTimingSummary, longest: int) -> str:
+    identity = fit_text(
+        " ".join(escape(sanitize_text(call_identity(row)), quote=False).splitlines()),
+        TIMING_IDENTITY_WIDTH,
+    )
+    provider_model = fit_text(
+        " ".join(
+            escape(
+                sanitize_text(f"{row.provider} / {row.model or 'n/a'}"), quote=False
+            ).splitlines()
+        ),
+        TIMING_PROVIDER_WIDTH,
+    )
+    bar_length = (
+        round(TIMING_BAR_WIDTH * row.duration_ms / longest)
+        if longest and row.duration_ms is not None
+        else 0
+    )
+    return f"{pad_text(identity, TIMING_IDENTITY_WIDTH)}  {pad_text(provider_model, TIMING_PROVIDER_WIDTH)}  {pad_text(row.status, TIMING_STATUS_WIDTH)}  {pad_text('#' * bar_length, TIMING_BAR_WIDTH)} {format_call_duration(row.duration_ms)}"
+
+
+def results_markdown(summary: RunSummary) -> str:
+    """List available results in stage order, followed by report and event links."""
+    lines = [
+        f"- {markdown_text(node.node_id)}: {artifact_link(summary, node.result_path, 'result')}"
+        for node in summary.node_outcomes
+        if node.result_path is not None
+    ]
+    lines.extend(
+        (
+            f"- {artifact_link(summary, summary.summary_path, 'summary.md')}",
+            f"- {artifact_link(summary, summary.event_log_path, 'events.ndjson')}",
+        )
+    )
+    return "\n".join(lines)
 
 
 def invocation_usage_retention_line(summary: RunSummary) -> str:
+    """Return a single-line retention notice with a report-relative event link."""
     return (
-        "- Invocation detail: retained latest "
-        f"{len(summary.invocation_usages)} invocation(s); "
-        f"{summary.omitted_invocation_usage_count} earlier invocation detail(s) "
-        "were omitted from summary detail. Full invocation events remain in "
-        f"{summary.event_log_path}.\n"
+        f"Invocation detail: retained latest {len(summary.invocation_usages)} invocation(s); "
+        f"{summary.omitted_invocation_usage_count} earlier invocation detail(s) were omitted from summary detail. "
+        f"Full invocation events remain in {artifact_link(summary, summary.event_log_path, 'events.ndjson')}."
     )
 
 
-def node_outcome_markdown_lines(summary: RunSummary) -> list[str]:
-    if not summary.node_outcomes:
-        return ["No node state captured.\n"]
-    lines: list[str] = []
-    for node_outcome in summary.node_outcomes:
-        result_label = (
-            f"; result: {node_outcome.result_path}"
-            if node_outcome.result_path is not None
-            else "; result: not produced"
-        )
-        lines.append(
-            f"- `{node_outcome.node_id}`: {node_outcome.status}"
-            f"{node_outcome.duration_label}{result_label}\n"
-        )
-    return lines
+def invocation_details_markdown(summary: RunSummary) -> str:
+    """Render escaped usage records then timing rows in their retained order."""
+    lines = []
+    if summary.omitted_invocation_usage_count:
+        lines.append(invocation_usage_retention_line(summary) + "\n")
+    lines.extend(_invocation_usage_line(usage) for usage in summary.invocation_usages)
+    if not summary.invocation_usages:
+        lines.append("No invocation usage details captured.")
+    if summary.invocation_timings:
+        lines.append("\n" + _invocation_timing_table(summary))
+    return "\n".join(lines)
 
 
-def workspace_markdown_lines(summary: RunSummary) -> list[str]:
-    workspace = summary.workspace
-    if workspace is None:
-        return [
-            "Workspace isolation disabled or no workspace observability captured.\n"
-        ]
-    lines: list[str] = []
-    plan = workspace.plan
-    if plan is not None:
-        details = [
-            detail("contract", plan_worktree_contract_label(plan)),
-            detail("source commit", plan.source_commit),
-            detail("source tree", plan.source_tree),
-            detail("object format", plan.object_format),
-            detail("clean_start", plan.clean_start),
-            detail(
-                "invoker",
-                joined_optional(
-                    plan.invoker_implementation,
-                    detail("launch", plan.invoker_launch_mode),
-                    detail(
-                        "controlled_env",
-                        bool_label(plan.invoker_controlled_child_environment),
-                    ),
-                ),
-            ),
-            detail(
-                "rendered workspace files",
-                workspace_rendered_file_label(summary),
-            ),
-            detail(
-                "cleanup",
-                joined_optional(
-                    detail("cleanup_on_success", bool_label(plan.cleanup_on_success)),
-                    detail(
-                        "cache_root_configured",
-                        bool_label(plan.cache_root_configured),
-                    ),
-                ),
-            ),
-            detail("planned nodes", plan.planned_workspace_node_count),
-        ]
-        lines.append(f"- Plan: {'; '.join(compact(details))}\n")
-    if not workspace.invocations:
-        lines.append("- No workspace invocations or blob-only inputs recorded.\n")
-        return lines
-    for invocation in workspace.invocations:
-        lines.append(workspace_invocation_line(invocation))
-    return lines
-
-
-def workspace_rendered_file_label(summary: RunSummary) -> str | None:
-    workspace = summary.workspace
-    if workspace is None or workspace.plan is None:
-        return None
-    plan = workspace.plan
-    if plan.rendered_locator_count is None:
-        return None
-    parts = [
-        format_count(plan.rendered_locator_count),
-        detail("project_initial", plan.rendered_project_initial_count),
-        detail("runtime_dynamic", plan.rendered_runtime_dynamic_count),
-    ]
-    return " ".join(compact(parts))
-
-
-def workspace_invocation_line(invocation: WorkspaceInvocationSummary) -> str:
+def _invocation_usage_line(usage: InvocationUsageSummary) -> str:
     label = invocation_label(
-        node_id=invocation.node_id,
-        task_id=invocation.task_id,
-        audit_round_num=invocation.audit_round_num,
-        round_num=invocation.round_num,
+        usage.node_id, usage.task_id, usage.audit_round_num, usage.round_num
     )
-    details = [
-        detail("kind", invocation.workspace_kind),
-        detail("worktree", invocation.logical_worktree_name),
-        detail("status", invocation.status),
-        detail("source", workspace_source_label(invocation)),
-        detail("contract", worktree_contract_label(invocation)),
-        detail("checkpoints", invocation.checkpoint_count),
-        detail("materialization", invocation.materialization),
-        detail("writable", bool_label(invocation.writable)),
-        detail("lineage", bool_label(invocation.lineage_producer)),
-        detail("env", child_environment_label(invocation)),
-        detail("execution", workspace_execution_label(invocation)),
-        detail("setup", workspace_setup_label(invocation)),
-        detail("reuse", workspace_reuse_label(invocation)),
-        detail("reset", invocation.reuse.reset_verification),
-        detail("snapshot_drift", workspace_snapshot_drift_label(invocation)),
-        detail("rendered_files", invocation.rendered_file_count),
-        detail("result", workspace_result_label(invocation)),
-        detail("bundle", workspace_bundle_label(invocation)),
-        detail("branch_export", workspace_branch_export_label(invocation)),
-        detail("diagnostics", invocation.diagnostic_count),
-        detail("retention", invocation.retention),
-        detail("state", invocation.state_path),
+    values = [
+        f"provider: {usage.provider}",
+        f"captured: {'yes' if usage.cli_captured else 'no'}",
+        f"output extraction: {usage.output_extraction_status}",
+        f"provider report: {usage.provider_usage_status}",
+        f"attempts: {usage.attempt_count}",
+        f"visible estimate: {format_visible_estimate(usage)}",
+        f"configured cost: {format_cost(usage.configured_cost_usd)}",
+        f"confidence: {usage.invocation_cost_confidence}",
+        f"provider report count: {format_count(usage.provider_usage_report_count)}",
+        f"provider tokens: {format_provider_tokens(usage.provider_tokens)}",
     ]
-    return f"- {label}: {'; '.join(compact(details))}\n"
+    for key, value in (
+        ("usage parse error", usage.usage_parse_error),
+        ("failure", usage.failure_kind),
+        ("failure phase", usage.failure_phase),
+        ("failure source", usage.failure_source),
+        ("failure advice", usage.failure_advice),
+    ):
+        if value is not None:
+            values.append(f"{key}: {value}")
+    return f"- {markdown_text(label)}: {markdown_text('; '.join(values))}"
 
 
-def workspace_source_label(invocation: WorkspaceInvocationSummary) -> str:
-    source = invocation.source
-    parts = [
-        source.kind,
-        detail("node", source.node_id),
-        detail("commit", source.commit),
-        detail("tree", source.tree),
-    ]
-    return " ".join(compact(parts))
-
-
-def worktree_contract_label(invocation: WorkspaceInvocationSummary) -> str | None:
-    source = invocation.source
-    if source.worktree_contract_mode is None:
-        return None
-    if source.worktree_contract_schema_version is None:
-        return source.worktree_contract_mode
-    return f"{source.worktree_contract_mode}:{source.worktree_contract_schema_version}"
-
-
-def plan_worktree_contract_label(plan: WorkspacePlanSummary) -> str | None:
-    mode = plan.worktree_contract_mode
-    schema_version = plan.worktree_contract_schema_version
-    if mode is None:
-        return None
-    return f"{mode}:{schema_version}" if schema_version is not None else mode
-
-
-def child_environment_label(invocation: WorkspaceInvocationSummary) -> str | None:
-    if invocation.child_environment_required is None:
-        return None
-    return (
-        f"required={bool_label(invocation.child_environment_required)} "
-        f"applied={bool_label(invocation.child_environment_applied)}"
+def _invocation_timing_table(summary: RunSummary) -> str:
+    return table(
+        ("Invocation", "Provider", "Recorded model", "Execution", "Duration"),
+        [
+            (
+                markdown_text(call_identity(timing)),
+                markdown_text(timing.provider),
+                markdown_text(timing.model or "n/a"),
+                markdown_text(timing.status),
+                format_call_duration(timing.duration_ms),
+            )
+            for timing in summary.invocation_timings
+        ],
     )
-
-
-def workspace_execution_label(invocation: WorkspaceInvocationSummary) -> str | None:
-    execution = invocation.execution
-    parts = [
-        detail("cache_root", execution.cache_root),
-        detail("workspace", execution.workspace_path),
-        detail("checkout", execution.checkout_root),
-        detail("cwd", execution.effective_cwd),
-        detail("checkout_bytes", execution.checkout_size_bytes),
-        detail("provisioning", seconds_label(execution.provisioning_duration_seconds)),
-    ]
-    return comma_optional(parts)
-
-
-def workspace_setup_label(invocation: WorkspaceInvocationSummary) -> str | None:
-    setup = invocation.setup
-    parts = [
-        setup.profile_name,
-        detail("status", setup.status),
-        detail("duration", seconds_label(setup.duration_seconds)),
-        detail("commands", setup.command_count),
-        detail("log", setup.log_path),
-        detail("metadata", setup.metadata_path),
-        detail("failure", setup.failure_message),
-    ]
-    return comma_optional(parts)
-
-
-def workspace_reuse_label(invocation: WorkspaceInvocationSummary) -> str | None:
-    reuse = invocation.reuse
-    parts = [
-        reuse.strategy,
-        detail("reused", bool_label(reuse.reused)),
-        detail("fallback", bool_label(reuse.fallback)),
-        detail("previous_state", reuse.previous_workspace_state),
-        detail("reason", reuse.fallback_reason),
-    ]
-    return comma_optional(parts)
-
-
-def workspace_snapshot_drift_label(
-    invocation: WorkspaceInvocationSummary,
-) -> str | None:
-    if invocation.snapshot_drift_discarded is None:
-        return None
-    parts = [
-        detail("discarded", bool_label(invocation.snapshot_drift_discarded)),
-        detail("changes", invocation.changed_path_count),
-        detail("reported_paths", invocation.snapshot_changed_paths_reported),
-        detail("truncated", bool_label(invocation.snapshot_changed_paths_truncated)),
-    ]
-    return comma_optional(parts)
-
-
-def workspace_branch_export_label(
-    invocation: WorkspaceInvocationSummary,
-) -> str | None:
-    branch_export = invocation.branch_export
-    parts = [
-        detail("status", branch_export.status),
-        detail("operation", branch_export.operation),
-        detail("branch", branch_export.branch_name),
-        detail("ref", branch_export.branch_ref),
-        detail("record", branch_export.record_artifact),
-        detail("failure", branch_export.failure_message),
-    ]
-    return comma_optional(parts)
-
-
-def workspace_result_label(invocation: WorkspaceInvocationSummary) -> str:
-    parts = [
-        detail("candidate", invocation.candidate_commit),
-        detail("result", invocation.result_commit),
-        detail("tree", invocation.result_tree),
-        detail("changes", invocation.changed_path_count),
-        detail("final_head", invocation.final_head),
-    ]
-    return ", ".join(compact(parts))
-
-
-def workspace_bundle_label(invocation: WorkspaceInvocationSummary) -> str:
-    parts = [
-        invocation.bundle_path,
-        detail("bytes", invocation.bundle_size_bytes),
-        detail("verified", bool_label(invocation.bundle_verified)),
-    ]
-    return " ".join(compact(parts))
-
-
-def detail(label: str, value: object) -> str | None:
-    if value is None:
-        return None
-    return f"{label}={value}"
-
-
-def bool_label(value: bool | None) -> str | None:
-    if value is None:
-        return None
-    return "yes" if value else "no"
-
-
-def seconds_label(value: float | None) -> str | None:
-    if value is None:
-        return None
-    return f"{value:.3f}s"
-
-
-def joined_optional(*parts: str | None) -> str | None:
-    compacted = compact(list(parts))
-    return " ".join(compacted) if compacted else None
-
-
-def comma_optional(parts: list[str | None]) -> str | None:
-    compacted = compact(parts)
-    return ", ".join(compacted) if compacted else None
-
-
-def compact(parts: list[str | None]) -> list[str]:
-    return [part for part in parts if part]
 
 
 def issue_markdown_lines(summary: RunSummary) -> list[str]:
+    """Return escaped issue bullets, each ending in LF, or an empty-list notice."""
     if not summary.issues:
         return ["No warnings or errors recorded.\n"]
-    return [f"- {issue.message}\n" for issue in summary.issues]
+    return [f"- {markdown_text(issue.message)}\n" for issue in summary.issues]
 
 
 def artifact_reference_markdown_lines(summary: RunSummary) -> list[str]:
+    """Return invocation artifact bullets in retained order, each ending in LF."""
     if not summary.artifact_references:
         return ["No invocation artifacts captured.\n"]
-    lines: list[str] = []
+    lines = []
     for reference in summary.artifact_references:
-        parts = [
-            invocation_label(
-                node_id=reference.node_id,
-                task_id=reference.task_id,
-                audit_round_num=reference.audit_round_num,
-                round_num=reference.round_num,
-            )
-        ]
+        label = invocation_label(
+            reference.node_id,
+            reference.task_id,
+            reference.audit_round_num,
+            reference.round_num,
+        )
+        parts = [markdown_text(label)]
         if reference.output_file is not None:
-            parts.append(f"output: {reference.output_file}")
+            parts.append(artifact_link(summary, reference.output_file, "output"))
         if reference.log_file is not None:
-            parts.append(f"log: {reference.log_file}")
+            parts.append(artifact_link(summary, reference.log_file, "log"))
         lines.append(f"- {'; '.join(parts)}\n")
     return lines

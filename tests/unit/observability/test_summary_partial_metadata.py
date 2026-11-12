@@ -15,7 +15,6 @@ from crewplane.observability.events import (
     runtime_log_event,
 )
 from crewplane.observability.run_summary.formatting import (
-    format_provider_token_aggregate_lines,
     invocation_label,
 )
 from crewplane.observability.run_summary.issues import issue_summaries
@@ -31,12 +30,8 @@ from crewplane.observability.run_summary.models import (
     WorkspaceInvocationSummary,
     WorkspaceRunSummary,
 )
-from crewplane.observability.run_summary.terminal import (
-    render_run_summary_terminal,
-    terminal_spend_lines,
-    terminal_workspace_lines,
-)
 from crewplane.observability.run_summary.workspace import workspace_plan_summary
+from tests.helpers.observability import render_summary_terminal
 
 
 def _empty_summary(root: Path) -> RunSummary:
@@ -47,8 +42,10 @@ def _empty_summary(root: Path) -> RunSummary:
         review_consensus_unresolved=False,
         started_at="unknown",
         completed_at="unknown",
-        elapsed_label=None,
-        node_counts=NodeCounts(0, 0, 0, 0, 0),
+        elapsed_seconds=None,
+        invocation_count=None,
+        invocation_timings=(),
+        node_counts=NodeCounts(0, 0, 0, 0, 0, 0),
         spend=None,
         provider_rollups=(),
         invocation_usages=(),
@@ -77,12 +74,12 @@ def test_workspace_plan_without_optional_metadata_is_still_rendered(
     summary = replace(_empty_summary(tmp_path), workspace=WorkspaceRunSummary(plan, ()))
 
     markdown = render_run_summary_markdown(summary)
-    terminal = render_run_summary_terminal(summary)
+    terminal = render_summary_terminal(summary)
 
     assert "No workspace invocations or blob-only inputs recorded." in markdown
-    assert "No workspace invocations recorded." in terminal
+    assert "Workspace details in summary.md" in terminal
     assert "rendered workspace files=" not in markdown
-    assert ("contract=blob_exact" in markdown) is (contract_mode is not None)
+    assert (r"contract=blob\_exact" in markdown) is (contract_mode is not None)
 
 
 def test_workspace_summary_without_plan_keeps_empty_invocation_notice(
@@ -91,16 +88,16 @@ def test_workspace_summary_without_plan_keeps_empty_invocation_notice(
     summary = replace(_empty_summary(tmp_path), workspace=WorkspaceRunSummary(None, ()))
 
     assert "No workspace invocations" in render_run_summary_markdown(summary)
-    assert "No workspace invocations" in render_run_summary_terminal(summary)
+    assert "Workspace details in summary.md" in render_summary_terminal(summary)
 
 
 def test_zero_invocation_spend_has_no_provider_breakdown(tmp_path: Path) -> None:
     spend = SpendTotals(0, 0, 0, 0, 0, 0, 0, None, "none")
     summary = replace(_empty_summary(tmp_path), spend=spend)
 
-    terminal = render_run_summary_terminal(summary)
+    terminal = render_summary_terminal(summary)
 
-    assert "Spend Observability" in terminal
+    assert "Recorded attempts: 0" in terminal
     assert "  Providers:" not in terminal
 
 
@@ -125,28 +122,15 @@ def test_terminal_spend_lines_preserves_provider_record_order_and_format(
         omitted_invocation_usage_count=1,
     )
 
-    assert terminal_spend_lines(summary) == [
-        "Spend Observability",
-        "  Provider-reported tokens: 40 across 3 reports",
-        "  Input: 30",
-        "  Provider alpha",
-        "    Provider-reported tokens: 25 across 2 reports",
-        "    Input: 20",
-        "  Provider beta",
-        "    Provider-reported tokens: 15 across 1 reports",
-        "    Output: 10",
-        "  Terminal invocations: 3",
-        "  CLI invocations captured: 2/3",
-        "  Provider usage status: 1/3 full, 1/3 partial, 1/3 malformed",
-        "  Visible-text estimate (lower-bound): 1,234 tokens",
-        "  Configured cost estimate: n/a (mixed)",
-        "  Invocation detail: retained latest 2 invocation(s); 1 earlier omitted",
-        "  Providers:",
-        "    - alpha: 2 invocation(s); captured 1/2; usage 1/2 full, 1/2 partial, "
-        "0/2 malformed; visible est 1,000 tokens; cost n/a (none)",
-        "    - beta: 1 invocation(s); captured 1/1; usage 0/1 full, 0/1 partial, "
-        "1/1 malformed; visible est 234 tokens; cost $0.500000 (full)",
-    ]
+    terminal = render_summary_terminal(summary)
+    markdown = render_run_summary_markdown(summary)
+    assert "Provider-reported tokens: 40 across 3 reports" in terminal
+    assert terminal.index("alpha") < terminal.index("beta")
+    assert "Recorded attempts: 4" in terminal
+    assert "1,234" in terminal
+    assert "1 earlier invocation detail(s)" in markdown
+    assert "| alpha | 2 / 3 | 1 | 1 / 1 / 0 | 1,000 | n/a / none |" in markdown
+    assert "| beta | 1 / 1 | 1 | 0 / 0 / 1 | 234 | $0.500000 / full |" in markdown
 
 
 def _invocation_usage(provider: str) -> InvocationUsageSummary:
@@ -180,22 +164,31 @@ def _invocation_usage(provider: str) -> InvocationUsageSummary:
     [
         (
             ProviderTokenAggregate("mock", 1, cached_input=3),
-            ("Provider-reported tokens: n/a across 1 reports", "Cached input: 3"),
+            ("Provider-reported tokens: n/a across 1 reports", "cached input=3"),
         ),
         (
             ProviderTokenAggregate("mock", 1, cache_write=4, reasoning=5),
             (
                 "Provider-reported tokens: n/a across 1 reports",
-                "Cache write: 4",
-                "Reasoning output: 5",
+                "cache write=4",
+                "reasoning=5",
             ),
         ),
     ],
 )
 def test_partial_token_report_does_not_invent_missing_totals(
-    aggregate: ProviderTokenAggregate, expected: tuple[str, ...]
+    tmp_path: Path, aggregate: ProviderTokenAggregate, expected: tuple[str, ...]
 ) -> None:
-    assert format_provider_token_aggregate_lines(aggregate) == expected
+    summary = replace(
+        _empty_summary(tmp_path),
+        provider_token_aggregates=ProviderTokenAggregates(aggregate, (aggregate,)),
+    )
+    terminal = render_summary_terminal(summary)
+    for fragment in expected:
+        assert fragment in terminal
+    markdown = render_run_summary_markdown(summary)
+    assert "| Provider-reported tokens | n/a across 1 reports |" in markdown
+    assert "| mock | 1 | n/a |" in markdown
 
 
 @pytest.mark.parametrize(
@@ -253,15 +246,10 @@ def test_round_labels_preserve_exact_rendered_and_issue_strings(
         f" / `{label}`" if label is not None else ""
     )
 
-    assert (
-        f"- {invocation_identity}: kind=snapshot; status=succeeded; source=; result=; bundle="
-        in render_run_summary_markdown(summary).splitlines()
-    )
-    assert terminal_workspace_lines(summary) == [
-        "Workspace Observability",
-        "  Invocations:",
-        f"    - {invocation_identity}: kind=snapshot; worktree=None; status=succeeded; source=None:None",
-    ]
+    markdown = render_run_summary_markdown(summary)
+    assert "kind=snapshot; status=succeeded" in markdown
+    assert invocation_identity.replace("`", "\\`") in markdown
+    assert "Workspace details in summary.md" in render_summary_terminal(summary)
     context = ExecutionEventContext(
         workflow_name="flow",
         run_id="run",

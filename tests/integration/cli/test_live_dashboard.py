@@ -379,7 +379,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             )
             self.assertIn("- Status: cancelled", summary_text)
             console_text = stream.getvalue()
-            self.assertIn("Status: cancelled", console_text)
+            self.assertIn("Execution: cancelled", console_text)
             self.assertIn(
                 "Workflow cancelled by live dashboard quit request.",
                 console_text,

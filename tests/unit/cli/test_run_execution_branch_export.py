@@ -502,7 +502,7 @@ def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
 
     summary_text = summary_path.read_text(encoding="utf-8")
     assert "stale summary without branch export" not in summary_text
-    assert "branch_export=status=skipped" in summary_text
+    assert r"branch\_export=status=skipped" in summary_text
     assert "operation=skipped" in summary_text
 
 

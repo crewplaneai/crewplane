@@ -507,7 +507,7 @@ def test_sparse_workspace_state_renders_missing_optional_facts(tmp_path: Path) -
 
     assert summary is not None
     rendered = workspace_invocation_line(summary)
-    assert "contract=blob_exact" in rendered
+    assert r"contract=blob\_exact" in rendered
     assert "env=" not in rendered
     assert "None" not in rendered
 

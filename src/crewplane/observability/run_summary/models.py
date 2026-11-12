@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
+from typing import Literal
 
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
@@ -23,6 +24,7 @@ class NodeCounts:
     succeeded: int
     blocked: int
     failed: int
+    cancelled: int
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,7 @@ class SpendTotals:
     provider_usage_full_invocations: int
     provider_usage_partial_invocations: int
     provider_usage_malformed_invocations: int
-    visible_estimate_tokens: int
+    visible_estimate_tokens: int | None
     configured_cost_usd: float | None
     configured_cost_confidence: AggregateCostConfidence
 
@@ -45,17 +47,11 @@ class SpendOverviewRow:
     label: str
     value: str
     confidence: AggregateCostConfidence | None = None
-    show_in_terminal: bool = True
 
     def markdown_value(self) -> str:
         if self.confidence is None:
             return self.value
         return f"{self.value} (confidence: {self.confidence})"
-
-    def terminal_value(self) -> str:
-        if self.confidence is None:
-            return self.value
-        return f"{self.value} ({self.confidence})"
 
 
 @dataclass(frozen=True)
@@ -69,7 +65,7 @@ class ProviderUsageRollup:
     provider_usage_full_invocations: int
     provider_usage_partial_invocations: int
     provider_usage_malformed_invocations: int
-    visible_estimate_tokens: int
+    visible_estimate_tokens: int | None
     configured_cost_usd: float | None
     configured_cost_confidence: AggregateCostConfidence
 
@@ -136,8 +132,23 @@ class NodeOutcomeSummary:
 
     node_id: str
     status: str
-    duration_label: str
+    duration_seconds: float | None
     result_path: Path | None
+    resume_kind: Literal["reused", "checkpoint"] | None = None
+
+
+@dataclass(frozen=True)
+class InvocationTimingSummary:
+    """Complete snapshot timing facts, independent of retained usage details."""
+
+    node_id: str
+    task_id: str
+    provider: str
+    model: str | None
+    audit_round_num: int | None
+    round_num: int | None
+    status: str
+    duration_ms: int | None
 
 
 @dataclass(frozen=True)
@@ -311,8 +322,10 @@ class RunSummary:
     review_consensus_unresolved: bool
     started_at: str
     completed_at: str
-    elapsed_label: str | None
-    node_counts: NodeCounts
+    elapsed_seconds: float | None
+    node_counts: NodeCounts | None
+    invocation_count: int | None
+    invocation_timings: tuple[InvocationTimingSummary, ...]
     spend: SpendTotals | None
     provider_rollups: tuple[ProviderUsageRollup, ...]
     invocation_usages: tuple[InvocationUsageSummary, ...]
@@ -338,6 +351,8 @@ class RunSummaryFacts:
     review_consensus_unresolved: bool
     started_at: str
     completed_at: str
+    reused_node_ids: frozenset[str]
+    checkpoint_resumed_node_ids: frozenset[str]
 
 
 class PersistentLoggerLifecycle(StrEnum):

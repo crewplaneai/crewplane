@@ -250,8 +250,11 @@ def test_mock_run_renders_usage_totals(usage_run: UsageRun) -> None:
         for invocation in usage_run.invocations.values()
     )
     summary = (usage_run.stage_root / "logs/summary.md").read_text(encoding="utf-8")
-    assert "CLI invocations captured: 7/7" in summary
-    assert f"Visible-text estimate (lower-bound): {expected_total:,} tokens" in summary
+    assert "| CLI invocations captured | 7/7 |" in summary
+    assert (
+        f"| Visible-text estimate (lower-bound) | {expected_total:,} tokens |"
+        in summary
+    )
     assert "Run Summary" in usage_run.console_output
     assert f"{expected_total:,} tokens" in usage_run.console_output
 
