@@ -8,9 +8,6 @@ from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
-from crewplane.observability.persistent import (
-    render_run_summary_terminal,
-)
 from crewplane.observability.run_summary.logger import (
     MAX_RETAINED_SUMMARY_EVENTS,
 )
@@ -31,6 +28,7 @@ from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import (
     make_execution_event,
+    render_summary_terminal,
     topology_from_workflow,
 )
 from tests.helpers.platforms import requires_workspace_support
@@ -400,32 +398,27 @@ def test_persistent_run_summary_includes_workspace_observability(
     assert snapshot_invocation.snapshot_drift_discarded
     assert snapshot_invocation.snapshot_changed_paths_reported == 2
     summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-    assert "## Workspace Observability" in summary_text
-    assert f"contract=blob_exact:{SCHEMA_VERSION}" in summary_text
+    assert "<summary>Workspace Observability</summary>" in summary_text
+    assert rf"contract=blob\_exact:{SCHEMA_VERSION}" in summary_text
     assert "rendered workspace files=2" in summary_text
-    assert "launch=runtime_command_runner" in summary_text
-    assert "cleanup_on_success=yes" in summary_text
-    assert "rendered_files=1" in summary_text
+    assert r"launch=runtime\_command\_runner" in summary_text
+    assert r"cleanup\_on\_success=yes" in summary_text
+    assert r"rendered\_files=1" in summary_text
     assert "result=" + "d" * 40 in summary_text
     assert "bundle=node.a/workspace-bundles/alpha.bundle" in summary_text
     assert "checkpoints=1" in summary_text
-    assert "setup=node_dependencies, status=succeeded" in summary_text
+    assert r"setup=node\_dependencies, status=succeeded" in summary_text
     assert "duration=1.250s" in summary_text
-    assert "reuse=incremental_reset, reused=yes" in summary_text
+    assert r"reuse=incremental\_reset, reused=yes" in summary_text
     assert "reset=verified" in summary_text
-    assert "execution=cache_root=" in summary_text
-    assert "checkout_bytes=2048" in summary_text
-    assert "branch_export=status=skipped" in summary_text
+    assert r"execution=cache\_root=" in summary_text
+    assert r"checkout\_bytes=2048" in summary_text
+    assert r"branch\_export=status=skipped" in summary_text
     assert "operation=skipped" in summary_text
-    assert "snapshot_drift=discarded=yes, changes=2" in summary_text
-    terminal_summary = render_run_summary_terminal(summary)
-    assert "Workspace Observability" in terminal_summary
-    assert "launch=runtime_command_runner" in terminal_summary
-    assert "rendered_files=1" in terminal_summary
-    assert "setup=node_dependencies:succeeded" in terminal_summary
-    assert "reuse=incremental_reset,reused=True" in terminal_summary
-    assert "reset=verified" in terminal_summary
-    assert "branch_export=skipped,operation=skipped" in terminal_summary
+    assert r"snapshot\_drift=discarded=yes, changes=2" in summary_text
+    terminal_summary = render_summary_terminal(summary)
+    assert "Workspace details in summary.md" in terminal_summary
+    assert "Summary:" in terminal_summary
 
 
 def test_workspace_summary_terminal_event_status_wins_over_stale_state(

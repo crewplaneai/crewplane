@@ -9,7 +9,6 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
 from crewplane.observability.persistent import (
     render_run_summary_markdown,
-    render_run_summary_terminal,
 )
 from crewplane.observability.run_summary.accumulator import (
     MAX_RETAINED_INVOCATION_USAGE_DETAILS,
@@ -18,7 +17,11 @@ from crewplane.observability.run_summary.logger import MAX_RETAINED_SUMMARY_EVEN
 from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.agent.usage import InvocationUsageAccumulator
-from tests.helpers.observability import make_execution_event, topology_from_workflow
+from tests.helpers.observability import (
+    make_execution_event,
+    render_summary_terminal,
+    topology_from_workflow,
+)
 from tests.integration.observability.runtime.observability_runtime_helpers import (
     single_node_workflow,
 )
@@ -195,25 +198,22 @@ def test_invocation_usage_details_are_bounded_without_losing_rollups(
     assert summary.invocation_usages[0].task_id == f"alpha_task_{overflow_count:04d}"
 
     summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-    assert f"- Terminal invocations: {invocation_count}" in summary_text
+    assert f"| Calls with usage facts | {invocation_count} |" in summary_text
     assert (
         "Invocation detail: retained latest "
         f"{MAX_RETAINED_INVOCATION_USAGE_DETAILS} invocation(s); "
         f"{overflow_count} earlier invocation detail(s)" in summary_text
     )
-    assert "alpha_task_0000" not in summary_text
-    assert f"alpha_task_{invocation_count - 1:04d}" in summary_text
+    assert r"alpha\_task\_0000" not in summary_text
+    assert rf"alpha\_task\_{invocation_count - 1:04d}" in summary_text
     event_log_lines = (
         output.get_run_event_log_path().read_text(encoding="utf-8").splitlines()
     )
     assert len(event_log_lines) == invocation_count
 
-    terminal_summary = render_run_summary_terminal(summary)
-    assert (
-        "Invocation detail: retained latest "
-        f"{MAX_RETAINED_INVOCATION_USAGE_DETAILS} invocation(s); "
-        f"{overflow_count} earlier omitted" in terminal_summary
-    )
+    terminal_summary = render_summary_terminal(summary)
+    assert f"{overflow_count} earlier usage rows not retained" in terminal_summary
+    assert "full evidence in events.ndjson" in terminal_summary
 
 
 def test_exact_provider_totals_include_all_terminal_events_beyond_detail_cap(
@@ -302,9 +302,9 @@ def test_exact_provider_totals_include_all_terminal_events_beyond_detail_cap(
     assert provider_aggregates["claude"].cached_input is None
     assert provider_aggregates["codex"].cached_input == codex_count * 3
     markdown = render_run_summary_markdown(summary)
-    terminal = render_run_summary_terminal(summary)
+    terminal = render_summary_terminal(summary)
     assert (
-        f"Provider-reported tokens: {aggregate.total:,} across {invocation_count} reports"
+        f"| Provider-reported tokens | {aggregate.total:,} across {invocation_count} reports |"
         in markdown
     )
     assert (
@@ -386,21 +386,21 @@ def test_codex_fixture_totals_render_for_success_and_failure(tmp_path: Path) -> 
         == failed_summary.provider_token_aggregates
     )
 
-    expected_lines = (
-        "Provider-reported tokens: 7,598,612 across 24 reports",
-        "Input: 7,359,384 (cached input: 6,124,416)",
-        "Output: 239,228 (reasoning output: 108,672)",
-    )
     for summary in (succeeded_summary, failed_summary):
         markdown = render_run_summary_markdown(summary)
-        terminal = render_run_summary_terminal(summary)
-        for expected_line in expected_lines:
-            assert expected_line in markdown
-            assert expected_line in terminal
-        assert "Provider `codex`" in markdown
-        assert "Provider codex" in terminal
-        assert "Cache write:" not in markdown
-        assert "Cache write:" not in terminal
+        terminal = render_summary_terminal(summary)
+        assert "| Provider-reported tokens | 7,598,612 across 24 reports |" in markdown
+        assert (
+            "| codex | 24 | 7,359,384 | 6,124,416 | n/a | 239,228 | 108,672 | 7,598,612 |"
+            in markdown
+        )
+        assert "Provider-reported tokens: 7,598,612 across 24 reports" in terminal
+        assert "input=7,359,384" in terminal
+        assert "cached input=6,124,416" in terminal
+        assert "output=239,228" in terminal
+        assert "reasoning=108,672" in terminal
+        assert "codex" in terminal
+        assert "cache write=n/a" in terminal
 
 
 def test_standalone_cached_input_total_renders_in_both_formats(tmp_path: Path) -> None:
@@ -435,7 +435,7 @@ def test_standalone_cached_input_total_renders_in_both_formats(tmp_path: Path) -
     assert summary is not None
     assert summary is not None
     markdown = render_run_summary_markdown(summary)
-    terminal = render_run_summary_terminal(summary)
+    terminal = render_summary_terminal(summary)
 
-    assert "Cached input: 42" in markdown
-    assert "Cached input: 42" in terminal
+    assert "| codex | 1 | n/a | 42 | n/a | n/a | n/a | n/a |" in markdown
+    assert "cached input=42" in terminal

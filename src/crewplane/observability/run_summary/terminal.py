@@ -1,303 +1,471 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+import os
+from unicodedata import category
+
+from rich.console import Console, Group, RenderableType
+from rich.table import Table
+from rich.text import Text
+
+from crewplane.observability.log_presentation.sanitize import sanitize_text
+from crewplane.observability.text_layout import display_width, fit_text, wrap_text
 
 from .formatting import (
+    ISSUE_LIMIT,
+    PROVIDER_ROW_LIMIT,
+    RESULT_PATH_LIMIT,
+    call_identity,
+    format_call_duration,
     format_cost,
     format_count,
-    format_provider_token_aggregate_lines,
-    invocation_label,
+    format_duration,
+    invocation_coverage_label,
+    selected_stages,
+    selected_timings,
+    stage_counts_label,
+    stage_status,
 )
 from .models import (
-    ProviderTokenAggregates,
+    InvocationTimingSummary,
+    IssueSummary,
+    NodeOutcomeSummary,
+    ProviderTokenAggregate,
     ProviderUsageRollup,
     RunSummary,
-    WorkspaceInvocationBranchExportSummary,
-    WorkspaceInvocationExecutionSummary,
-    WorkspaceInvocationReuseSummary,
-    WorkspaceInvocationSetupSummary,
-    WorkspaceInvocationSummary,
-    WorkspacePlanSummary,
 )
-from .spend import spend_overview_rows
+from .terminal_table_layout import (
+    CALL_HEADER,
+    CELL_PADDING,
+    COLUMN_PADDING,
+    COMBINED_CALL_HEADER,
+    DURATION_HEADER,
+    EXECUTION_HEADER,
+    MIN_STATUS_WIDTH,
+    PROVIDER_HEADER,
+    DurationTableLayout,
+    DurationTableRow,
+    duration_table_layout,
+)
 
-_WORKSPACE_INVOCATION_LIMIT = 5
+_STACKED_WIDTH = 40
+_ISSUE_LINE_LIMIT = 3
+_LABEL_LINE_LIMIT = 2
 
 
-def render_run_summary_terminal(summary: RunSummary) -> str:
-    """Render the concise terminal form of a run summary."""
-
-    sections = [
-        _terminal_run_overview_lines(summary),
-        terminal_spend_lines(summary),
-        terminal_workspace_lines(summary),
-        terminal_issue_lines(summary),
-        _terminal_artifact_lines(summary),
-    ]
-    return "\n\n".join("\n".join(section) for section in sections)
-
-
-def _terminal_run_overview_lines(summary: RunSummary) -> list[str]:
-    lines = [
-        "Run Summary",
-        f"  Workflow: {summary.workflow_name}",
-        f"  Run ID: {summary.run_id}",
-        f"  Status: {summary.workflow_status}",
-    ]
-    if summary.review_consensus_unresolved:
-        lines.append("  Review consensus: unresolved; continued after exhaustion")
-    lines.extend(
-        [
-            f"  Started: {summary.started_at}",
-            f"  Completed: {summary.completed_at}",
-        ]
+def render_run_summary_terminal(summary: RunSummary, console: Console) -> Group:
+    """Build a bounded, literal presentation for the caller's output stream."""
+    sections = (
+        _overview(summary, console),
+        _attention(summary, console),
+        _stages(summary, console),
+        _durations(summary, console),
+        _usage(summary, console),
+        _results(summary, console),
     )
-    if summary.elapsed_label is not None:
-        lines.append(f"  Elapsed: {summary.elapsed_label}")
-    lines.append(
-        "  Nodes: "
-        f"pending={summary.node_counts.pending} "
-        f"running={summary.node_counts.running} "
-        f"succeeded={summary.node_counts.succeeded} "
-        f"blocked={summary.node_counts.blocked} "
-        f"failed={summary.node_counts.failed}"
+    renderables: list[RenderableType] = []
+    for section in sections:
+        if section:
+            if renderables:
+                renderables.append(Text(""))
+            renderables.extend(section)
+    return Group(*renderables)
+
+
+def _styled(console: Console) -> bool:
+    return bool(
+        console.file.isatty()
+        and console.is_terminal
+        and console.color_system is not None
+        and not console.no_color
+        and "NO_COLOR" not in os.environ
+        and os.environ.get("TERM", "").lower() not in {"dumb", "unknown"}
     )
-    return lines
 
 
-def _terminal_artifact_lines(summary: RunSummary) -> list[str]:
-    return [
-        "Artifacts",
-        f"  Summary: {summary.summary_path}",
-        f"  Events: {summary.event_log_path}",
-    ]
-
-
-def terminal_spend_lines(summary: RunSummary) -> list[str]:
-    lines = ["Spend Observability"]
-    lines.extend(_terminal_provider_token_lines(summary.provider_token_aggregates))
-    if summary.spend is None:
-        if summary.provider_token_aggregates.overall is None:
-            lines.append("  No spend observability captured.")
-        return lines
-
-    lines.extend(
-        f"  {row.label}: {row.terminal_value()}"
-        for row in spend_overview_rows(summary.spend)
-        if row.show_in_terminal
+def _safe(value: object, console: Console) -> str:
+    sanitized = " ".join(sanitize_text(value).splitlines()).replace("\t", " ")
+    single_line = "".join(char for char in sanitized if category(char) != "Cc")
+    return single_line.encode(console.encoding, errors="backslashreplace").decode(
+        console.encoding
     )
-    if summary.omitted_invocation_usage_count > 0:
-        lines.append(
-            "  Invocation detail: retained latest "
-            f"{len(summary.invocation_usages)} invocation(s); "
-            f"{summary.omitted_invocation_usage_count} earlier omitted"
-        )
-    if summary.provider_rollups:
-        lines.append("  Providers:")
-        for provider_rollup in summary.provider_rollups:
-            lines.append(_terminal_provider_rollup_line(provider_rollup))
-    return lines
 
 
-def _terminal_provider_token_lines(aggregates: ProviderTokenAggregates) -> list[str]:
-    if aggregates.overall is None:
-        return []
-    lines = [
-        f"  {line}"
-        for line in format_provider_token_aggregate_lines(aggregates.overall)
-    ]
-    for aggregate in aggregates.providers:
-        if aggregate.provider is None:
-            continue
-        lines.append(f"  Provider {aggregate.provider}")
-        lines.extend(
-            f"    {line}" for line in format_provider_token_aggregate_lines(aggregate)
-        )
-    return lines
+def _text(value: object, console: Console, style: str = "") -> Text:
+    return Text(_safe(value, console), style=style if _styled(console) else "")
 
 
-def _terminal_provider_rollup_line(rollup: ProviderUsageRollup) -> str:
-    invocation_count = rollup.terminal_invocations
-    details = [
-        f"{invocation_count} invocation(s)",
-        f"captured {rollup.cli_captured_invocations}/{invocation_count}",
-        (
-            "usage "
-            f"{rollup.provider_usage_full_invocations}/{invocation_count} full, "
-            f"{rollup.provider_usage_partial_invocations}/{invocation_count} partial, "
-            f"{rollup.provider_usage_malformed_invocations}/{invocation_count} malformed"
-        ),
-        f"visible est {format_count(rollup.visible_estimate_tokens)} tokens",
-        (
-            "cost "
-            f"{format_cost(rollup.configured_cost_usd)} "
-            f"({rollup.configured_cost_confidence})"
-        ),
-    ]
-    return f"    - {rollup.provider}: {'; '.join(details)}"
+def _wrapped(value: object, console: Console, style: str = "") -> Text:
+    text = _text(value, console, style)
+    text.plain = "\n".join(wrap_text(text.plain, console.width))
+    return text
 
 
-def terminal_workspace_lines(summary: RunSummary) -> list[str]:
-    lines = ["Workspace Observability"]
-    workspace = summary.workspace
-    if workspace is None:
-        lines.append("  Workspace isolation disabled or no workspace data captured.")
-        return lines
-    if workspace.plan is not None:
-        lines.append(_terminal_workspace_plan_line(workspace.plan))
-    lines.extend(_terminal_workspace_invocation_lines(workspace.invocations))
-    return lines
-
-
-def _terminal_workspace_plan_line(plan: WorkspacePlanSummary) -> str:
-    contract = (
-        f"{plan.worktree_contract_mode}:{plan.worktree_contract_schema_version}"
-        if plan.worktree_contract_mode is not None
-        else None
+def _label(value: object, console: Console, style: str = "") -> Text:
+    return _wrapped(
+        fit_text(_safe(value, console), console.width * _LABEL_LINE_LIMIT),
+        console,
+        style,
     )
+
+
+def _heading(label: str, console: Console) -> Text:
+    return _label(label, console, "bold cyan")
+
+
+def _omitted(count: int, subject: str, console: Console) -> list[RenderableType]:
     return (
-        "  Plan: "
-        f"contract={contract}; "
-        f"source={plan.source_commit}; "
-        f"invoker={plan.invoker_implementation}; "
-        f"launch={plan.invoker_launch_mode}; "
-        f"rendered_files={plan.rendered_locator_count}; "
-        f"cleanup_on_success={plan.cleanup_on_success}"
+        [_wrapped(f"{count} more {subject} in summary.md", console, "dim")]
+        if count > 0
+        else []
     )
 
 
-def _terminal_workspace_invocation_lines(
-    invocations: Sequence[WorkspaceInvocationSummary],
-) -> list[str]:
-    if not invocations:
-        return ["  No workspace invocations recorded."]
-    lines = ["  Invocations:"]
-    lines.extend(
-        _terminal_workspace_invocation_line(invocation)
-        for invocation in invocations[:_WORKSPACE_INVOCATION_LIMIT]
+def _overview(summary: RunSummary, console: Console) -> list[RenderableType]:
+    spend = summary.spend
+    calls = format_count(summary.invocation_count)
+    if summary.invocation_count == 0:
+        calls += " (no new calls)"
+    aggregate = summary.provider_token_aggregates.overall
+    tokens = (
+        "n/a"
+        if aggregate is None
+        else f"{format_count(aggregate.total)} across {aggregate.report_count} reports"
     )
-    remaining_count = len(invocations) - _WORKSPACE_INVOCATION_LIMIT
-    if remaining_count > 0:
-        lines.append(f"    ... {remaining_count} more")
+    lines: list[RenderableType] = [
+        _heading(f"Run Summary: {summary.workflow_name}", console),
+        _wrapped(
+            f"Execution: {summary.workflow_status}    Elapsed: {format_duration(summary.elapsed_seconds)}",
+            console,
+        ),
+        _wrapped(f"Stages: {stage_counts_label(summary)}", console),
+        _wrapped(
+            f"Calls: {calls}    Recorded attempts: {format_count(spend.total_attempts if spend else None)}",
+            console,
+        ),
+        _wrapped(f"Usage coverage: {invocation_coverage_label(summary)}", console),
+        _wrapped(f"Provider-reported tokens: {tokens}", console),
+    ]
+    if spend is not None and spend.configured_cost_usd is not None:
+        lines.append(
+            _wrapped(
+                f"Configured cost estimate: {format_cost(spend.configured_cost_usd)} ({spend.configured_cost_confidence})",
+                console,
+            )
+        )
+    lines.append(_wrapped(f"Run ID: {summary.run_id}", console, "dim"))
     return lines
 
 
-def _terminal_workspace_invocation_line(invocation: WorkspaceInvocationSummary) -> str:
-    label = invocation_label(
-        node_id=invocation.node_id,
-        task_id=invocation.task_id,
-        audit_round_num=invocation.audit_round_num,
-        round_num=invocation.round_num,
+def _attention(summary: RunSummary, console: Console) -> list[RenderableType]:
+    if not summary.issues and not summary.review_consensus_unresolved:
+        return []
+    lines: list[RenderableType] = [_heading("Needs attention", console)]
+    if summary.review_consensus_unresolved:
+        lines.append(
+            _wrapped(
+                "Review unresolved; execution continued after exhaustion or a no-progress stop.",
+                console,
+                "yellow",
+            )
+        )
+    issues = sorted(summary.issues, key=lambda issue: issue.level != "error")
+    lines.extend(_bounded_issue(issue, console) for issue in issues[:ISSUE_LIMIT])
+    lines.extend(_omitted(len(issues) - ISSUE_LIMIT, "retained issues", console))
+    return lines
+
+
+def _bounded_issue(issue: IssueSummary, console: Console) -> Text:
+    lines = wrap_text(_safe(issue.message, console), console.width)
+    if len(lines) > _ISSUE_LINE_LIMIT:
+        lines = lines[:_ISSUE_LINE_LIMIT]
+        lines[-1] = fit_text(lines[-1] + "...", console.width)
+        lines.append("Full issue in summary.md")
+    return Text(
+        "\n".join(lines),
+        style=("red" if issue.level == "error" else "yellow")
+        if _styled(console)
+        else "",
     )
-    details = [
-        *_workspace_source_result_details(invocation),
-        *_workspace_setup_details(invocation.setup),
-        *_workspace_reuse_details(invocation.reuse),
-        *_workspace_snapshot_drift_details(invocation),
-        *_workspace_execution_path_details(invocation.execution),
-        *_workspace_branch_export_details(invocation.branch_export),
-        *_workspace_input_details(invocation),
-    ]
-    return f"    - {label}: {'; '.join(details)}"
 
 
-def _workspace_source_result_details(
-    invocation: WorkspaceInvocationSummary,
-) -> list[str]:
-    details = [
-        f"kind={invocation.workspace_kind}",
-        f"worktree={invocation.logical_worktree_name}",
-        f"status={invocation.status}",
-        f"source={invocation.source.kind}:{invocation.source.commit}",
-    ]
-    if invocation.checkpoint_count is not None:
-        details.append(f"checkpoints={invocation.checkpoint_count}")
-    if invocation.result_commit is not None:
-        details.append(f"result={invocation.result_commit}")
-    if invocation.bundle_path is not None:
-        details.append(f"bundle={invocation.bundle_path}")
-    return details
+def _table(console: Console) -> Table:
+    return Table(
+        box=None,
+        safe_box=True,
+        padding=(0, CELL_PADDING),
+        pad_edge=False,
+        header_style="bold" if _styled(console) else "",
+        border_style="",
+        style="",
+        show_edge=False,
+        collapse_padding=True,
+    )
 
 
-def _workspace_setup_details(setup: WorkspaceInvocationSetupSummary) -> list[str]:
-    if setup.status is None:
-        return []
-    label = setup.status
-    if setup.profile_name is not None:
-        label = f"{setup.profile_name}:{label}"
-    return [f"setup={label}"]
-
-
-def _workspace_reuse_details(reuse: WorkspaceInvocationReuseSummary) -> list[str]:
-    details = []
-    if reuse.strategy is not None:
-        details.append(
-            f"reuse={reuse.strategy},reused={reuse.reused},fallback={reuse.fallback}"
+def _stages(summary: RunSummary, console: Console) -> list[RenderableType]:
+    nodes = selected_stages(summary)
+    lines: list[RenderableType] = [_heading("Stages", console)]
+    if not nodes:
+        lines.append(
+            _wrapped(
+                "No stage state captured."
+                if summary.node_counts is None
+                else "No stages recorded.",
+                console,
+            )
         )
-    if reuse.reset_verification is not None:
-        details.append(f"reset={reuse.reset_verification}")
-    return details
+    elif console.width < _STACKED_WIDTH:
+        for node in nodes:
+            lines.append(_label(node.node_id, console))
+            lines.extend(
+                _status_duration(
+                    stage_status(node), format_duration(node.duration_seconds), console
+                )
+            )
+    else:
+        lines.append(_stage_table(nodes, console))
+    lines.extend(_omitted(len(summary.node_outcomes) - len(nodes), "stages", console))
+    return lines
 
 
-def _workspace_snapshot_drift_details(
-    invocation: WorkspaceInvocationSummary,
-) -> list[str]:
-    if invocation.snapshot_drift_discarded is None:
-        return []
-    return [
-        "snapshot_drift="
-        f"discarded={invocation.snapshot_drift_discarded},"
-        f"changes={invocation.changed_path_count}"
-    ]
+def _status_duration(
+    status: str, duration: str, console: Console
+) -> list[RenderableType]:
+    value = f"{status} | {duration}"
+    if display_width(_safe(value, console)) <= console.width:
+        return [_text(value, console)]
+    return [_wrapped(status, console), _wrapped(duration, console)]
 
 
-def _workspace_execution_path_details(
-    execution: WorkspaceInvocationExecutionSummary,
-) -> list[str]:
-    details = []
-    if execution.cache_root is not None:
-        details.append(f"cache_root={execution.cache_root}")
-    if execution.effective_cwd is not None:
-        details.append(f"cwd={execution.effective_cwd}")
-    return details
-
-
-def _workspace_branch_export_details(
-    branch_export: WorkspaceInvocationBranchExportSummary,
-) -> list[str]:
-    if branch_export.status is None:
-        return []
-    return [
-        "branch_export="
-        f"{branch_export.status},"
-        f"operation={branch_export.operation},"
-        f"branch={branch_export.branch_name}"
-    ]
-
-
-def _workspace_input_details(invocation: WorkspaceInvocationSummary) -> list[str]:
-    details = []
-    if invocation.rendered_file_count is not None:
-        details.append(f"rendered_files={invocation.rendered_file_count}")
-    if invocation.child_environment_required is not None:
-        details.append(
-            "env="
-            f"required={invocation.child_environment_required},"
-            f"applied={invocation.child_environment_applied}"
+def _stage_table(nodes: tuple[NodeOutcomeSummary, ...], console: Console) -> Table:
+    table = _table(console)
+    status_width = min(
+        max(
+            MIN_STATUS_WIDTH,
+            *(display_width(_safe(stage_status(node), console)) for node in nodes),
+        ),
+        console.width // 2,
+    )
+    duration_width = max(
+        display_width(DURATION_HEADER),
+        *(display_width(format_duration(node.duration_seconds)) for node in nodes),
+    )
+    stage_header = "Stage"
+    name_width = min(
+        max(
+            display_width(stage_header),
+            *(display_width(_safe(node.node_id, console)) for node in nodes),
+        ),
+        max(1, console.width - status_width - duration_width - 2 * COLUMN_PADDING),
+    )
+    table.add_column(stage_header, width=name_width)
+    table.add_column(EXECUTION_HEADER, width=status_width)
+    table.add_column(
+        DURATION_HEADER, width=duration_width, justify="right", no_wrap=True
+    )
+    for node in nodes:
+        table.add_row(
+            _text(fit_text(_safe(node.node_id, console), name_width), console),
+            _text(stage_status(node), console),
+            _text(format_duration(node.duration_seconds), console),
         )
-    return details
+    return table
 
 
-def terminal_issue_lines(summary: RunSummary) -> list[str]:
-    lines = ["Warnings and Errors"]
-    issue_count = len(summary.issues)
-    if issue_count == 0:
-        lines.append("  Count: 0")
-        return lines
-    lines.append(f"  Count: {issue_count}")
-    for issue in summary.issues[:3]:
-        lines.append(f"  - {issue.message}")
-    remaining_issue_count = issue_count - 3
-    if remaining_issue_count > 0:
-        lines.append(f"  ... {remaining_issue_count} more")
+def _durations(summary: RunSummary, console: Console) -> list[RenderableType]:
+    timings = selected_timings(summary)
+    if not timings:
+        return []
+    lines: list[RenderableType] = [
+        _heading("Agent call durations", console),
+        _wrapped(
+            "Longest recorded calls; durations may overlap, not workflow elapsed time.",
+            console,
+        ),
+    ]
+    if console.width < _STACKED_WIDTH:
+        for timing in timings:
+            lines.extend(
+                (
+                    _label(call_identity(timing), console),
+                    _label(_provider_model(timing), console),
+                )
+            )
+            lines.extend(
+                _status_duration(
+                    timing.status, format_call_duration(timing.duration_ms), console
+                )
+            )
+    else:
+        lines.append(_duration_table(timings, console))
+    lines.extend(
+        _omitted(len(summary.invocation_timings) - len(timings), "agent calls", console)
+    )
+    return lines
+
+
+def _provider_model(timing: InvocationTimingSummary) -> str:
+    return f"{timing.provider} / {timing.model if timing.model is not None else 'model n/a'}"
+
+
+def _duration_table(
+    timings: tuple[InvocationTimingSummary, ...], console: Console
+) -> Table:
+    rows = _duration_rows(timings, console)
+    layout = duration_table_layout(rows, console.width)
+    table = _table(console)
+    table.add_column(
+        CALL_HEADER if layout.provider_width else COMBINED_CALL_HEADER,
+        width=layout.label_width,
+    )
+    if layout.provider_width:
+        table.add_column(PROVIDER_HEADER, width=layout.provider_width)
+    table.add_column("Status", width=layout.status_width)
+    table.add_column(
+        DURATION_HEADER, width=layout.duration_width, justify="right", no_wrap=True
+    )
+    if layout.bar_width:
+        table.add_column("", width=layout.bar_width)
+    for row in rows:
+        table.add_row(*_duration_row(row, layout, console))
+    return table
+
+
+def _duration_rows(
+    timings: tuple[InvocationTimingSummary, ...], console: Console
+) -> tuple[DurationTableRow, ...]:
+    return tuple(
+        DurationTableRow(
+            _safe(call_identity(timing), console),
+            _safe(_provider_model(timing), console),
+            _safe(timing.status, console),
+            format_call_duration(timing.duration_ms),
+            timing.duration_ms,
+        )
+        for timing in timings
+    )
+
+
+def _duration_row(
+    row: DurationTableRow, layout: DurationTableLayout, console: Console
+) -> list[Text]:
+    label = fit_text(row.identity, layout.label_width)
+    cells = (
+        [Text(label)]
+        if layout.provider_width
+        else [Text(f"{label}\n{fit_text(row.provider_model, layout.label_width)}")]
+    )
+    if layout.provider_width:
+        cells.append(Text(fit_text(row.provider_model, layout.provider_width)))
+    cells.extend((_text(row.status, console), _text(row.duration, console)))
+    if layout.bar_width:
+        size = (
+            max(
+                1,
+                round(
+                    (row.duration_ms or 0)
+                    / layout.maximum_duration_ms
+                    * layout.bar_width
+                ),
+            )
+            if row.duration_ms
+            else 0
+        )
+        cells.append(_text("#" * size, console, "cyan"))
+    return cells
+
+
+def _usage(summary: RunSummary, console: Console) -> list[RenderableType]:
+    spend = summary.spend
+    aggregates = {
+        aggregate.provider: aggregate
+        for aggregate in summary.provider_token_aggregates.providers
+    }
+    rollups = {rollup.provider: rollup for rollup in summary.provider_rollups}
+    providers = list(dict.fromkeys([*aggregates, *rollups]))
+    lines: list[RenderableType] = []
+    if spend is not None:
+        estimate = (
+            "n/a"
+            if spend.visible_estimate_tokens is None
+            else f"{format_count(spend.visible_estimate_tokens)} tokens (lower bound)"
+        )
+        lines.extend(
+            (
+                _heading("Usage details", console),
+                _wrapped(f"Visible-text estimate: {estimate}", console),
+            )
+        )
+    elif providers:
+        lines.append(_heading("Usage details", console))
+    for provider in providers[:PROVIDER_ROW_LIMIT]:
+        rollup = rollups.get(provider) if provider is not None else None
+        lines.extend(
+            _provider_usage(provider, aggregates.get(provider), rollup, console)
+        )
+    lines.extend(_omitted(len(providers) - PROVIDER_ROW_LIMIT, "providers", console))
+    if summary.omitted_invocation_usage_count:
+        lines.append(
+            _wrapped(
+                f"{summary.omitted_invocation_usage_count} earlier usage rows not retained; full evidence in events.ndjson. Retained details in summary.md.",
+                console,
+            )
+        )
+    return lines
+
+
+def _provider_usage(
+    provider: str | None,
+    aggregate: ProviderTokenAggregate | None,
+    rollup: ProviderUsageRollup | None,
+    console: Console,
+) -> list[RenderableType]:
+    lines: list[RenderableType] = [
+        _label(provider or "unknown provider", console, "bold")
+    ]
+    if aggregate is not None:
+        lines.append(_wrapped(_provider_tokens(aggregate), console))
+    if rollup is not None:
+        lines.append(_wrapped(_provider_coverage(rollup), console))
+    return lines
+
+
+def _provider_tokens(aggregate: ProviderTokenAggregate) -> str:
+    buckets = (
+        ("input", aggregate.input),
+        ("cached input", aggregate.cached_input),
+        ("output", aggregate.output),
+        ("reasoning", aggregate.reasoning),
+        ("cache write", aggregate.cache_write),
+        ("total", aggregate.total),
+    )
+    return f"Reports: {aggregate.report_count}; " + "; ".join(
+        f"{label}={format_count(value)}" for label, value in buckets
+    )
+
+
+def _provider_coverage(rollup: ProviderUsageRollup) -> str:
+    return (
+        f"{rollup.terminal_invocations} calls with usage facts; recorded attempts={rollup.total_attempts}; "
+        f"CLI captured={rollup.cli_captured_invocations}; "
+        f"usage full={rollup.provider_usage_full_invocations}, partial={rollup.provider_usage_partial_invocations}, malformed={rollup.provider_usage_malformed_invocations}; "
+        f"cost={format_cost(rollup.configured_cost_usd)} ({rollup.configured_cost_confidence})"
+    )
+
+
+def _results(summary: RunSummary, console: Console) -> list[RenderableType]:
+    nodes = [node for node in summary.node_outcomes if node.result_path is not None]
+    lines: list[RenderableType] = [_heading("Results and reports", console)]
+    for node in nodes[:RESULT_PATH_LIMIT]:
+        label = fit_text(_safe(node.node_id, console), max(1, console.width // 3))
+        lines.append(_wrapped(f"{label}: {node.result_path}", console))
+    lines.extend(_omitted(len(nodes) - RESULT_PATH_LIMIT, "result paths", console))
+    lines.extend(
+        (
+            _wrapped(f"Summary: {summary.summary_path}", console),
+            _wrapped(f"Events: {summary.event_log_path}", console),
+        )
+    )
+    if summary.workspace is not None:
+        lines.append(_wrapped("Workspace details in summary.md", console))
     return lines

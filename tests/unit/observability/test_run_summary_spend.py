@@ -238,3 +238,21 @@ def test_usage_vocabulary_survives_event_decoding_with_summary_fallbacks(
         accumulator.record(summary)
     assert accumulator.spend_totals() == spend_totals(summaries)
     assert accumulator.provider_usage_rollups() == provider_usage_rollups(summaries)
+
+
+@pytest.mark.parametrize(
+    "values, expected", [([None, None], None), ([0, None], 0), ([None, 7, 3], 10)]
+)
+def test_visible_estimate_missing_and_zero_remain_distinct(values, expected) -> None:
+    events = []
+    for value in values:
+        record = invocation_record()
+        record["visible_estimate_tokens"] = value
+        event = event_from_record(record)
+        assert event is not None
+        events.append(event)
+    summaries = invocation_usage_summaries(events)
+    totals = spend_totals(summaries)
+    assert totals is not None
+    assert totals.visible_estimate_tokens == expected
+    assert provider_usage_rollups(summaries)[0].visible_estimate_tokens == expected

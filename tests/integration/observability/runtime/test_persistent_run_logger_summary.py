@@ -18,9 +18,6 @@ from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from crewplane.observability.persistent import (
-    render_run_summary_terminal,
-)
 from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.types import (
     RunContext,
@@ -29,6 +26,7 @@ from crewplane.observability.types import (
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import (
     make_execution_event,
+    render_summary_terminal,
     topology_from_workflow,
 )
 from tests.integration.observability.runtime.observability_runtime_helpers import (
@@ -192,25 +190,22 @@ def test_persistent_run_logger_writes_ndjson_and_summary(tmp_path: Path) -> None
     )
     assert "## Spend Observability" in summary_text
     assert "provider report: full" in summary_text
-    assert "Configured cost estimate: $0.000207 (confidence: full)" in summary_text
-    assert "## Node Outcomes" in summary_text
-    assert "## Artifact References" in summary_text
+    assert "| Configured cost estimate | $0.000207 (confidence: full) |" in summary_text
+    assert "## Stages" in summary_text
+    assert "<summary>Artifact References</summary>" in summary_text
     last_summary = persistent_logger.last_summary
     assert last_summary is not None
     assert last_summary is not None
-    terminal_summary = render_run_summary_terminal(last_summary)
-    assert (
-        "Provider usage status: 1/1 full, 0/1 partial, 0/1 malformed"
-        in terminal_summary
-    )
-    assert "Provider-reported tokens:" not in terminal_summary
+    terminal_summary = render_summary_terminal(last_summary)
+    assert "usage full=1, partial=0, malformed=0" in terminal_summary
+    assert "Provider-reported tokens: n/a" in terminal_summary
     durable_summary = persistent_logger.refresh_summary(RunResult(status="succeeded"))
     assert durable_summary is not None
     assert durable_summary is not None
-    durable_terminal_summary = render_run_summary_terminal(durable_summary)
+    durable_terminal_summary = render_summary_terminal(durable_summary)
     assert "Provider-reported tokens: n/a across 2 reports" in durable_terminal_summary
-    assert "usage 1/1 full, 0/1 partial, 0/1 malformed" in terminal_summary
-    assert "alpha: 1 invocation(s)" in terminal_summary
+    assert "usage full=1, partial=0, malformed=0" in terminal_summary
+    assert "1 calls with usage facts" in terminal_summary
     assert "Configured cost estimate: $0.000207 (full)" in terminal_summary
 
 
@@ -410,7 +405,13 @@ def test_persistent_run_summary_labels_audit_round_invocations(tmp_path: Path) -
         )
 
     summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-    assert "`review.iterate` / `claude_reviewer_0` / `audit1/round1`" in summary_text
-    assert "`review.iterate` / `claude_reviewer_0` / `audit2/round1`" in summary_text
+    assert (
+        r"\`review.iterate\` / \`claude\_reviewer\_0\` / \`audit1/round1\`"
+        in summary_text
+    )
+    assert (
+        r"\`review.iterate\` / \`claude\_reviewer\_0\` / \`audit2/round1\`"
+        in summary_text
+    )
     assert "round: audit2/round1" in summary_text
-    assert summary_text.count("`claude_reviewer_0`") == 4
+    assert summary_text.count(r"\`claude\_reviewer\_0\`") == 4

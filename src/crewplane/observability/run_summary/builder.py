@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from math import isfinite
+
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import RunSummaryArtifactReaderPort
+from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent
-from crewplane.observability.timing import format_elapsed_seconds
 from crewplane.observability.types import DashboardSnapshot, RunResult
 
 from .accumulator import RunSummaryAccumulator
-from .formatting import duration_label
 from .issues import issue_summaries
 from .models import (
     ArtifactReferenceSummary,
+    InvocationTimingSummary,
     IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
@@ -50,13 +52,19 @@ def build_run_summary(
         review_consensus_unresolved=facts.review_consensus_unresolved,
         started_at=facts.started_at,
         completed_at=facts.completed_at,
-        elapsed_label=elapsed_label(snapshot),
+        elapsed_seconds=elapsed_seconds(snapshot),
+        invocation_count=(
+            sum(len(node.invocations) for node in snapshot.state.nodes.values())
+            if snapshot is not None
+            else None
+        ),
+        invocation_timings=invocation_timing_summaries(snapshot),
         node_counts=node_counts(snapshot),
         spend=facts.spend,
         provider_rollups=facts.provider_rollups,
         invocation_usages=invocation_usages,
         omitted_invocation_usage_count=facts.omitted_invocation_usage_count,
-        node_outcomes=node_outcome_summaries(artifact_store, snapshot),
+        node_outcomes=node_outcome_summaries(artifact_store, snapshot, facts),
         workspace=build_workspace_run_summary(
             artifact_store,
             facts.workspace_invocations,
@@ -90,6 +98,7 @@ def summary_issues(
     if dropped_event_count == 0:
         return issues
     return (
+        *issues,
         IssueSummary(
             level="warning",
             timestamp_utc="n/a",
@@ -100,7 +109,6 @@ def summary_issues(
                 f"{artifact_store.get_run_event_log_path()}."
             ),
         ),
-        *issues,
     )
 
 
@@ -115,15 +123,31 @@ def workflow_status(snapshot: DashboardSnapshot | None, result: RunResult) -> st
     return result.status
 
 
-def elapsed_label(snapshot: DashboardSnapshot | None) -> str | None:
+def recorded_duration(
+    started_at: float | None, finished_at: float | None
+) -> float | None:
+    if (
+        started_at is None
+        or finished_at is None
+        or not isfinite(started_at)
+        or not isfinite(finished_at)
+        or finished_at < started_at
+    ):
+        return None
+    return finished_at - started_at
+
+
+def elapsed_seconds(snapshot: DashboardSnapshot | None) -> float | None:
     if snapshot is None:
         return None
-    return format_elapsed_seconds(snapshot.state.elapsed_seconds)
+    return recorded_duration(
+        snapshot.state.workflow_started_at, snapshot.state.workflow_finished_at
+    )
 
 
-def node_counts(snapshot: DashboardSnapshot | None) -> NodeCounts:
+def node_counts(snapshot: DashboardSnapshot | None) -> NodeCounts | None:
     if snapshot is None:
-        return NodeCounts(pending=0, running=0, succeeded=0, blocked=0, failed=0)
+        return None
     state = snapshot.state
     return NodeCounts(
         pending=state.pending_nodes,
@@ -131,12 +155,14 @@ def node_counts(snapshot: DashboardSnapshot | None) -> NodeCounts:
         succeeded=state.succeeded_nodes,
         blocked=state.blocked_nodes,
         failed=state.failed_nodes,
+        cancelled=sum(node.status == "cancelled" for node in state.nodes.values()),
     )
 
 
 def node_outcome_summaries(
     artifact_store: RunSummaryArtifactReaderPort,
     snapshot: DashboardSnapshot | None,
+    facts: RunSummaryFacts,
 ) -> tuple[NodeOutcomeSummary, ...]:
     if snapshot is None:
         return ()
@@ -156,10 +182,17 @@ def node_outcome_summaries(
             NodeOutcomeSummary(
                 node_id=node.node_id,
                 status=node.status,
-                duration_label=duration_label(
-                    node.started_at,
-                    node.finished_at,
-                    snapshot.now,
+                duration_seconds=(
+                    None
+                    if node.node_id in facts.reused_node_ids
+                    else recorded_duration(node.started_at, node.finished_at)
+                ),
+                resume_kind=(
+                    "reused"
+                    if node.node_id in facts.reused_node_ids
+                    else "checkpoint"
+                    if node.node_id in facts.checkpoint_resumed_node_ids
+                    else None
                 ),
                 result_path=(
                     result_path
@@ -194,3 +227,31 @@ def artifact_reference_summaries(
                 )
             )
     return tuple(references)
+
+
+def invocation_timing_summaries(
+    snapshot: DashboardSnapshot | None,
+) -> tuple[InvocationTimingSummary, ...]:
+    if snapshot is None:
+        return ()
+    return tuple(
+        InvocationTimingSummary(
+            node_id=node.node_id,
+            task_id=invocation.task_id,
+            provider=invocation.provider,
+            model=invocation.model,
+            audit_round_num=invocation.audit_round_num,
+            round_num=invocation.round_num,
+            status=invocation.status,
+            duration_ms=(
+                invocation.duration_ms
+                if is_nonnegative_int(invocation.duration_ms)
+                else None
+            ),
+        )
+        for node in sorted(
+            snapshot.state.nodes.values(),
+            key=lambda item: snapshot.state.node_order[item.node_id],
+        )
+        for invocation in node.invocations.values()
+    )

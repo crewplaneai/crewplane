@@ -8,10 +8,10 @@ from crewplane.architecture.contracts import EventType, build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
-from crewplane.observability.persistent import render_run_summary_terminal
 from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
+    render_summary_terminal,
     topology_from_workflow,
 )
 from tests.integration.observability.runtime.observability_runtime_helpers import (
@@ -104,11 +104,11 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             )
 
         summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-        self.assertIn("`node.a` / `alpha_executor_0`", summary_text)
+        self.assertIn(r"\`node.a\` / \`alpha\_executor\_0\`", summary_text)
         self.assertIn("output extraction: missing", summary_text)
         self.assertIn("configured cost: $0.000007", summary_text)
-        self.assertIn("`node.a`: failed", summary_text)
-        self.assertIn("result: not produced", summary_text)
+        self.assertIn("| node.a | failed |", summary_text)
+        self.assertIn("| not produced |", summary_text)
         self.assertNotIn(
             str(output.results_dir / build_result_filename("node.a")),
             summary_text,
@@ -116,10 +116,10 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
         last_summary = persistent_logger.last_summary
         self.assertIsNotNone(last_summary)
         assert last_summary is not None
-        terminal_summary = render_run_summary_terminal(last_summary)
-        self.assertIn("Status: failed", terminal_summary)
+        terminal_summary = render_summary_terminal(last_summary)
+        self.assertIn("Execution: failed", terminal_summary)
         self.assertIn(
-            "Provider usage status: 0/1 full, 0/1 partial, 0/1 malformed",
+            "usage full=0, partial=0, malformed=0",
             terminal_summary,
         )
         self.assertIn("Configured cost estimate: $0.000007 (partial)", terminal_summary)
@@ -165,9 +165,9 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             )
 
         summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
-        self.assertIn("`node.b`: blocked", summary_text)
-        self.assertIn("result: not produced", summary_text)
-        self.assertIn("[error] Workflow failed: failed", summary_text)
+        self.assertIn("| node.b | blocked |", summary_text)
+        self.assertIn("| not produced |", summary_text)
+        self.assertIn(r"\[error\] Workflow failed: failed", summary_text)
         self.assertNotIn("Workflow failed: unspecified error", summary_text)
         self.assertNotIn(
             str(output.results_dir / build_result_filename("node.b")),
@@ -253,22 +253,22 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
 
         summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
         self.assertIn(
-            "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
+            "| Provider usage status | 0/1 full, 1/1 partial, 0/1 malformed |",
             summary_text,
         )
         self.assertIn(
-            "provider tokens: input=120, cached_input=n/a, cache_write=n/a, output=n/a, reasoning=n/a, total=n/a",
+            r"provider tokens: input=120, cached\_input=n/a, cache\_write=n/a, output=n/a, reasoning=n/a, total=n/a",
             summary_text,
         )
         last_summary = persistent_logger.last_summary
         self.assertIsNotNone(last_summary)
         assert last_summary is not None
-        terminal_summary = render_run_summary_terminal(last_summary)
+        terminal_summary = render_summary_terminal(last_summary)
         self.assertIn(
-            "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
+            "usage full=0, partial=1, malformed=0",
             terminal_summary,
         )
-        self.assertIn("cost $0.000025 (partial)", terminal_summary)
+        self.assertIn("Configured cost estimate: $0.000025 (partial)", terminal_summary)
 
     def test_persistent_run_logger_renders_output_only_provider_totals(self) -> None:
         workflow = single_node_workflow()
@@ -347,15 +347,15 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
 
         summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
         self.assertIn(
-            "provider tokens: input=n/a, cached_input=n/a, cache_write=n/a, output=45, reasoning=n/a, total=n/a",
+            r"provider tokens: input=n/a, cached\_input=n/a, cache\_write=n/a, output=45, reasoning=n/a, total=n/a",
             summary_text,
         )
         last_summary = persistent_logger.last_summary
         self.assertIsNotNone(last_summary)
         assert last_summary is not None
-        terminal_summary = render_run_summary_terminal(last_summary)
+        terminal_summary = render_summary_terminal(last_summary)
         self.assertIn(
-            "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
+            "usage full=0, partial=1, malformed=0",
             terminal_summary,
         )
-        self.assertIn("cost $0.000025 (partial)", terminal_summary)
+        self.assertIn("Configured cost estimate: $0.000025 (partial)", terminal_summary)

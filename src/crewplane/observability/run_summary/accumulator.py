@@ -34,6 +34,8 @@ class RunSummaryAccumulator:
             WorkspaceInvocationSummary,
         ] = {}
         self._review_consensus_unresolved = False
+        self._reused_node_ids: set[str] = set()
+        self._checkpoint_resumed_node_ids: set[str] = set()
         self._started_at = "n/a"
         self._completed_at = "n/a"
 
@@ -53,6 +55,11 @@ class RunSummaryAccumulator:
             self._workspace_invocations[workspace_invocation_key(workspace_summary)] = (
                 workspace_summary
             )
+        if isinstance(event.payload, RuntimeLogEventPayload) and event.context.node_id:
+            if event.payload.operation == "node_resumed":
+                self._reused_node_ids.add(event.context.node_id)
+            elif event.payload.operation == "review_checkpoint_resumed":
+                self._checkpoint_resumed_node_ids.add(event.context.node_id)
         if _is_unresolved_consensus_event(event):
             self._review_consensus_unresolved = True
 
@@ -66,14 +73,22 @@ class RunSummaryAccumulator:
             review_consensus_unresolved=self._review_consensus_unresolved,
             started_at=self._started_at,
             completed_at=self._completed_at,
+            reused_node_ids=frozenset(self._reused_node_ids),
+            checkpoint_resumed_node_ids=frozenset(self._checkpoint_resumed_node_ids),
         )
 
 
 def _is_unresolved_consensus_event(event: ExecutionEvent) -> bool:
-    return (
-        event.event_type == EventType.RUNTIME_LOG
-        and isinstance(event.payload, RuntimeLogEventPayload)
-        and event.payload.operation == "review_loop_consensus_exhausted"
-        and event.payload.attributes is not None
-        and event.payload.attributes.get("continued") is True
+    if event.event_type != EventType.RUNTIME_LOG or not isinstance(
+        event.payload, RuntimeLogEventPayload
+    ):
+        return False
+    payload = event.payload
+    attributes = payload.attributes or {}
+    return attributes.get("continued") is True and (
+        payload.operation == "review_loop_consensus_exhausted"
+        or (
+            payload.operation == "review_loop_stopped"
+            and attributes.get("stop_reason") == "no_progress"
+        )
     )

@@ -47,7 +47,7 @@ class _UsageRollupFields(TypedDict):
     provider_usage_full_invocations: int
     provider_usage_partial_invocations: int
     provider_usage_malformed_invocations: int
-    visible_estimate_tokens: int
+    visible_estimate_tokens: int | None
     configured_cost_usd: float | None
     configured_cost_confidence: AggregateCostConfidence
 
@@ -92,7 +92,7 @@ class _MutableUsageRollup:
     provider_usage_full_invocations: int = 0
     provider_usage_partial_invocations: int = 0
     provider_usage_malformed_invocations: int = 0
-    visible_estimate_tokens: int = 0
+    visible_estimate_tokens: int | None = None
     configured_cost_usd: float | None = None
     cost_confidences: set[InvocationCostConfidence] = field(default_factory=set)
 
@@ -109,7 +109,10 @@ class _MutableUsageRollup:
         self.provider_usage_malformed_invocations += int(
             invocation_usage.provider_usage_status == "malformed"
         )
-        self.visible_estimate_tokens += invocation_usage.visible_estimate_tokens or 0
+        if invocation_usage.visible_estimate_tokens is not None:
+            self.visible_estimate_tokens = (self.visible_estimate_tokens or 0) + (
+                invocation_usage.visible_estimate_tokens
+            )
         if invocation_usage.configured_cost_usd is not None:
             if self.configured_cost_usd is None:
                 self.configured_cost_usd = 0.0
@@ -314,12 +317,11 @@ def provider_usage_rollups(
 def spend_overview_rows(spend: SpendTotals) -> tuple[SpendOverviewRow, ...]:
     return (
         SpendOverviewRow(
-            label="Terminal invocations", value=str(spend.terminal_invocations)
+            label="Calls with usage facts", value=str(spend.terminal_invocations)
         ),
         SpendOverviewRow(
-            label="Total attempts",
+            label="Recorded attempts",
             value=str(spend.total_attempts),
-            show_in_terminal=False,
         ),
         SpendOverviewRow(
             label="CLI invocations captured",

@@ -346,7 +346,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIn("- Status: cancelled", first_summary)
             self.assertIn(
-                "Provider-reported tokens: 10 across 1 reports",
+                "| Provider-reported tokens | 10 across 1 reports |",
                 first_summary,
             )
             second_run = run_dirs[1]
@@ -462,7 +462,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8"
             )
             self.assertIn(
-                "Provider-reported tokens: 10 across 1 reports",
+                "| Provider-reported tokens | 10 across 1 reports |",
                 first_summary,
             )
             second_run = run_dirs[1]

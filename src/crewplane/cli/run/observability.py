@@ -260,7 +260,9 @@ def print_end_of_run_summary(
     if summary is None:
         return
     console.print("")
-    console.print(render_run_summary_terminal(summary), markup=False)
+    console.print(
+        render_run_summary_terminal(summary, console), markup=False, highlight=False
+    )
 
 
 def _resolve_observability_hub(

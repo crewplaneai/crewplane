@@ -4,11 +4,22 @@ from collections.abc import Mapping
 
 from crewplane.observability.timing import format_elapsed_seconds
 
-from .models import InvocationUsageSummary, ProviderTokenAggregate
+from .models import (
+    InvocationTimingSummary,
+    InvocationUsageSummary,
+    NodeOutcomeSummary,
+    RunSummary,
+)
+
+STAGE_ROW_LIMIT = 12
+DURATION_ROW_LIMIT = 8
+ISSUE_LIMIT = 3
+PROVIDER_ROW_LIMIT = 4
+RESULT_PATH_LIMIT = 3
 
 
-def format_count(value: int) -> str:
-    return f"{value:,}"
+def format_count(value: int | None) -> str:
+    return "n/a" if value is None else f"{value:,}"
 
 
 def format_cost(value: float | None) -> str:
@@ -23,35 +34,6 @@ def format_provider_tokens(provider_tokens: Mapping[str, int | None]) -> str:
         for bucket, value in provider_tokens.items()
     ]
     return ", ".join(parts)
-
-
-def format_provider_token_aggregate_lines(
-    aggregate: ProviderTokenAggregate,
-    label: str = "Provider-reported tokens",
-) -> tuple[str, ...]:
-    total = format_count(aggregate.total) if aggregate.total is not None else "n/a"
-    lines = [f"{label}: {total} across {aggregate.report_count} reports"]
-    if aggregate.input is not None:
-        cached = (
-            f" (cached input: {format_count(aggregate.cached_input)})"
-            if aggregate.cached_input is not None
-            else ""
-        )
-        lines.append(f"Input: {format_count(aggregate.input)}{cached}")
-    elif aggregate.cached_input is not None:
-        lines.append(f"Cached input: {format_count(aggregate.cached_input)}")
-    if aggregate.output is not None:
-        reasoning = (
-            f" (reasoning output: {format_count(aggregate.reasoning)})"
-            if aggregate.reasoning is not None
-            else ""
-        )
-        lines.append(f"Output: {format_count(aggregate.output)}{reasoning}")
-    if aggregate.cache_write is not None:
-        lines.append(f"Cache write: {format_count(aggregate.cache_write)}")
-    if aggregate.reasoning is not None and aggregate.output is None:
-        lines.append(f"Reasoning output: {format_count(aggregate.reasoning)}")
-    return tuple(lines)
 
 
 def format_visible_estimate(invocation_usage: InvocationUsageSummary) -> str:
@@ -91,12 +73,89 @@ def invocation_label(
     return " / ".join(label_parts) if label_parts else "`unknown invocation`"
 
 
-def duration_label(
-    started_at: float | None,
-    finished_at: float | None,
-    now: float,
-) -> str:
-    if started_at is None:
-        return ""
-    end = finished_at if finished_at is not None else now
-    return f" in {format_elapsed_seconds(max(0.0, end - started_at))}"
+def selected_stages(summary: RunSummary) -> tuple[NodeOutcomeSummary, ...]:
+    nodes = summary.node_outcomes
+    priority = [index for index, node in enumerate(nodes) if node.status != "succeeded"]
+    remaining = [
+        index for index, node in enumerate(nodes) if node.status == "succeeded"
+    ]
+    selected = sorted((priority + remaining)[:STAGE_ROW_LIMIT])
+    return tuple(nodes[index] for index in selected)
+
+
+def selected_timings(summary: RunSummary) -> tuple[InvocationTimingSummary, ...]:
+    return tuple(
+        sorted(summary.invocation_timings, key=timing_sort_key)[:DURATION_ROW_LIMIT]
+    )
+
+
+def timing_sort_key(
+    timing: InvocationTimingSummary,
+) -> tuple[bool, int, str, str, int, int, str, str]:
+    return (
+        timing.duration_ms is None,
+        -(timing.duration_ms or 0),
+        timing.node_id,
+        timing.task_id,
+        timing.audit_round_num if timing.audit_round_num is not None else -1,
+        timing.round_num if timing.round_num is not None else -1,
+        timing.provider,
+        timing.model or "",
+    )
+
+
+def stage_status(node: NodeOutcomeSummary) -> str:
+    if node.resume_kind == "reused":
+        return f"{node.status} (reused)"
+    if node.resume_kind == "checkpoint":
+        return f"{node.status} (checkpoint resumed)"
+    return node.status
+
+
+def format_duration(seconds: float | None) -> str:
+    return "n/a" if seconds is None else format_elapsed_seconds(seconds)
+
+
+def format_call_duration(duration_ms: int | None) -> str:
+    return "n/a" if duration_ms is None else f"{duration_ms / 1000:.3f}s"
+
+
+def call_identity(timing: InvocationTimingSummary) -> str:
+    parts = [timing.node_id, timing.task_id]
+    round_label = format_round_label(timing.audit_round_num, timing.round_num)
+    if round_label is not None:
+        parts.append(round_label)
+    return " / ".join(parts)
+
+
+def stage_counts_label(summary: RunSummary) -> str:
+    counts = summary.node_counts
+    if counts is None:
+        return "n/a (no state captured)"
+    parts = [
+        f"{value} {status}"
+        for status, value in (
+            ("succeeded", counts.succeeded),
+            ("failed", counts.failed),
+            ("cancelled", counts.cancelled),
+            ("blocked", counts.blocked),
+            ("running", counts.running),
+            ("pending", counts.pending),
+        )
+        if value
+    ]
+    reused = sum(node.resume_kind == "reused" for node in summary.node_outcomes)
+    if reused:
+        parts.append(f"including {reused} reused")
+    return ", ".join(parts) if parts else "0 stages"
+
+
+def invocation_coverage_label(summary: RunSummary) -> str:
+    captured = summary.spend.terminal_invocations if summary.spend else None
+    if summary.invocation_count is None:
+        return f"{format_count(captured)} calls with usage facts; total calls n/a"
+    if summary.invocation_count == 0:
+        return "0 calls (no new calls)"
+    return (
+        f"{format_count(captured)} of {summary.invocation_count} calls with usage facts"
+    )

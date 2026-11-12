@@ -286,7 +286,7 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
             )
             self.assertIn("- Status: failed", summary_text)
             self.assertIn("compare.models", summary_text)
-            self.assertIn("Selected model is at capacity. [/foo]", summary_text)
+            self.assertIn(r"Selected model is at capacity. \[/foo\]", summary_text)
             self.assertIn("summarize.results", summary_text)
             self.assertIn(f"Stages: {run_dirs[0]}", output_text)
             self.assertIn(
