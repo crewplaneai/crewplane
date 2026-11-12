@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-11
+
 ### Changed
 
 - Make end-of-run summaries easier to scan with stage outcomes, call durations, early warnings, and linked details, while keeping missing telemetry distinct from zero.
