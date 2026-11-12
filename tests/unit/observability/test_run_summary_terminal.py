@@ -82,17 +82,19 @@ def _summary(root: Path) -> RunSummary:
 
 def _render(summary: RunSummary, width: int = 120) -> str:
     stream = StringIO()
-    console = Console(file=stream, width=width, color_system=None)
+    console = Console(file=stream, width=width, color_system=None, legacy_windows=False)
     rendered = render_run_summary_terminal(summary, console)
     assert isinstance(rendered, Group)
     console.print(rendered, markup=False, highlight=False)
     return stream.getvalue()
 
 
+@pytest.mark.parametrize("project_name", ["project", "long-project-name-" * 8])
 def test_sections_report_execution_review_timing_and_recorded_usage(
-    tmp_path: Path,
+    tmp_path: Path, project_name: str
 ) -> None:
-    output = _render(_summary(tmp_path))
+    root = tmp_path / project_name
+    output = _render(_summary(root))
     headings = (
         "Run Summary: Review project",
         "Needs attention",
@@ -115,9 +117,11 @@ def test_sections_report_execution_review_timing_and_recorded_usage(
     assert "durations may overlap" in output
     assert "not workflow elapsed time" in output
     assert output.index("80.125s") < output.index("50.500s")
-    assert str(tmp_path / "report-result.md") in output
-    assert str(tmp_path / "logs" / "summary.md") in output
-    assert str(tmp_path / "logs" / "events.ndjson") in output
+    compact = output.replace("\n", "")
+    assert str(root / "report-result.md") in compact
+    assert str(root / "logs" / "summary.md") in compact
+    assert str(root / "logs" / "events.ndjson") in compact
+    assert all(display_width(line) <= 120 for line in output.splitlines())
 
 
 @pytest.mark.parametrize("width", [120, 80, 40, 24])
@@ -459,8 +463,9 @@ def test_timing_ties_have_stable_identity_order_and_unknown_is_last(
     assert "n/a" in output
 
 
+@pytest.mark.parametrize("width", [23, 24])
 def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
-    tmp_path: Path,
+    tmp_path: Path, width: int
 ) -> None:
     summary = _summary(tmp_path)
     summary = replace(
@@ -477,12 +482,13 @@ def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
         ),
         issues=(IssueSummary("error", "now", "failure " * 10_000),),
     )
-    output = _render(summary, 24)
+    output = _render(summary, width)
     assert len(output.splitlines()) < 100
     assert "succeeded (reused)" in output
     assert "80.125s" in output
-    assert "Full issue in summary.md" in output
+    assert "Full issue in summary.md" in " ".join(output.split())
     assert str(summary.summary_path) in output.replace("\n", "")
+    assert all(display_width(line) <= width for line in output.splitlines())
 
 
 def test_label_linebreaks_and_control_characters_are_normalized(tmp_path: Path) -> None:
@@ -496,9 +502,12 @@ def test_label_linebreaks_and_control_characters_are_normalized(tmp_path: Path) 
     )
 
 
-@pytest.mark.parametrize("width", [40, 59, 60, 79, 80, 120])
+@pytest.mark.parametrize(
+    "legacy_windows", [False, True], ids=["modern", "legacy-windows"]
+)
+@pytest.mark.parametrize("width", [39, 40, 41, 59, 60, 61, 79, 80, 81, 120])
 def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
-    tmp_path: Path, width: int
+    tmp_path: Path, width: int, legacy_windows: bool
 ) -> None:
     summary = _summary(tmp_path)
     summary = replace(
@@ -514,21 +523,33 @@ def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
             )
         ),
     )
+    stream = StringIO()
+    console = Console(
+        file=stream,
+        width=width,
+        height=24,
+        color_system=None,
+        legacy_windows=legacy_windows,
+    )
 
-    output = _render(summary, width)
+    console.print(
+        render_run_summary_terminal(summary, console), markup=False, highlight=False
+    )
+    output = stream.getvalue()
     durations = output.split("Agent call durations\n", 1)[1].split("Usage details", 1)[
         0
     ]
 
-    assert ("Provider /" in durations) is (width >= 80)
-    assert ("Call / model" in durations) is (width < 80)
+    effective_width = console.width
+    assert ("Provider /" in durations) is (effective_width >= 80)
+    assert ("Call / model" in durations) is (40 <= effective_width < 80)
     for value in ("1.000s", "0.500s", "0.001s", "0.000s", "n/a"):
         assert value in durations
-    bar_width = min(20, width // 5)
+    bar_width = min(20, effective_width // 5)
     assert [len(bar) for bar in re.findall(r"#+", durations)] == (
-        [bar_width, round(bar_width / 2), 1] if width >= 60 else []
+        [bar_width, round(bar_width / 2), 1] if effective_width >= 60 else []
     )
-    assert all(display_width(line) <= width for line in output.splitlines())
+    assert all(display_width(line) <= effective_width for line in output.splitlines())
 
 
 @pytest.mark.parametrize(
