@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from crewplane.core.workflow.keywords import ALLOWED_NODE_ARTIFACT_NAME_SET
+from crewplane.core.workflow.keywords import (
+    ALLOWED_NODE_ARTIFACT_NAME_SET,
+    FINDINGS_ARTIFACT_KEYS,
+)
 
 if TYPE_CHECKING:
     from .compiled_records import DependencyEdge, PreflightExecutionNode, RenderPlan
@@ -107,7 +110,7 @@ def _validate_dependency_edge(
         )
     if (
         edge.artifact_name is not None
-        and edge.artifact_name.startswith("findings")
+        and edge.artifact_name in FINDINGS_ARTIFACT_KEYS
         and not nodes_by_id[edge.source_node].findings
     ):
         raise ValueError(

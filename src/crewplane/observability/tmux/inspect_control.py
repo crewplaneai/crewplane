@@ -15,7 +15,6 @@ from crewplane.observability.tmux.inspect_snapshot import (
     has_valid_presentation,
     read_inspect_snapshot,
     read_snapshot,
-    selected_snapshot_is_current,
     write_inspect_snapshot,
 )
 from crewplane.observability.tmux.runtime_files import (
@@ -31,6 +30,7 @@ from crewplane.observability.tmux.shell_commands import tmux_argv_prefix
 from crewplane.observability.tmux.snapshot_types import (
     InspectView,
     SelectedInvocationSnapshot,
+    selected_snapshot_is_current,
 )
 
 RequestedView = Literal["auto", "raw", "formatted"]
@@ -108,7 +108,9 @@ def inspect_source_snapshot(
     if selected is None:
         return None
     control = read_selection_control(runtime_files)
-    if not selected_snapshot_is_current(selected, control):
+    if not selected_snapshot_is_current(
+        selected, control.selected_index, control.selection_generation
+    ):
         return None
     return selected
 

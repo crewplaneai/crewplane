@@ -84,6 +84,17 @@ _OPTIONAL_NULLABLE_INTEGER_FIELDS = ("audit_round_num", "round_num")
 _INSPECT_VIEWS = frozenset({"raw", "formatted"})
 
 
+def selected_snapshot_is_current(
+    selected: Mapping[str, object],
+    selected_index: int,
+    selection_generation: int,
+) -> bool:
+    return (
+        selected.get("selection_generation") == selection_generation
+        and selected.get("requested_selected_index") == selected_index
+    )
+
+
 def is_selected_invocation_snapshot(
     value: object,
 ) -> TypeGuard[SelectedInvocationSnapshot]:

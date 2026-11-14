@@ -11,6 +11,7 @@ from crewplane.architecture.contracts import (
     LogPresentationDescriptor,
     validate_log_presentation_descriptor,
 )
+from crewplane.architecture.contracts.provider_log import STDERR_PREFIX_TEXT
 from crewplane.observability.events.types import InvocationStatus
 
 from .json_extract import exceeds_json_depth, render_json_object, render_json_record
@@ -24,8 +25,6 @@ from .models import (
 from .sanitize import decode_sanitized, sanitize_line, sanitize_lines
 from .tail import read_bounded_tail, read_latest_attempt_body
 from .throttle import JSON_OBJECT_THROTTLE
-
-_STDERR_PREFIX = "[stderr] "
 
 
 @dataclass(frozen=True)
@@ -104,7 +103,7 @@ def format_json_lines(request: LogPresentationRequest) -> LogPresentationSnapsho
         except (TypeError, ValueError):
             record = None
         if record is None:
-            if line.startswith(_STDERR_PREFIX):
+            if line.startswith(STDERR_PREFIX_TEXT):
                 rendered.append(sanitize_line(f"stderr: {payload}", request.limits))
             else:
                 rendered.append(sanitize_line(line, request.limits))
@@ -247,7 +246,9 @@ def info_notice(message: str) -> LogPresentationNotice:
 
 
 def _strip_stderr_prefix(line: str) -> str:
-    return line[len(_STDERR_PREFIX) :] if line.startswith(_STDERR_PREFIX) else line
+    return (
+        line[len(STDERR_PREFIX_TEXT) :] if line.startswith(STDERR_PREFIX_TEXT) else line
+    )
 
 
 def _strip_stderr_prefixes(text: str) -> str:
@@ -303,7 +304,7 @@ def _recover_claude_json_with_inner_diagnostics(
         stripped_lines[start_line : end_line + 1],
         strict=True,
     ):
-        if raw_line.startswith(_STDERR_PREFIX) and not _looks_like_json_fragment(
+        if raw_line.startswith(STDERR_PREFIX_TEXT) and not _looks_like_json_fragment(
             stripped_line
         ):
             diagnostics.append(stripped_line.strip())

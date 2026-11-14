@@ -274,8 +274,10 @@ def test_invocation_process_event_rejects_invalid_state(
         InvocationProcessEvent(**values)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("report_count", [0, 3])
-def test_invocation_usage_serializes_provider_report_count(report_count: int) -> None:
+@pytest.mark.parametrize("report_count", [None, 0, 3])
+def test_invocation_usage_serializes_provider_report_count(
+    report_count: int | None,
+) -> None:
     usage = InvocationUsage(
         attempt_count=1,
         cli_captured=True,
@@ -294,13 +296,13 @@ def test_invocation_usage_serializes_provider_report_count(report_count: int) ->
     assert usage.as_event_fields()["provider_usage_report_count"] == report_count
 
 
-@pytest.mark.parametrize("report_count", [-1, True, "1", 1.5])
+@pytest.mark.parametrize("report_count", [-1, False, True, "1", 0.0, 1.0, 1.5])
 def test_invocation_usage_rejects_invalid_provider_report_count(
     report_count: object,
 ) -> None:
     with pytest.raises(
         ValueError,
-        match="provider_usage_report_count must be a non-negative integer",
+        match="^provider_usage_report_count must be a non-negative integer$",
     ):
         InvocationUsage(
             attempt_count=1,

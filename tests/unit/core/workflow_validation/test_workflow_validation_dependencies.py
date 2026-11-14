@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -614,4 +616,76 @@ def test_artifact_token_families_match_the_literal_contract() -> None:
     assert OUTPUT_ARTIFACT_KEYS.isdisjoint(FINDINGS_ARTIFACT_KEYS)
     assert (
         set(get_args(NodeArtifactName)) == OUTPUT_ARTIFACT_KEYS | FINDINGS_ARTIFACT_KEYS
+    )
+
+
+@pytest.mark.parametrize(
+    ("artifact", "requires_findings"),
+    [
+        ("output", False),
+        ("output_path", False),
+        ("output_size", False),
+        ("output_sha256", False),
+        ("findings", True),
+        ("findings_path", True),
+        ("findings_size", True),
+        ("findings_sha256", True),
+    ],
+)
+@pytest.mark.parametrize("findings", [False, True])
+def test_artifact_reference_findings_availability(
+    artifact: str, requires_findings: bool, findings: bool
+) -> None:
+    workflow = artifact_reference_workflow(artifact, findings)
+
+    diagnostics = collect_workflow_validation_diagnostics(workflow)
+
+    expected_messages = (
+        [
+            f"Node 'consumer' references '{{{{producer.{artifact}}}}}' but upstream "
+            "node 'producer' does not define findings: true."
+        ]
+        if requires_findings and not findings
+        else []
+    )
+    assert [diagnostic.message for diagnostic in diagnostics] == expected_messages
+
+
+@pytest.mark.parametrize("findings", [False, True])
+def test_unknown_findings_prefixed_artifact_precedes_availability(
+    findings: bool,
+) -> None:
+    workflow = artifact_reference_workflow("findings_unknown", findings)
+
+    diagnostics = collect_workflow_validation_diagnostics(workflow)
+
+    assert [diagnostic.message for diagnostic in diagnostics] == [
+        "Node 'consumer' references unsupported artifact "
+        "'{{producer.findings_unknown}}'. node artifact name must be one of: "
+        "output, findings, output_path, findings_path, output_size, findings_size, "
+        "output_sha256, findings_sha256"
+    ]
+
+
+def artifact_reference_workflow(artifact: str, findings: bool) -> WorkflowPlan:
+    return WorkflowPlan(
+        name="Artifact availability",
+        nodes=[
+            WorkflowNode(
+                id="producer",
+                mode="parallel",
+                findings=findings,
+                providers=[ProviderSpec(provider="gpt4")],
+                prompt_segments=[PromptSegment(role="shared", content="Produce")],
+            ),
+            WorkflowNode(
+                id="consumer",
+                mode="parallel",
+                needs=["producer"],
+                providers=[ProviderSpec(provider="gpt4")],
+                prompt_segments=[
+                    PromptSegment(role="shared", content=f"{{{{producer.{artifact}}}}}")
+                ],
+            ),
+        ],
     )

@@ -148,7 +148,7 @@ def workspace_blob_descriptor_matches(
 
 
 def _run_git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return _run_git_with_env(repo_root, _sanitized_git_env(), *args)
+    return _run_git_with_env(repo_root, sanitized_bundle_git_environment(), *args)
 
 
 def _run_git_with_env(
@@ -264,7 +264,7 @@ def _prepare_bundle_repository(
     object_format: str,
 ) -> tuple[Path, dict[str, str]]:
     git_dir = Path(temp_dir) / "bundle.git"
-    env = _sanitized_git_env()
+    env = sanitized_bundle_git_environment()
     _init_isolated_bare_repo(git_dir, env, object_format)
     _run_git_dir(git_dir, env, "bundle", "unbundle", bundle_path.as_posix())
     return git_dir, env
@@ -274,7 +274,7 @@ def _repo_blob_descriptor_matches(
     repo_root: Path,
     descriptor: WorkspaceBlobDescriptor,
 ) -> bool:
-    env = _sanitized_git_env()
+    env = sanitized_bundle_git_environment()
     return _blob_descriptor_matches(
         repo_root,
         env,
@@ -434,7 +434,3 @@ def _run_git_dir(
 
 def sanitized_bundle_git_environment() -> dict[str, str]:
     return sanitized_workspace_git_environment(read_only=True)
-
-
-def _sanitized_git_env() -> dict[str, str]:
-    return sanitized_bundle_git_environment()

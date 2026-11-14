@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -473,3 +474,84 @@ def test_manifest_source_covers_successful_nodes_and_checkpoints(
             RunManifest.model_validate(
                 {**manifest, "resume_source_run_id": "different"}
             )
+
+
+@pytest.fixture
+def resume_summary_payload() -> dict[str, object]:
+    return {
+        "node_id": "a",
+        "source_audit": 1,
+        "source_local_round": 1,
+        "source_phase": "reviewers",
+        "resume_origin": {
+            "source_run_id": "source",
+            "source_run_key_name": "workflow--source",
+            "source_node_id": "a",
+            "hydrated_at": iso_datetime(),
+        },
+    }
+
+
+@pytest.mark.parametrize("phase", ["executors", "reviewers", "finalize"])
+def test_resume_summary_and_manifest_preserve_checkpoint_phase_strings(
+    resume_summary_payload: dict[str, object], phase: str
+) -> None:
+    resume_summary_payload["source_phase"] = phase
+    summary = ReviewCheckpointResumeSummary.model_validate(resume_summary_payload)
+
+    assert summary.source_phase == phase
+    assert type(summary.source_phase) is str
+    assert json.loads(summary.model_dump_json()) == resume_summary_payload
+    assert (
+        ReviewCheckpointResumeSummary.model_validate_json(summary.model_dump_json())
+        == summary
+    )
+    manifest_payload = make_run_manifest("fresh", "workflow--fresh").model_dump(
+        mode="json"
+    )
+    manifest_payload.update(
+        resumed_review_checkpoints=[resume_summary_payload],
+        resume_source_run_id="source",
+        resume_source_run_key_name="workflow--source",
+    )
+    manifest = RunManifest.model_validate(manifest_payload)
+
+    assert json.loads(manifest.model_dump_json()) == manifest_payload
+    restored = RunManifest.model_validate_json(manifest.model_dump_json())
+    assert restored == manifest
+    assert restored.resumed_review_checkpoints == [summary]
+    assert type(restored.resumed_review_checkpoints[0].source_phase) is str
+
+
+@pytest.mark.parametrize("phase", ["", "apply_review", "EXECUTORS", "unknown"])
+def test_resume_summary_and_manifest_reject_unsupported_checkpoint_phases(
+    resume_summary_payload: dict[str, object], phase: str
+) -> None:
+    resume_summary_payload["source_phase"] = phase
+    manifest_payload = make_run_manifest("fresh", "workflow--fresh").model_dump()
+    manifest_payload.update(
+        resumed_review_checkpoints=[resume_summary_payload],
+        resume_source_run_id="source",
+        resume_source_run_key_name="workflow--source",
+    )
+
+    for model, payload, location in (
+        (ReviewCheckpointResumeSummary, resume_summary_payload, ("source_phase",)),
+        (
+            RunManifest,
+            manifest_payload,
+            ("resumed_review_checkpoints", 0, "source_phase"),
+        ),
+    ):
+        with pytest.raises(ValidationError) as caught:
+            model.model_validate(payload)
+        assert [
+            (error["loc"], error["type"], error["msg"])
+            for error in caught.value.errors()
+        ] == [
+            (
+                location,
+                "literal_error",
+                "Input should be 'executors', 'reviewers' or 'finalize'",
+            )
+        ]

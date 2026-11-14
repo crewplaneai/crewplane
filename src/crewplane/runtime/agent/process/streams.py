@@ -4,6 +4,7 @@ import asyncio
 from typing import BinaryIO
 
 from crewplane.architecture.contracts import InvocationDiagnosticSink
+from crewplane.architecture.contracts.provider_log import STDERR_PREFIX_BYTES
 
 from .drain import drain_async_process
 from .log_rendering import IncrementalLogRenderer
@@ -29,8 +30,6 @@ from .stream_tasks import (
     finish_stream_tasks_after_process_exit,
     wait_for_process_or_idle_timeout,
 )
-
-STDERR_PREFIX = b"[stderr] "
 
 
 def close_log_handle(log_handle: BinaryIO | None) -> None:
@@ -238,7 +237,9 @@ async def capture_process_streams(
         pipe_stream(process.stdout, log_queue, b"", stdout_capture, activity)
     )
     stderr_task = asyncio.create_task(
-        pipe_stream(process.stderr, log_queue, STDERR_PREFIX, stderr_capture, activity)
+        pipe_stream(
+            process.stderr, log_queue, STDERR_PREFIX_BYTES, stderr_capture, activity
+        )
     )
     process_exit_task = asyncio.create_task(wait_for_process_exit(process))
     idle_task = build_idle_timeout_task(

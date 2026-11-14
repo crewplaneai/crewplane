@@ -1,10 +1,11 @@
 import hashlib
-import re
 from pathlib import Path
 
 from crewplane.architecture.safe_file_reads import read_contained_bytes
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core.file_text import decode_utf8_without_nul
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.value_checks import is_sha256
 
 
 def read_verified_static_text(plan: PreflightExecutionPlan, content_ref: str) -> str:
@@ -22,8 +23,7 @@ def read_verified_static_text(plan: PreflightExecutionPlan, content_ref: str) ->
         resource.encoding != "utf-8"
         or type(resource.size_bytes) is not int
         or resource.size_bytes < 0
-        or not isinstance(resource.sha256, str)
-        or re.fullmatch(r"[0-9a-f]{64}", resource.sha256) is None
+        or not is_sha256(resource.sha256)
     ):
         raise ValueError(f"{context} has invalid encoding, size, or SHA-256 metadata.")
     try:
@@ -40,10 +40,10 @@ def read_verified_static_text(plan: PreflightExecutionPlan, content_ref: str) ->
     ):
         raise ValueError(f"{context} bytes do not match its descriptor.")
     try:
-        text = payload.decode("utf-8")
+        text = decode_utf8_without_nul(payload)
     except UnicodeDecodeError:
         raise ValueError(f"{context} is not valid UTF-8.") from None
-    if "\x00" in text:
+    if text is None:
         raise ValueError(f"{context} contains NUL content.")
     return text
 

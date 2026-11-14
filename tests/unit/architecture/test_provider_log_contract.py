@@ -4,6 +4,7 @@ import pytest
 
 from crewplane.architecture.contracts.provider_log import (
     build_provider_log_header,
+    encode_retry_log_header,
     provider_log_body_start,
 )
 
@@ -67,3 +68,16 @@ def test_provider_header_recognition_rejects_unknown_or_incomplete_headers(
     head: bytes,
 ) -> None:
     assert provider_log_body_start(head) == 0
+
+
+@pytest.mark.parametrize("attempt_number", [-1, 0, 2, 123])
+@pytest.mark.parametrize("started_at", ["2026-11-13T03:00:00+00:00", "", "café"])
+def test_retry_header_encoding_preserves_exact_bytes_without_validation(
+    attempt_number: int, started_at: str
+) -> None:
+    assert (
+        encode_retry_log_header(attempt_number, started_at)
+        == (
+            f"\n---\nretry_attempt: {attempt_number}\nstarted_at: {started_at}\n---\n"
+        ).encode()
+    )

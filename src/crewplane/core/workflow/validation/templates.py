@@ -13,6 +13,7 @@ from crewplane.core.workflow.graph import (
 from crewplane.core.workflow.keywords import (
     ALLOWED_NODE_ARTIFACT_NAME_SET,
     ALLOWED_NODE_ARTIFACT_NAMES,
+    FINDINGS_ARTIFACT_KEYS,
 )
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workflow.syntax import (
@@ -178,7 +179,7 @@ def _artifact_reference_error(
             f"Node '{node_id}' references '{artifact_template}' "
             f"but '{reference_id}' is not an upstream dependency."
         )
-    if not artifact_name.startswith("findings"):
+    if artifact_name not in FINDINGS_ARTIFACT_KEYS:
         return None
     if referenced_node.findings:
         return None

@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-STDOUT_PREFIX = b""
-STDERR_PREFIX = b"[stderr] "
 MAX_CAPTURE_MEMORY_BYTES = 1_048_576
 
 

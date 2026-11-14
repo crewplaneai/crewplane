@@ -15,9 +15,6 @@ from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     write_json_atomic,
 )
-from crewplane.observability.tmux.selection_control import (
-    SelectionControlState,
-)
 from crewplane.observability.tmux.snapshot_types import (
     InspectInvocationSnapshot,
     InspectView,
@@ -61,16 +58,6 @@ def read_snapshot_value(path: Path) -> dict[object, object] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
-
-
-def selected_snapshot_is_current(
-    selected: Mapping[str, object],
-    control: SelectionControlState,
-) -> bool:
-    return (
-        selected.get("selection_generation") == control.selection_generation
-        and selected.get("requested_selected_index") == control.selected_index
-    )
 
 
 def has_valid_presentation(snapshot: Mapping[str, object]) -> bool:
