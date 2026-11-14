@@ -38,6 +38,7 @@ class InvocationRuntimeState:
     log_file: str | None = None
     log_presentation_format: LogPresentationFormat | None = None
     log_presentation_profile: str | None = None
+    requested_reasoning: str | None = None
 
     def __post_init__(self) -> None:
         self.role = ProviderRole(self.role)

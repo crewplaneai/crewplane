@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from math import isfinite
 
 from crewplane.architecture.contracts import NodeArtifactRequest
@@ -16,11 +17,12 @@ from .models import (
     IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
-    ProviderTokenAggregates,
+    NodeTokenAggregate,
     RunSummary,
     RunSummaryFacts,
+    TokenAggregates,
 )
-from .spend import provider_token_aggregates as build_provider_token_aggregates
+from .token_aggregation import aggregate_tokens
 from .workspace import build_workspace_run_summary
 
 
@@ -33,7 +35,7 @@ def build_run_summary(
     fallback_run_id: str,
     dropped_event_count: int = 0,
     summary_facts: RunSummaryFacts | None = None,
-    token_aggregates: ProviderTokenAggregates | None = None,
+    token_aggregates: TokenAggregates | None = None,
     node_requests: tuple[NodeArtifactRequest, ...] = (),
 ) -> RunSummary:
     """Build a durable run summary from artifacts, events, and the latest snapshot."""
@@ -43,7 +45,12 @@ def build_run_summary(
     )
     run_id = snapshot.state.run_id if snapshot is not None else fallback_run_id
     facts = summary_facts or run_summary_facts_from_events(events)
-    exact_token_aggregates = token_aggregates or build_provider_token_aggregates(events)
+    exact_token_aggregates = (
+        aggregate_tokens(events, snapshot)
+        if token_aggregates is None
+        else token_aggregates
+    )
+    outcomes = node_outcome_summaries(artifact_store, snapshot, facts)
     invocation_usages = facts.invocation_usages
     return RunSummary(
         workflow_name=workflow_name,
@@ -64,7 +71,7 @@ def build_run_summary(
         provider_rollups=facts.provider_rollups,
         invocation_usages=invocation_usages,
         omitted_invocation_usage_count=facts.omitted_invocation_usage_count,
-        node_outcomes=node_outcome_summaries(artifact_store, snapshot, facts),
+        node_outcomes=outcomes,
         workspace=build_workspace_run_summary(
             artifact_store,
             facts.workspace_invocations,
@@ -78,7 +85,9 @@ def build_run_summary(
         artifact_references=artifact_reference_summaries(snapshot),
         event_log_path=artifact_store.get_run_event_log_path(),
         summary_path=artifact_store.get_run_summary_path(),
-        provider_token_aggregates=exact_token_aggregates,
+        provider_token_aggregates=exact_token_aggregates.provider,
+        node_token_aggregates=node_token_summaries(exact_token_aggregates, outcomes),
+        unattributed_node_tokens=exact_token_aggregates.unattributed,
     )
 
 
@@ -240,6 +249,7 @@ def invocation_timing_summaries(
             task_id=invocation.task_id,
             provider=invocation.provider,
             model=invocation.model,
+            requested_reasoning=invocation.requested_reasoning,
             audit_round_num=invocation.audit_round_num,
             round_num=invocation.round_num,
             status=invocation.status,
@@ -255,3 +265,16 @@ def invocation_timing_summaries(
         )
         for invocation in node.invocations.values()
     )
+
+
+def node_token_summaries(
+    aggregates: TokenAggregates, outcomes: tuple[NodeOutcomeSummary, ...]
+) -> tuple[NodeTokenAggregate, ...]:
+    """Join outcome labels without replacing durable token or coverage facts."""
+    rows = {row.node_id: row for row in aggregates.nodes}
+    for outcome in outcomes:
+        row = rows.get(outcome.node_id, NodeTokenAggregate(outcome.node_id))
+        rows[outcome.node_id] = replace(
+            row, status=outcome.status, resume_kind=outcome.resume_kind
+        )
+    return tuple(rows[key] for key in sorted(rows, key=lambda key: key or ""))

@@ -17,7 +17,7 @@ from crewplane.observability.events import (
     invocation_event,
     read_event_log,
 )
-from crewplane.observability.run_summary.spend import provider_token_aggregates
+from crewplane.observability.run_summary.token_aggregation import aggregate_tokens
 from tests.helpers.platforms import symlink_or_skip
 
 
@@ -332,7 +332,7 @@ def test_legacy_provider_tokens_remain_readable_but_are_excluded_from_exact_tota
     legacy_event = event_from_line(json.dumps(invocation_record(None)))
 
     assert legacy_event is not None
-    aggregates = provider_token_aggregates([legacy_event])
+    aggregates = aggregate_tokens([legacy_event]).provider
 
     assert aggregates.overall is None
     assert dict(legacy_event.payload.provider_tokens)["input"] == 10

@@ -119,7 +119,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
         terminal_summary = render_summary_terminal(last_summary)
         self.assertIn("Execution: failed", terminal_summary)
         self.assertIn(
-            "usage full=0, partial=0, malformed=0",
+            "Usage full: 0  partial: 0  malformed: 0",
             terminal_summary,
         )
         self.assertIn("Configured cost estimate: $0.000007 (partial)", terminal_summary)
@@ -265,7 +265,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
         assert last_summary is not None
         terminal_summary = render_summary_terminal(last_summary)
         self.assertIn(
-            "usage full=0, partial=1, malformed=0",
+            "Usage full: 0  partial: 1  malformed: 0",
             terminal_summary,
         )
         self.assertIn("Configured cost estimate: $0.000025 (partial)", terminal_summary)
@@ -355,7 +355,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
         assert last_summary is not None
         terminal_summary = render_summary_terminal(last_summary)
         self.assertIn(
-            "usage full=0, partial=1, malformed=0",
+            "Usage full: 0  partial: 1  malformed: 0",
             terminal_summary,
         )
         self.assertIn("Configured cost estimate: $0.000025 (partial)", terminal_summary)

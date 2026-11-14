@@ -15,6 +15,7 @@ from crewplane.observability.events.dashboard_state import (
 from crewplane.observability.layout import TopologyLayout
 from crewplane.observability.run_summary.accumulator import RunSummaryAccumulator
 from crewplane.observability.run_summary.builder import build_run_summary
+from crewplane.observability.run_summary.models import TokenAggregates
 from crewplane.observability.types import DashboardSnapshot, RunResult
 from tests.helpers.observability import make_execution_event
 
@@ -205,6 +206,10 @@ def test_resume_and_unresolved_review_facts_survive_event_eviction(
     assert [
         (node.resume_kind, node.duration_seconds) for node in summary.node_outcomes
     ] == [("reused", None), ("checkpoint", 5.0), (None, 5.0)]
+    rows = {row.node_id: row for row in summary.node_token_aggregates}
+    assert rows["reused"].resume_kind == "reused"
+    assert rows["checkpoint"].resume_kind == "checkpoint"
+    assert all(row.total is None and row.observed_calls == 0 for row in rows.values())
     assert summary.invocation_count == 0
     assert "earlier event(s)" in summary.issues[-1].message
 
@@ -336,3 +341,38 @@ def test_complete_timings_and_counts_are_independent_of_usage_retention(
         sum(timing.duration_ms or 0 for timing in summary.invocation_timings) / 1000
         > summary.elapsed_seconds
     )
+
+
+def test_explicit_provisional_bundle_never_uses_retained_node_subtotals(
+    tmp_path: Path,
+) -> None:
+    event = make_execution_event(
+        EventType.INVOCATION_FINISHED,
+        workflow_name="flow",
+        run_id="run",
+        node_id="node",
+        task_id="task",
+        provider="provider",
+        role=ProviderRole.EXECUTOR,
+        provider_usage_report_count=1,
+        provider_tokens={"total": 10},
+    )
+    snapshot = snapshot_for((NodeRuntimeState("node", "parallel", ()),))
+    output = OutputManager("flow", base_dir=tmp_path)
+    provisional = build_run_summary(
+        output,
+        snapshot,
+        [event],
+        RunResult(status="succeeded"),
+        "flow",
+        "run",
+        token_aggregates=TokenAggregates(),
+    )
+    assert provisional.node_token_aggregates[0].total is None
+    assert not provisional.node_token_aggregates[0].exact
+    exact = build_run_summary(
+        output, snapshot, [event], RunResult(status="succeeded"), "flow", "run"
+    )
+    assert exact.node_token_aggregates[0].total == 10
+    assert exact.node_token_aggregates[0].exact
+    assert exact.node_token_aggregates[0].observed_calls is None

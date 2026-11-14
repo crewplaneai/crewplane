@@ -349,7 +349,16 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                 "| Provider-reported tokens | 10 across 1 reports |",
                 first_summary,
             )
+            self.assertIn("| a | 7 | n/a | n/a | 3 | n/a | 10 | 1 | 1 |", first_summary)
             second_run = run_dirs[1]
+            resumed_summary = (
+                (second_run / "logs/summary.md").read_bytes().decode("utf-8")
+            )
+            self.assertIn(
+                "| a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |", resumed_summary
+            )
+            self.assertIn("| a | pending / n/a | no new calls |", resumed_summary)
+            self.assertNotIn("10 across 1 reports", resumed_summary)
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
             second_manifest = json.loads(
                 (second_run / "manifests" / "run.json").read_text(encoding="utf-8")
@@ -465,7 +474,13 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                 "| Provider-reported tokens | 10 across 1 reports |",
                 first_summary,
             )
+            self.assertIn("| a | 7 | n/a | n/a | 3 | n/a | 10 | 1 | 1 |", first_summary)
             second_run = run_dirs[1]
+            resumed_summary = (
+                (second_run / "logs/summary.md").read_bytes().decode("utf-8")
+            )
+            self.assertIn("| a | pending / n/a | no new calls |", resumed_summary)
+            self.assertNotIn("10 across 1 reports", resumed_summary)
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
             second_manifest = json.loads(
                 (second_run / "manifests" / "run.json").read_text(encoding="utf-8")

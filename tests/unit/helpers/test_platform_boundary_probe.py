@@ -16,6 +16,7 @@ from crewplane.observability.run_summary.markdown import render_run_summary_mark
 from crewplane.observability.run_summary.models import (
     ArtifactReferenceSummary,
     InvocationTimingSummary,
+    NodeTokenAggregate,
     RunSummary,
 )
 from crewplane.observability.types import RunResult
@@ -228,6 +229,16 @@ def _parallel_summary(tmp_path: Path) -> RunSummary:
         elapsed_seconds=2.5,
         invocation_count=3,
         invocation_timings=timings,
+        node_token_aggregates=(
+            NodeTokenAggregate(
+                "fanout",
+                total=100,
+                report_count=2,
+                observed_calls=2,
+                calls_with_reports=2,
+                exact=True,
+            ),
+        ),
         artifact_references=tuple(
             ArtifactReferenceSummary(
                 "fanout",
@@ -266,7 +277,48 @@ def test_new_summary_normalizes_parallel_order_and_recorded_timing(
     assert r"- \`fanout\` / \`alpha-0\`" in normalized
 
 
-@pytest.mark.parametrize("changed_field", ["link", "unicode", "status", "newline"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("reasoning", ["high", "1.000s"])
+def test_summary_normalization_keeps_wrapped_labels_with_their_calls(
+    tmp_path: Path, newline: str, reasoning: str
+) -> None:
+    summary = _parallel_summary(tmp_path)
+    summary = replace(
+        summary,
+        invocation_timings=(
+            replace(
+                summary.invocation_timings[0],
+                model="界" * 16,
+                requested_reasoning=reasoning,
+                duration_ms=2000,
+            ),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    changed = replace(
+        summary,
+        invocation_timings=(
+            replace(summary.invocation_timings[0], duration_ms=500),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    original = render_run_summary_markdown(summary).replace("\n", newline)
+    reordered = render_run_summary_markdown(changed).replace("\n", newline)
+    normalized = probe.normalized_summary(original, tmp_path, "run")
+
+    assert original != reordered
+    assert normalized == probe.normalized_summary(reordered, tmp_path, "run")
+    duration_section = normalized.split("## Agent call durations", 1)[1]
+    chart = duration_section.split("```text" + newline, 1)[1]
+    chart = chart.split(newline + "```", 1)[0]
+    assert f"/ {reasoning}" in chart
+    assert ("\r\n" in normalized) is (newline == "\r\n")
+
+
+@pytest.mark.parametrize(
+    "changed_field",
+    ["link", "unicode", "status", "newline", "tokens", "node", "coverage", "reasoning"],
+)
 def test_new_summary_normalization_keeps_evidence_differences(
     tmp_path: Path, changed_field: str
 ) -> None:
@@ -297,6 +349,27 @@ def test_new_summary_normalization_keeps_evidence_differences(
                 ),
             )
         )
+    elif changed_field == "reasoning":
+        changed = render_run_summary_markdown(
+            replace(
+                summary,
+                invocation_timings=(
+                    replace(summary.invocation_timings[0], requested_reasoning="high"),
+                    *summary.invocation_timings[1:],
+                ),
+            )
+        )
+    elif changed_field in {"tokens", "node", "coverage"}:
+        node = summary.node_token_aggregates[0]
+        if changed_field == "tokens":
+            node = replace(node, total=200)
+        elif changed_field == "node":
+            node = replace(node, node_id="other-node")
+        else:
+            node = replace(node, calls_with_reports=1)
+        changed = render_run_summary_markdown(
+            replace(summary, node_token_aggregates=(node,))
+        )
     else:
         changed = original.replace("\n", "\r\n")
     assert probe.normalized_summary(
@@ -310,19 +383,77 @@ def test_new_summary_normalization_preserves_literal_hashes_and_fences(
     chart = (
         "## Agent call durations\r\n\r\n"
         "````text\r\n"
-        "fanout / z                            model#tag                     succeeded   #################### 1.000s\r\n"
-        "fanout / a                            model#tag                     failed      ##########           0.500s\r\n"
+        "Call        Model / requested reasoning  Status     Relative runtime                Duration\r\n"
+        "fanout / z  model#tag / high             succeeded  ##############################  1m 00.0s\r\n"
+        "fanout / a  model#tag / high             failed     ###############...............      30.0s\r\n"
         "````\r\n\r\n"
+        "Scale: longest recorded call = 1m 00.0s. 2 shown of 2 observed; 1 succeeded, 1 failed.\r\n\r\n"
         "## Results and reports\r\n\r\n"
         "[report](résult.md#section)\r\n#### literal hashes\r\n"
     )
-    normalized = probe.normalized_summary(chart, tmp_path, "run")
+    normalized = probe.normalized_summary(chart, tmp_path, "probe-run")
     assert normalized == (
         "## Agent call durations\r\n\r\n"
         "````text\r\n"
-        "fanout / a                            model#tag                     failed      <duration-bar> <elapsed>\r\n"
-        "fanout / z                            model#tag                     succeeded   <duration-bar> <elapsed>\r\n"
+        "Call  Model / requested reasoning  Status  Relative runtime  Duration\r\n"
+        "fanout / a  model#tag / high             failed  <duration-bar> <elapsed>\r\n"
+        "fanout / z  model#tag / high             succeeded  <duration-bar> <elapsed>\r\n"
         "````\r\n\r\n"
+        "Scale: longest recorded call = <elapsed>. 2 shown of 2 observed; 1 succeeded, 1 failed.\r\n\r\n"
         "## Results and reports\r\n\r\n"
         "[report](résult.md#section)\r\n#### literal hashes\r\n"
     )
+
+
+@pytest.mark.parametrize("duration_ms", [1, 0, 59950, 3599950, 3723456])
+def test_summary_normalization_handles_chart_units_without_erasing_labels(
+    tmp_path: Path, duration_ms: int
+) -> None:
+    summary = _parallel_summary(tmp_path)
+    summary = replace(
+        summary,
+        invocation_timings=(
+            replace(
+                summary.invocation_timings[0],
+                model="duration: 1.000s",
+                requested_reasoning="duration: 2.000s",
+            ),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    changed = replace(
+        summary,
+        invocation_timings=(
+            replace(summary.invocation_timings[0], duration_ms=duration_ms),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    original = probe.normalized_summary(
+        render_run_summary_markdown(summary), tmp_path, "run"
+    )
+    normalized = probe.normalized_summary(
+        render_run_summary_markdown(changed), tmp_path, "run"
+    )
+    assert normalized == original
+    assert "duration: 2.000s" in normalized
+    assert "duration: 1.000s" in normalized
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_summary_normalization_handles_sub_tenth_second_footer(
+    tmp_path: Path, newline: str
+) -> None:
+    summary = _parallel_summary(tmp_path)
+    normalized_summaries = []
+    for duration_ms in (50, 150):
+        changed = replace(
+            summary,
+            invocation_timings=tuple(
+                replace(timing, duration_ms=duration_ms)
+                for timing in summary.invocation_timings
+            ),
+        )
+        markdown = render_run_summary_markdown(changed).replace("\n", newline)
+        normalized_summaries.append(probe.normalized_summary(markdown, tmp_path, "run"))
+
+    assert normalized_summaries[0] == normalized_summaries[1]

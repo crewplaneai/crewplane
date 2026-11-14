@@ -220,7 +220,7 @@ def test_exact_provider_totals_include_all_terminal_events_beyond_detail_cap(
     tmp_path: Path,
 ) -> None:
     workflow = single_node_workflow()
-    invocation_count = MAX_RETAINED_INVOCATION_USAGE_DETAILS + 5
+    invocation_count = MAX_RETAINED_SUMMARY_EVENTS + 5
     codex_count = sum(index % 3 != 0 for index in range(invocation_count))
     claude_count = invocation_count - codex_count
     tmp_dir = mkdtemp(dir=tmp_path)
@@ -292,6 +292,16 @@ def test_exact_provider_totals_include_all_terminal_events_beyond_detail_cap(
     assert aggregate.cached_input is None
     assert aggregate.output == codex_count * 2 + claude_count * 4
     assert aggregate.total == codex_count * 12 + claude_count * 24
+    node = summary.node_token_aggregates[0]
+    assert node.node_id == "node.a"
+    assert node.total == aggregate.total
+    assert node.report_count == invocation_count
+    assert node.missing_report_count_calls == 1
+    assert node.observed_calls is None
+    assert (
+        summary.omitted_invocation_usage_count
+        == invocation_count + 1 - MAX_RETAINED_INVOCATION_USAGE_DETAILS
+    )
     assert [
         (item.provider, item.report_count)
         for item in summary.provider_token_aggregates.providers
@@ -395,12 +405,12 @@ def test_codex_fixture_totals_render_for_success_and_failure(tmp_path: Path) -> 
             in markdown
         )
         assert "Provider-reported tokens: 7,598,612 across 24 reports" in terminal
-        assert "input=7,359,384" in terminal
-        assert "cached input=6,124,416" in terminal
-        assert "output=239,228" in terminal
-        assert "reasoning=108,672" in terminal
+        assert "Input: 7,359,384" in terminal
+        assert "Cached input: 6,124,416" in terminal
+        assert "Output: 239,228" in terminal
+        assert "Reasoning: 108,672" in terminal
         assert "codex" in terminal
-        assert "cache write=n/a" in terminal
+        assert "Cache write: n/a" in terminal
 
 
 def test_standalone_cached_input_total_renders_in_both_formats(tmp_path: Path) -> None:
@@ -438,4 +448,4 @@ def test_standalone_cached_input_total_renders_in_both_formats(tmp_path: Path) -
     terminal = render_summary_terminal(summary)
 
     assert "| codex | 1 | n/a | 42 | n/a | n/a | n/a | n/a |" in markdown
-    assert "cached input=42" in terminal
+    assert "Cached input: 42" in terminal

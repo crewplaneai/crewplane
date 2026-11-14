@@ -8,6 +8,7 @@ from .models import (
     InvocationTimingSummary,
     InvocationUsageSummary,
     NodeOutcomeSummary,
+    NodeTokenAggregate,
     RunSummary,
 )
 
@@ -16,6 +17,7 @@ DURATION_ROW_LIMIT = 8
 ISSUE_LIMIT = 3
 PROVIDER_ROW_LIMIT = 4
 RESULT_PATH_LIMIT = 3
+NODE_ROW_LIMIT = 8
 
 
 def format_count(value: int | None) -> str:
@@ -159,3 +161,97 @@ def invocation_coverage_label(summary: RunSummary) -> str:
     return (
         f"{format_count(captured)} of {summary.invocation_count} calls with usage facts"
     )
+
+
+def full_track(value: int | None, maximum: int, width: int) -> str:
+    """Render an exact half-up proportional ASCII track, preserving unknowns."""
+    if value is None:
+        return " " * width
+    filled = (
+        min(width, max(1, (2 * value * width + maximum) // (2 * maximum)))
+        if value > 0 and maximum > 0
+        else 0
+    )
+    return "#" * filled + "." * (width - filled)
+
+
+def format_chart_duration(duration_ms: int | None) -> str:
+    """Format rounded tenths without losing positive sub-tenth measurements."""
+    if duration_ms is None:
+        return "n/a"
+    if 0 < duration_ms < 100:
+        return "<0.1s"
+    tenths = (duration_ms + 50) // 100
+    hours, remainder = divmod(tenths, 36000)
+    minutes, remainder = divmod(remainder, 600)
+    seconds = remainder / 10
+    if hours:
+        return f"{hours}h {minutes:02d}m {seconds:04.1f}s"
+    if minutes:
+        return f"{minutes}m {seconds:04.1f}s"
+    return f"{seconds:.1f}s"
+
+
+def timing_model(timing: InvocationTimingSummary) -> str:
+    model = (
+        timing.model if timing.model is not None else f"{timing.provider} / model n/a"
+    )
+    return f"{model} / {timing.requested_reasoning or 'n/a'}"
+
+
+def timing_footer(summary: RunSummary) -> str:
+    timings = summary.invocation_timings
+    maximum = max(
+        (timing.duration_ms for timing in timings if timing.duration_ms is not None),
+        default=None,
+    )
+    counts: dict[str, int] = {}
+    for timing in timings:
+        counts[timing.status] = counts.get(timing.status, 0) + 1
+    outcomes = ", ".join(
+        f"{count} {status}" for status, count in sorted(counts.items())
+    )
+    if summary.invocation_count is None or summary.invocation_count != len(timings):
+        outcomes += "; total call coverage unknown"
+    return f"Scale: longest recorded call = {format_chart_duration(maximum)}. {min(len(timings), DURATION_ROW_LIMIT)} shown of {len(timings)} observed; {outcomes}."
+
+
+def selected_nodes(summary: RunSummary) -> tuple[NodeTokenAggregate, ...]:
+    return tuple(
+        sorted(
+            summary.node_token_aggregates,
+            key=lambda node: (
+                node.total is None,
+                -(node.total or 0),
+                node.node_id or "",
+            ),
+        )[:NODE_ROW_LIMIT]
+    )
+
+
+def selected_providers(summary: RunSummary) -> tuple[str | None, ...]:
+    aggregates = {
+        item.provider: item for item in summary.provider_token_aggregates.providers
+    }
+    aliases = set(aggregates) | {item.provider for item in summary.provider_rollups}
+    return tuple(
+        sorted(
+            aliases,
+            key=lambda alias: (
+                alias not in aggregates or aggregates[alias].total is None,
+                -(aggregates[alias].total or 0) if alias in aggregates else 0,
+                alias or "",
+                alias is not None,
+            ),
+        )[:PROVIDER_ROW_LIMIT]
+    )
+
+
+def node_coverage(node: NodeTokenAggregate) -> str:
+    if not node.exact:
+        return "n/a (exact totals unavailable)"
+    if node.observed_calls == 0 and node.terminal_calls == 0:
+        return "no new calls"
+    if node.observed_calls is None or node.calls_with_reports is None:
+        return "n/a"
+    return f"{node.calls_with_reports}/{node.observed_calls}"

@@ -197,14 +197,14 @@ def test_persistent_run_logger_writes_ndjson_and_summary(tmp_path: Path) -> None
     assert last_summary is not None
     assert last_summary is not None
     terminal_summary = render_summary_terminal(last_summary)
-    assert "usage full=1, partial=0, malformed=0" in terminal_summary
+    assert "Usage full: 1  partial: 0  malformed: 0" in terminal_summary
     assert "Provider-reported tokens: n/a" in terminal_summary
     durable_summary = persistent_logger.refresh_summary(RunResult(status="succeeded"))
     assert durable_summary is not None
     assert durable_summary is not None
     durable_terminal_summary = render_summary_terminal(durable_summary)
     assert "Provider-reported tokens: n/a across 2 reports" in durable_terminal_summary
-    assert "usage full=1, partial=0, malformed=0" in terminal_summary
+    assert "Usage full: 1  partial: 0  malformed: 0" in terminal_summary
     assert "1 calls with usage facts" in terminal_summary
     assert "Configured cost estimate: $0.000207 (full)" in terminal_summary
 

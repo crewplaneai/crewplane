@@ -13,6 +13,7 @@ from crewplane.observability.run_summary.models import (
     IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
+    NodeTokenAggregate,
     ProviderTokenAggregate,
     ProviderTokenAggregates,
     ProviderUsageRollup,
@@ -100,7 +101,7 @@ def test_sections_report_execution_review_timing_and_recorded_usage(
         "Needs attention",
         "Stages\n",
         "Agent call durations",
-        "Usage details",
+        "Reported tokens by node",
         "Results and reports",
     )
     positions = [output.index(heading) for heading in headings]
@@ -113,10 +114,10 @@ def test_sections_report_execution_review_timing_and_recorded_usage(
     assert "Provider-reported tokens: 12,400 across 3 reports" in output
     assert "Configured cost estimate: $0.042000 (full)" in output
     assert "succeeded (reused)" in output
-    assert "80.125s" in output and "50.500s" in output
-    assert "durations may overlap" in output
-    assert "not workflow elapsed time" in output
-    assert output.index("80.125s") < output.index("50.500s")
+    assert "1m 20.1s" in output and "50.5s" in output
+    assert "may overlap" in output
+    assert "exclude workspace preparation" in output
+    assert output.index("1m 20.1s") < output.index("50.5s")
     compact = output.replace("\n", "")
     assert str(root / "report-result.md") in compact
     assert str(root / "logs" / "summary.md") in compact
@@ -158,12 +159,12 @@ def test_unicode_labels_do_not_displace_status_duration_or_paths(
     output = _render(summary, width)
     assert all(display_width(line) <= width for line in output.splitlines())
     assert "cancelled" in output
-    assert "12.3s" in output and "12.345s" in output
+    assert "12.3s" in output
     assert "[bold]" in output
     compact = output.replace("\n", "")
     assert str(tmp_path / "界 folder" / "actual report.md") in compact
     assert str(summary.summary_path) in compact
-    assert "#" not in output  # A single call does not need a comparison bar.
+    assert ("#" in output) is (width >= 80)
 
 
 def test_caps_keep_failure_stages_and_disclose_all_display_omissions(
@@ -261,7 +262,7 @@ def test_missing_and_zero_timings_estimates_and_cost_are_distinct(
     assert "Calls: n/a" in output
     assert "Provider-reported tokens: n/a" in output
     assert "model n/a" in output
-    assert ("0.000s" in output) is (duration == 0)
+    assert ("0.0s" in output) is (duration == 0)
     assert ("$0.000000" in output) is (duration == 0)
     assert (
         "Visible-text estimate: "
@@ -315,14 +316,18 @@ def test_provider_limit_keeps_buckets_separate_from_report_counts(
         omitted_invocation_usage_count=20,
     )
     output = _render(summary)
-    assert "2 more providers in summary.md" in output
-    assert "provider-3" in output and "provider-4" not in output
-    assert "Reports: 7" in output
-    assert "input=10" in output and "cached input=3" in output
     assert (
-        "output=11" in output and "reasoning=5" in output and "cache write=4" in output
+        "2 more providers and complete bucket/coverage details in summary.md" in output
     )
-    assert "total=n/a" in output
+    assert "provider-3" in output and "provider-4" not in output
+    assert "Reports" in output and "7" in output
+    assert "Input: 10" in output and "Cached input: 3" in output
+    assert (
+        "Output: 11" in output
+        and "Reasoning: 5" in output
+        and "Cache write: 4" in output
+    )
+    assert "Total: n/a" in output
     assert "20 earlier usage rows not retained" in output
     assert "events.ndjson" in output
 
@@ -429,8 +434,8 @@ def test_comparison_bars_disappear_before_status_and_exact_values(
     tmp_path: Path, width: int
 ) -> None:
     output = _render(_summary(tmp_path), width)
-    assert ("#" in output) is (width >= 60)
-    assert "80.125s" in output and "50.500s" in output
+    assert ("#" in output) is (width >= 80)
+    assert "1m 20.1s" in output and "50.5s" in output
     assert "succeeded" in output
     assert all(display_width(line) <= width for line in output.splitlines())
 
@@ -452,21 +457,24 @@ def test_timing_ties_have_stable_identity_order_and_unknown_is_last(
     output = (
         _render(summary)
         .split("Agent call durations\n", 1)[1]
-        .split("Usage details", 1)[0]
+        .split("Reported tokens by node", 1)[0]
     )
-    assert (
-        output.index("beta / aaa")
-        < output.index("beta / executor")
-        < output.index("zulu / executor")
-        < output.index("alpha / executor")
-    )
+    calls = [
+        tuple(line.split()[:2])
+        for line in output.splitlines()
+        if line.startswith(("beta ", "zulu ", "alpha "))
+    ]
+    assert calls == [
+        ("beta", "aaa"),
+        ("beta", "executor"),
+        ("zulu", "executor"),
+        ("alpha", "executor"),
+    ]
     assert "n/a" in output
 
 
-@pytest.mark.parametrize("width", [23, 24])
-def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
-    tmp_path: Path, width: int
-) -> None:
+@pytest.mark.parametrize("width", [23, 24, 60, 80, 120])
+def test_long_labels_and_issues_remain_bounded(tmp_path: Path, width: int) -> None:
     summary = _summary(tmp_path)
     summary = replace(
         summary,
@@ -483,9 +491,9 @@ def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
         issues=(IssueSummary("error", "now", "failure " * 10_000),),
     )
     output = _render(summary, width)
-    assert len(output.splitlines()) < 100
+    assert len(output.splitlines()) < 150
     assert "succeeded (reused)" in output
-    assert "80.125s" in output
+    assert "1m 20.1s" in output
     assert "Full issue in summary.md" in " ".join(output.split())
     assert str(summary.summary_path) in output.replace("\n", "")
     assert all(display_width(line) <= width for line in output.splitlines())
@@ -505,7 +513,9 @@ def test_label_linebreaks_and_control_characters_are_normalized(tmp_path: Path) 
 @pytest.mark.parametrize(
     "legacy_windows", [False, True], ids=["modern", "legacy-windows"]
 )
-@pytest.mark.parametrize("width", [39, 40, 41, 59, 60, 61, 79, 80, 81, 120])
+@pytest.mark.parametrize(
+    "width", [39, 40, 41, 59, 60, 61, 66, 67, 68, 79, 80, 81, 99, 100, 101, 120]
+)
 def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
     tmp_path: Path, width: int, legacy_windows: bool
 ) -> None:
@@ -536,19 +546,24 @@ def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
         render_run_summary_terminal(summary, console), markup=False, highlight=False
     )
     output = stream.getvalue()
-    durations = output.split("Agent call durations\n", 1)[1].split("Usage details", 1)[
-        0
-    ]
+    durations = output.split("Agent call durations\n", 1)[1].split(
+        "Reported tokens by node", 1
+    )[0]
 
     effective_width = console.width
-    assert ("Provider /" in durations) is (effective_width >= 80)
-    assert ("Call / model" in durations) is (40 <= effective_width < 80)
-    for value in ("1.000s", "0.500s", "0.001s", "0.000s", "n/a"):
+    assert ("Model /" in durations) is (effective_width >= 100)
+    assert ("Node" in durations and "Round" in durations) is (effective_width >= 60)
+    for value in ("1.0s", "0.5s", "<0.1s", "0.0s", "n/a"):
         assert value in durations
-    bar_width = min(20, effective_width // 5)
-    assert [len(bar) for bar in re.findall(r"#+", durations)] == (
-        [bar_width, round(bar_width / 2), 1] if effective_width >= 60 else []
-    )
+    tracks = re.findall(r"[#.]{12,30}", durations)
+    if effective_width >= 67:
+        assert len(tracks) == 4
+        assert tracks[0] == "#" * len(tracks[0])
+        assert tracks[1].count("#") == (len(tracks[0]) + 1) // 2
+        assert tracks[2].count("#") == 1
+        assert set(tracks[3]) == {"."}
+    else:
+        assert not tracks
     assert all(display_width(line) <= effective_width for line in output.splitlines())
 
 
@@ -557,11 +572,11 @@ def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
     [
         ((None, None), []),
         ((0, 0), []),
-        ((1000, None), []),
+        ((1000, None), [20]),
         ((1000, 0), [20]),
     ],
 )
-def test_comparison_bars_require_positive_maximum_and_two_recorded_durations(
+def test_comparison_tracks_preserve_unknown_zero_and_single_measurement(
     tmp_path: Path, durations: tuple[int | None, ...], bar_sizes: list[int]
 ) -> None:
     summary = _summary(tmp_path)
@@ -575,7 +590,11 @@ def test_comparison_bars_require_positive_maximum_and_two_recorded_durations(
         ),
     )
 
-    output = _render(summary)
+    output = (
+        _render(summary)
+        .split("Agent call durations\n", 1)[1]
+        .split("Reported tokens by node", 1)[0]
+    )
 
     assert [len(bar) for bar in re.findall(r"#+", output)] == bar_sizes
 
@@ -604,19 +623,309 @@ def test_provider_union_preserves_order_latest_aggregate_and_optional_details(
     )
 
     output = _render(summary, 240)
-    usage = output.split("Usage details\n", 1)[1].split("Results and reports", 1)[0]
+    usage = output.split("Provider-reported tokens\n", 1)[1].split(
+        "Results and reports", 1
+    )[0]
     provider_lines = [
         line
         for line in usage.splitlines()
         if line in {"zeta", "unknown provider", "alpha", "beta"}
     ]
 
-    assert provider_lines == ["zeta", "unknown provider", "unknown provider", "alpha"]
+    assert provider_lines == ["unknown provider", "unknown provider", "alpha", "beta"]
     assert ("Visible-text estimate: 100 tokens (lower bound)" in usage) is has_spend
-    assert "Reports: 7;" in usage and "Reports: 11;" not in usage
-    assert "Reports: 2;" in usage and "Reports: 3;" in usage
-    assert "5 calls with usage facts" in usage and "6 calls with usage facts" in usage
-    assert "99 calls with usage facts" not in usage
-    assert usage.index("1 more providers in summary.md") < usage.index(
-        "20 earlier usage rows not retained"
+    assert "zeta" not in usage
+    assert "Usage facts: 5 calls" in usage and "Usage facts: 6 calls" in usage
+    assert "Usage facts: 99 calls" in usage
+    assert usage.index(
+        "1 more providers and complete bucket/coverage details in summary.md"
+    ) < usage.index("20 earlier usage rows not retained")
+
+
+@pytest.mark.parametrize("width", [120, 100, 99, 80, 60, 59, 40, 24])
+def test_first_class_node_comparison_keeps_exact_values_and_coverage(
+    tmp_path: Path, width: int
+) -> None:
+    nodes = (
+        NodeTokenAggregate(
+            "implement",
+            input=120000,
+            output=30000,
+            total=150000,
+            report_count=3,
+            attempt_count=3,
+            observed_calls=2,
+            calls_with_reports=2,
+            terminal_calls=2,
+            exact=True,
+        ),
+        NodeTokenAggregate(
+            "review",
+            input=60000,
+            output=15000,
+            total=75000,
+            report_count=1,
+            observed_calls=2,
+            calls_with_reports=1,
+            zero_report_calls=1,
+            terminal_calls=2,
+            exact=True,
+        ),
+        NodeTokenAggregate(
+            "checks",
+            input=2000,
+            report_count=1,
+            observed_calls=1,
+            calls_with_reports=1,
+            terminal_calls=1,
+            exact=True,
+        ),
+        NodeTokenAggregate(
+            "reused",
+            observed_calls=0,
+            calls_with_reports=0,
+            resume_kind="reused",
+            exact=True,
+        ),
     )
+    output = _render(replace(_summary(tmp_path), node_token_aggregates=nodes), width)
+    section = output.split("Reported tokens by node\n", 1)[1].split(
+        "Provider-reported", 1
+    )[0]
+    compact = " ".join(section.split())
+    for value in ("150,000", "75,000", "2/2", "1/2", "1/1", "no new calls"):
+        assert value in compact
+    assert "2unknowntotals" in "".join(section.split())
+    assert "prior-runconsumptionisnotcopiedhere" in "".join(section.split())
+    assert all(display_width(line) <= width for line in output.splitlines())
+    assert ("#" in section) is (width >= 60)
+
+
+def test_node_selection_scale_and_unattributed_are_independent(tmp_path: Path) -> None:
+    nodes = tuple(
+        NodeTokenAggregate(
+            f"node-{index}", total=index * 1000, report_count=1, exact=True
+        )
+        for index in range(10)
+    )
+    summary = replace(
+        _summary(tmp_path),
+        node_token_aggregates=nodes,
+        unattributed_node_tokens=NodeTokenAggregate(
+            None, total=900000, report_count=1, exact=True
+        ),
+    )
+    output = _render(summary)
+    section = output.split("Reported tokens by node\n", 1)[1].split(
+        "Provider-reported", 1
+    )[0]
+    assert "8 shown of 10 nodes" in section
+    assert "largest node total = 9,000" in section
+    assert "Unattributed (node ID missing)" in section and "900,000" in section
+    assert "node-0" not in section and "node-1" not in section
+    assert section.index("node-9") < section.index("node-8")
+
+
+@pytest.mark.parametrize("width", [120, 60, 59, 40, 39])
+@pytest.mark.parametrize("total", [None, 0])
+def test_token_sections_distinguish_unknown_and_zero_totals_in_order(
+    tmp_path: Path, width: int, total: int | None
+) -> None:
+    aggregate = ProviderTokenAggregate("provider", 2, total=total)
+    summary = replace(
+        _summary(tmp_path),
+        node_token_aggregates=(
+            NodeTokenAggregate("node", total=total, report_count=2, exact=True),
+        ),
+        provider_token_aggregates=ProviderTokenAggregates(aggregate, (aggregate,)),
+    )
+
+    output = _render(summary, width)
+    nodes, providers = output.split("Reported tokens by node\n", 1)[1].split(
+        "Provider-reported tokens\n", 1
+    )
+    nodes = "".join(nodes.split())
+    providers = "".join(providers.split())
+    scale = "n/a" if total is None else "0"
+    node_notice = (
+        "No usable reported node totals recorded."
+        if total is None
+        else "No positive node total recorded."
+    )
+    node_notice = node_notice.replace(" ", "")
+    provider_notice = node_notice.replace("node", "provider")
+    assert f"Scale:largestnodetotal={scale}reportedtokens." in nodes
+    assert f"Scale:largestprovidertotal={scale}reportedtokens." in providers
+    assert ("1unknowntotals" in nodes) is (total is None)
+    assert nodes.index("Scale:") < nodes.index("node:callcoverageunknown.")
+    assert nodes.index("node:callcoverageunknown.") < nodes.index(node_notice)
+    assert nodes.index(node_notice) < nodes.index("Callsw/reportscounts")
+    assert providers.index("Scale:") < providers.index(f"Total:{scale}")
+    assert providers.index(f"Total:{scale}") < providers.index(provider_notice)
+    assert providers.index(provider_notice) < providers.index("Nodeandprovider")
+    assert all(display_width(line) <= width for line in output.splitlines())
+
+
+def test_eight_calls_remain_one_node_and_reasoning_is_recorded(tmp_path: Path) -> None:
+    base = _summary(tmp_path)
+    timings = tuple(
+        replace(
+            base.invocation_timings[0],
+            node_id="runs",
+            task_id=f"task-{index}",
+            requested_reasoning="max",
+            duration_ms=(index + 1) * 1000,
+        )
+        for index in range(8)
+    )
+    summary = replace(
+        base,
+        invocation_timings=timings,
+        invocation_count=8,
+        node_token_aggregates=(
+            NodeTokenAggregate(
+                "runs",
+                total=432000,
+                report_count=8,
+                observed_calls=8,
+                calls_with_reports=8,
+                terminal_calls=8,
+                exact=True,
+            ),
+        ),
+    )
+    output = _render(summary)
+    assert "1 shown of 1 nodes" in output
+    assert "8 shown of 8 observed; 8 succeeded" in output
+    assert "model-a / max" in output
+    assert "432,000" in output and "8/8" in output
+
+
+def test_omitted_nodes_still_contribute_coverage_warning(tmp_path: Path) -> None:
+    covered = tuple(
+        NodeTokenAggregate(
+            f"covered-{index}",
+            total=1000,
+            report_count=1,
+            observed_calls=1,
+            calls_with_reports=1,
+            terminal_calls=1,
+            exact=True,
+        )
+        for index in range(8)
+    )
+    omitted_node = NodeTokenAggregate(
+        "omitted",
+        total=1,
+        report_count=1,
+        observed_calls=2,
+        calls_with_reports=1,
+        terminal_calls=1,
+        calls_without_terminal=1,
+        exact=True,
+    )
+    output = _render(
+        replace(_summary(tmp_path), node_token_aggregates=(*covered, omitted_node))
+    )
+    section = output.split("Reported tokens by node\n", 1)[1].split(
+        "Provider-reported", 1
+    )[0]
+    assert "8 shown of 9 nodes" in section
+    assert (
+        "1 nodes have incomplete or unknown reporting-call/attempt coverage" in section
+    )
+    assert "omitted:" not in section
+
+
+@pytest.mark.parametrize("width", [40, 24])
+def test_narrow_breakdowns_never_split_fitting_exact_numbers(
+    tmp_path: Path, width: int
+) -> None:
+    base = _summary(tmp_path)
+    aggregate = ProviderTokenAggregate(
+        "luna-max",
+        3,
+        input=100000,
+        output=14000,
+        total=120000,
+        cached_input=12000,
+        cache_write=3000,
+        reasoning=4000,
+    )
+    summary = replace(
+        base,
+        unattributed_node_tokens=NodeTokenAggregate(
+            None, input=23000, output=8000, total=31000, report_count=1, exact=True
+        ),
+        provider_token_aggregates=ProviderTokenAggregates(aggregate, (aggregate,)),
+        provider_rollups=(
+            ProviderUsageRollup(
+                "luna-max", 3, 12345678, 2, 1, 1, 1, None, 0.01234, "full"
+            ),
+        ),
+        node_token_aggregates=(
+            NodeTokenAggregate(
+                "long-node-identity",
+                input=100000,
+                output=14000,
+                total=120000,
+                report_count=3,
+                observed_calls=3,
+                calls_with_reports=3,
+                terminal_calls=3,
+                exact=True,
+            ),
+        ),
+    )
+    output = _render(summary, width)
+    nodes = output.split("Reported tokens by node\n", 1)[1].split(
+        "Provider-reported tokens\n", 1
+    )[0]
+    providers = output.split("Provider-reported tokens\n", 1)[1].split(
+        "Node and provider", 1
+    )[0]
+    for value in ("100,000", "14,000", "120,000"):
+        assert any(value in line for line in nodes.splitlines())
+        assert any(value in line for line in providers.splitlines())
+    for value in ("23,000", "8,000", "31,000"):
+        assert any(value in line for line in nodes.splitlines())
+    for value in ("12,000", "3,000", "4,000", "12345678", "$0.012340"):
+        assert any(value in line for line in providers.splitlines())
+    assert all(display_width(line) <= width for line in output.splitlines())
+
+
+@pytest.mark.parametrize("width", [120, 80, 60, 39, 24])
+def test_duration_identity_fields_keep_repeated_review_rounds_visible(
+    tmp_path: Path, width: int
+) -> None:
+    timings = tuple(
+        InvocationTimingSummary(
+            f"files.i{iteration}.refactor-file-loop",
+            "codex_reviewer_0",
+            "codex",
+            "gpt-6-astra",
+            1,
+            round_num,
+            "succeeded",
+            duration,
+            "max",
+        )
+        for iteration, round_num, duration in (
+            (1, 1, 182400),
+            (0, 1, 167600),
+            (1, 2, 153600),
+        )
+    )
+    output = _render(replace(_summary(tmp_path), invocation_timings=timings), width)
+    section = output.split("Agent call durations\n", 1)[1].split(
+        "Reported tokens by node", 1
+    )[0]
+    assert all(display_width(line) <= width for line in output.splitlines())
+    assert "reviewer_0" in section
+    assert "a1/r1" in section and "a1/r2" in section
+    assert "Provider: codex" in section
+    assert "i0" in section and "i1" in section
+    assert "3m 02.4s" in section
+    if width >= 80:
+        assert "Relative time" in section
+        assert "#" * 20 in section
