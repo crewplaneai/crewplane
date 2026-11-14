@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import partial
+
 from rich.console import Console, Group, RenderableType
 from rich.table import Table
 from rich.text import Text
@@ -9,22 +11,17 @@ from crewplane.observability.text_layout import display_width, fit_text, wrap_te
 from .formatting import (
     ISSUE_LIMIT,
     RESULT_PATH_LIMIT,
-    call_identity,
-    format_chart_duration,
     format_cost,
     format_count,
     format_duration,
-    full_track,
     invocation_coverage_label,
     selected_stages,
     selected_timings,
     stage_counts_label,
     stage_status,
     timing_footer,
-    timing_model,
 )
 from .models import (
-    InvocationTimingSummary,
     IssueSummary,
     NodeOutcomeSummary,
     RunSummary,
@@ -32,16 +29,15 @@ from .models import (
 from .terminal_support import heading, label, omitted, safe, styled, text, wrapped
 from .terminal_support import table as summary_table
 from .terminal_table_layout import (
-    CALL_HEADER,
     COLUMN_PADDING,
-    COMBINED_CALL_HEADER,
     DURATION_HEADER,
     EXECUTION_HEADER,
     MIN_STATUS_WIDTH,
-    PROVIDER_HEADER,
     DurationTableLayout,
     DurationTableRow,
+    duration_preview,
     duration_table_layout,
+    duration_table_lines,
 )
 from .terminal_tokens import token_sections
 
@@ -210,6 +206,8 @@ def _durations(summary: RunSummary, console: Console) -> list[RenderableType]:
     timings = selected_timings(summary)
     if not timings:
         return []
+    preview = duration_preview(timings, partial(safe, console=console))
+    layout = duration_table_layout(preview.rows, console.width)
     lines: list[RenderableType] = [
         heading("Agent call durations", console),
         wrapped(
@@ -217,26 +215,30 @@ def _durations(summary: RunSummary, console: Console) -> list[RenderableType]:
             console,
         ),
     ]
-    if duration_table_layout(_duration_rows(timings, console), console.width).stacked:
-        for timing in timings:
+    lines.extend(label(context, console) for context in preview.context)
+    if layout.stacked:
+        for row in preview.rows:
             lines.extend(
                 (
-                    label(call_identity(timing), console),
-                    label(_provider_model(timing), console),
+                    label(row.node, console),
+                    label(row.call, console),
+                    wrapped(f"Round: {row.round}", console),
+                    label(row.model, console),
                 )
             )
-            lines.extend(
-                _status_duration(
-                    timing.status, format_chart_duration(timing.duration_ms), console
-                )
-            )
+            lines.extend(_status_duration(row.status, row.duration, console))
     else:
-        lines.append(_duration_table(timings, console))
+        lines.append(_duration_table(preview.rows, layout, console))
     lines.extend(
         omitted(len(summary.invocation_timings) - len(timings), "agent calls", console)
     )
     lines.append(wrapped(timing_footer(summary), console))
-    lines.append(wrapped("Full identities and exact durations in summary.md.", console))
+    lines.append(
+        wrapped(
+            "a = audit, r = round; reasoning is the requested setting. Full identities and exact durations in summary.md.",
+            console,
+        )
+    )
     if all(timing.duration_ms is None for timing in summary.invocation_timings):
         lines.append(wrapped("No usable duration measurements recorded.", console))
     elif not any(timing.duration_ms for timing in summary.invocation_timings):
@@ -244,72 +246,13 @@ def _durations(summary: RunSummary, console: Console) -> list[RenderableType]:
     return lines
 
 
-def _provider_model(timing: InvocationTimingSummary) -> str:
-    return timing_model(timing)
-
-
 def _duration_table(
-    timings: tuple[InvocationTimingSummary, ...], console: Console
-) -> Table:
-    rows = _duration_rows(timings, console)
-    layout = duration_table_layout(rows, console.width)
-    table = summary_table(console)
-    table.add_column(
-        CALL_HEADER if layout.provider_width else COMBINED_CALL_HEADER,
-        width=layout.label_width,
-    )
-    if layout.provider_width:
-        table.add_column(PROVIDER_HEADER, width=layout.provider_width)
-    table.add_column("Status", width=layout.status_width)
-    if layout.bar_width:
-        table.add_column("Relative runtime", width=layout.bar_width, no_wrap=True)
-    table.add_column(
-        DURATION_HEADER, width=layout.duration_width, justify="right", no_wrap=True
-    )
-    for row in rows:
-        table.add_row(*_duration_row(row, layout, console))
-    return table
-
-
-def _duration_rows(
-    timings: tuple[InvocationTimingSummary, ...], console: Console
-) -> tuple[DurationTableRow, ...]:
-    return tuple(
-        DurationTableRow(
-            safe(call_identity(timing), console),
-            safe(_provider_model(timing), console),
-            safe(timing.status, console),
-            format_chart_duration(timing.duration_ms),
-            timing.duration_ms,
-        )
-        for timing in timings
-    )
-
-
-def _duration_row(
-    row: DurationTableRow, layout: DurationTableLayout, console: Console
-) -> list[Text]:
-    label = fit_text(row.identity, layout.label_width)
-    cells = (
-        [Text(label)]
-        if layout.provider_width
-        else [Text(f"{label}\n{fit_text(row.provider_model, layout.label_width)}")]
-    )
-    if layout.provider_width:
-        cells.append(Text(fit_text(row.provider_model, layout.provider_width)))
-    cells.append(text(row.status, console))
-    if layout.bar_width:
-        cells.append(
-            text(
-                full_track(
-                    row.duration_ms, layout.maximum_duration_ms, layout.bar_width
-                ),
-                console,
-                "cyan",
-            )
-        )
-    cells.append(text(row.duration, console))
-    return cells
+    rows: tuple[DurationTableRow, ...], layout: DurationTableLayout, console: Console
+) -> Text:
+    rendered = Text("\n".join(duration_table_lines(rows, layout)))
+    if styled(console) and layout.bar_width:
+        rendered.highlight_regex(rf"[#.]{{{layout.bar_width}}}", "cyan")
+    return rendered
 
 
 def _results(summary: RunSummary, console: Console) -> list[RenderableType]:

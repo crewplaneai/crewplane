@@ -36,6 +36,7 @@ from crewplane.adapters.invokers.mock_invoker.invoker import MockAgentInvoker
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.artifacts.atomic import atomic_write_bytes_if_absent
 from crewplane.cli.app import app
+from crewplane.observability.text_layout import display_width
 from crewplane.runtime.agent.invocation.command import run_command_once
 from tests.helpers.installed_package_assertions import verify_run
 from tests.helpers.mock_resume import write_executor_fixture
@@ -79,10 +80,12 @@ def _normalized_summary_section(section: str, duration_section: bool) -> str:
     ]
     fence = re.fullmatch(r"(`{3,})text", lines[0]) if duration_section else None
     if fence is not None and lines[-1] == fence[1]:
+        duration_column = display_width(lines[2].removesuffix("Duration"))
         positions = [
             position
             for position in range(2, len(lines) - 2, 2)
-            if re.search(rf"\s+(?:{SUMMARY_DURATION}|n/a)$", lines[position])
+            if display_width(lines[position]) > duration_column
+            and re.search(rf"\s+(?:{SUMMARY_DURATION}|n/a)$", lines[position])
         ]
         for position in positions:
             lines[position] = re.sub(
@@ -94,10 +97,16 @@ def _normalized_summary_section(section: str, duration_section: bool) -> str:
                 rf"\s+{SUMMARY_DURATION}$", " <elapsed>", lines[position]
             )
         for position in range(2, len(lines) - 2, 2):
-            if lines[position].startswith("Call "):
+            if lines[position].startswith(("Call ", "Node ")):
                 lines[position] = re.sub(r" {2,}", "  ", lines[position])
-    else:
-        lines = _normalize_summary_duration_fields(lines, duration_section)
+        if positions:
+            ends = positions[1:] + [len(lines) - 1]
+            rows = [
+                lines[start:end] for start, end in zip(positions, ends, strict=True)
+            ]
+            lines[positions[0] : -1] = [part for row in sorted(rows) for part in row]
+        return "".join(lines)
+    lines = _normalize_summary_duration_fields(lines, duration_section)
     ordered_rows = sorted(lines[position] for position in positions)
     for position, row in zip(positions, ordered_rows, strict=True):
         lines[position] = row

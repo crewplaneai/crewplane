@@ -518,9 +518,9 @@ def test_timing_chart_preserves_scale_zero_unknown_and_padding(
 
     rendered = timing_chart_markdown(summary)
     lines = rendered.split("```text\n", 1)[1].split("\n```", 1)[0].splitlines()
-    assert lines[1].endswith("1.0s") and "#" * 30 in lines[1]
-    assert lines[2].endswith("0.5s") and "#" * 15 + "." * 15 in lines[2]
-    assert lines[3].endswith("0.0s") and "." * 30 in lines[3]
+    assert lines[1].endswith("1.0s") and "#" * 20 in lines[1]
+    assert lines[2].endswith("0.5s") and "#" * 10 + "." * 10 in lines[2]
+    assert lines[3].endswith("0.0s") and "." * 20 in lines[3]
     assert lines[4].endswith("n/a") and "#" not in lines[4] and "." not in lines[4]
     assert len({len(line) for line in lines}) == 1
     assert (
@@ -623,7 +623,7 @@ def test_literal_fences_keep_labels_and_full_requested_reasoning(
     )
     chart = timing_chart_markdown(summary)
     assert "````text\n" in chart and "\n````\n" in chart
-    assert "<a>&``` / t" in chart
+    assert re.search(r"<a>&```\s+t\s+a1/r2", chart)
     assert "模型 & <m> / max <&>" in chart
     assert "&lt;" not in chart and "&amp;" not in chart
     assert "1m 00.0s" in chart
@@ -753,11 +753,11 @@ def test_runtime_unknown_and_zero_have_distinct_chart_guidance(
         replace(empty_summary, invocation_timings=(timing,))
     )
     assert "No usable duration measurements" in unknown
-    assert "Relative runtime" not in unknown and "#" not in unknown
+    assert "Relative time" not in unknown and "#" not in unknown
     zero = timing_chart_markdown(
         replace(empty_summary, invocation_timings=(replace(timing, duration_ms=0),))
     )
-    assert "." * 30 in zero and "No positive duration was recorded." in zero
+    assert "." * 20 in zero and "No positive duration was recorded." in zero
     assert "cancelled" in zero
 
 
@@ -778,7 +778,7 @@ def test_chart_cell_width_and_numeric_overflow_preserve_evidence(
     chart = timing_chart_markdown(summary)
     body = chart.split("```text\n", 1)[1].split("\n```", 1)[0]
     assert max(display_width(line) for line in body.splitlines()) <= 120
-    assert "<0.1s" in body and "#" in body and "..." in body
+    assert "<0.1s" in body and "#" in body and "界" in body
     rendered = spend_markdown(summary)
     assert f"Total: {10**100:,}" in rendered
     assert f"| {'界' * 70} |" in rendered
@@ -848,3 +848,44 @@ def test_token_chart_fences_sanitize_without_html_escaping(
     assert "<n>&``` label" in rendered
     assert "\x1b" not in rendered.split("````text\n", 1)[1].split("\n````", 1)[0]
     assert "&lt;n&gt;&amp;\\`\\`\\`" in rendered
+
+
+def test_duration_preview_compacts_shared_paths_but_keeps_complete_details(
+    empty_summary: RunSummary,
+) -> None:
+    timings = tuple(
+        InvocationTimingSummary(
+            f"files.i{iteration}.refactor-file-loop",
+            "codex_reviewer_0",
+            "codex",
+            "gpt-6-astra",
+            1,
+            round_num,
+            "succeeded",
+            182456,
+            "max",
+        )
+        for iteration, round_num in ((0, 1), (1, 1), (1, 2))
+    )
+    summary = replace(empty_summary, invocation_timings=timings)
+    chart = timing_chart_markdown(summary)
+    body = chart.split("```text\n", 1)[1].split("\n```", 1)[0]
+    assert "Node path: files.{node}.refactor-file-loop" in chart
+    assert "Provider: codex" in chart
+    assert re.search(
+        r"Node\s+Call\s+Round\s+Model / reasoning\s+Status\s+Relative time\s+Duration",
+        body,
+    )
+    assert re.search(r"i0\s+reviewer_0\s+a1/r1", body)
+    assert re.search(r"i1\s+reviewer_0\s+a1/r2", body)
+    assert "codex_reviewer_0" not in body
+    assert all(display_width(line) <= 120 for line in body.splitlines())
+
+    details = invocation_details_markdown(summary)
+    assert (
+        "files.i0.refactor-file-loop / codex\\_reviewer\\_0 / audit1/round1" in details
+    )
+    assert (
+        "files.i1.refactor-file-loop / codex\\_reviewer\\_0 / audit1/round2" in details
+    )
+    assert "182.456s" in details

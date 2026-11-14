@@ -7,7 +7,7 @@ and details markup must already be prepared by callers.
 from __future__ import annotations
 
 from crewplane.architecture.contracts.run_summary import run_summary_header_lines
-from crewplane.observability.text_layout import display_width, fit_text, pad_text
+from crewplane.observability.text_layout import fit_text
 
 from . import models as _models
 from . import workspace_markdown as _workspace_markdown
@@ -15,13 +15,11 @@ from .formatting import (
     ISSUE_LIMIT,
     call_identity,
     format_call_duration,
-    format_chart_duration,
     format_cost,
     format_count,
     format_duration,
     format_provider_tokens,
     format_visible_estimate,
-    full_track,
     invocation_coverage_label,
     invocation_label,
     selected_stages,
@@ -29,7 +27,6 @@ from .formatting import (
     stage_counts_label,
     stage_status,
     timing_footer,
-    timing_model,
 )
 from .markdown_links import (
     artifact_link,
@@ -45,7 +42,11 @@ from .models import (
     RunSummary,
 )
 from .spend import spend_overview_rows
-from .terminal_table_layout import DurationTableRow, duration_table_layout
+from .terminal_table_layout import (
+    duration_preview,
+    duration_table_layout,
+    duration_table_lines,
+)
 
 ATTENTION_MESSAGE_LIMIT = 400
 
@@ -244,81 +245,38 @@ def _spend_overview_markdown(summary: RunSummary) -> str:
 
 
 def timing_chart_markdown(summary: RunSummary) -> str:
-    """Render a literal, fixed-budget runtime preview with complete scale facts."""
+    """Render separate call identity fields with a shared, fixed runtime scale."""
     timings = selected_timings(summary)
     if not timings:
         return "No invocation timing captured."
-    rows = tuple(
-        DurationTableRow(
-            chart_text(call_identity(row)),
-            chart_text(timing_model(row)),
-            chart_text(row.status),
-            format_chart_duration(row.duration_ms),
-            row.duration_ms,
-        )
-        for row in timings
-    )
-    layout = duration_table_layout(rows, 120)
-    widths = (
-        layout.label_width,
-        layout.provider_width,
-        layout.status_width,
-        layout.bar_width,
-        layout.duration_width,
-    )
-    values = [
-        (
-            "Call",
-            "Model / requested reasoning",
-            "Status",
-            "Relative runtime" if layout.bar_width else "",
-            "Duration",
-        )
-    ]
-    values.extend(
-        (
-            row.identity,
-            row.provider_model,
-            row.status,
-            full_track(row.duration_ms, layout.maximum_duration_ms, layout.bar_width),
-            row.duration,
-        )
-        for row in rows
-    )
+    preview = duration_preview(timings, chart_text)
+    layout = duration_table_layout(preview.rows, 120)
     if layout.stacked:
         chart = "\n\n".join(
-            f"{row.identity}\n{row.provider_model}\n{row.status}: {row.duration}"
-            for row in rows
+            f"{fit_text(row.node, 120)}\n{fit_text(row.call, 120)}\nRound: {row.round}\n{fit_text(row.model, 120)}\n{row.status}: {row.duration}"
+            for row in preview.rows
         )
     else:
-        chart = "\n".join(_timing_chart_line(row, widths) for row in values)
-    sections = [fenced_chart(chart), markdown_text(timing_footer(summary))]
-    durations = [row.duration_ms for row in rows if row.duration_ms is not None]
+        chart = "\n".join(duration_table_lines(preview.rows, layout))
+    sections = [
+        *(markdown_text(context) for context in preview.context),
+        fenced_chart(chart),
+        markdown_text(timing_footer(summary)),
+    ]
+    durations = [row.duration_ms for row in preview.rows if row.duration_ms is not None]
     if not durations:
         sections.append(
             "No usable duration measurements were recorded; no runtime bars are shown."
         )
     elif max(durations) == 0:
         sections.append("No positive duration was recorded.")
-    omitted = len(summary.invocation_timings) - len(rows)
+    omitted = len(summary.invocation_timings) - len(preview.rows)
     if omitted:
         sections.append(f"{omitted} more calls in invocation timing details below.")
     sections.append(
-        "Preview labels may be cropped; full identities, configured model, requested reasoning and exact timings are in invocation timing details below. Logical calls include retries and waits, exclude workspace preparation and later publication, and may overlap; bars are not workflow elapsed time. Cancelled durations end when cancellation was recorded."
+        "a = audit, r = round; reasoning is the requested setting. Preview labels may be cropped; full identities, configured model, requested reasoning and exact timings are in invocation timing details below. Logical calls include retries and waits, exclude workspace preparation and later publication, and may overlap; bars are not workflow elapsed time. Cancelled durations end when cancellation was recorded."
     )
     return "\n\n".join(sections)
-
-
-def _timing_chart_line(row: tuple[str, ...], widths: tuple[int, ...]) -> str:
-    cells = []
-    for index, (value, width) in enumerate(zip(row, widths, strict=True)):
-        if width == 0:
-            continue
-        if index == 4:
-            cells.append(" " * (width - display_width(value)) + value)
-        else:
-            cells.append(pad_text(fit_text(value, width), width))
-    return "  ".join(cells).rstrip()
 
 
 def results_markdown(summary: RunSummary) -> str:

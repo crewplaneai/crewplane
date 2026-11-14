@@ -277,6 +277,44 @@ def test_new_summary_normalizes_parallel_order_and_recorded_timing(
     assert r"- \`fanout\` / \`alpha-0\`" in normalized
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("reasoning", ["high", "1.000s"])
+def test_summary_normalization_keeps_wrapped_labels_with_their_calls(
+    tmp_path: Path, newline: str, reasoning: str
+) -> None:
+    summary = _parallel_summary(tmp_path)
+    summary = replace(
+        summary,
+        invocation_timings=(
+            replace(
+                summary.invocation_timings[0],
+                model="界" * 16,
+                requested_reasoning=reasoning,
+                duration_ms=2000,
+            ),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    changed = replace(
+        summary,
+        invocation_timings=(
+            replace(summary.invocation_timings[0], duration_ms=500),
+            *summary.invocation_timings[1:],
+        ),
+    )
+    original = render_run_summary_markdown(summary).replace("\n", newline)
+    reordered = render_run_summary_markdown(changed).replace("\n", newline)
+    normalized = probe.normalized_summary(original, tmp_path, "run")
+
+    assert original != reordered
+    assert normalized == probe.normalized_summary(reordered, tmp_path, "run")
+    duration_section = normalized.split("## Agent call durations", 1)[1]
+    chart = duration_section.split("```text" + newline, 1)[1]
+    chart = chart.split(newline + "```", 1)[0]
+    assert f"/ {reasoning}" in chart
+    assert ("\r\n" in normalized) is (newline == "\r\n")
+
+
 @pytest.mark.parametrize(
     "changed_field",
     ["link", "unicode", "status", "newline", "tokens", "node", "coverage", "reasoning"],

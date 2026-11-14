@@ -164,7 +164,7 @@ def test_unicode_labels_do_not_displace_status_duration_or_paths(
     compact = output.replace("\n", "")
     assert str(tmp_path / "界 folder" / "actual report.md") in compact
     assert str(summary.summary_path) in compact
-    assert ("#" in output) is (width >= 60)
+    assert ("#" in output) is (width >= 80)
 
 
 def test_caps_keep_failure_stages_and_disclose_all_display_omissions(
@@ -434,7 +434,7 @@ def test_comparison_bars_disappear_before_status_and_exact_values(
     tmp_path: Path, width: int
 ) -> None:
     output = _render(_summary(tmp_path), width)
-    assert ("#" in output) is (width >= 60)
+    assert ("#" in output) is (width >= 80)
     assert "1m 20.1s" in output and "50.5s" in output
     assert "succeeded" in output
     assert all(display_width(line) <= width for line in output.splitlines())
@@ -459,19 +459,22 @@ def test_timing_ties_have_stable_identity_order_and_unknown_is_last(
         .split("Agent call durations\n", 1)[1]
         .split("Reported tokens by node", 1)[0]
     )
-    assert (
-        output.index("beta / aaa")
-        < output.index("beta / executor")
-        < output.index("zulu / executor")
-        < output.index("alpha / executor")
-    )
+    calls = [
+        tuple(line.split()[:2])
+        for line in output.splitlines()
+        if line.startswith(("beta ", "zulu ", "alpha "))
+    ]
+    assert calls == [
+        ("beta", "aaa"),
+        ("beta", "executor"),
+        ("zulu", "executor"),
+        ("alpha", "executor"),
+    ]
     assert "n/a" in output
 
 
-@pytest.mark.parametrize("width", [23, 24])
-def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
-    tmp_path: Path, width: int
-) -> None:
+@pytest.mark.parametrize("width", [23, 24, 60, 80, 120])
+def test_long_labels_and_issues_remain_bounded(tmp_path: Path, width: int) -> None:
     summary = _summary(tmp_path)
     summary = replace(
         summary,
@@ -488,7 +491,7 @@ def test_long_labels_and_issues_remain_bounded_in_stacked_layout(
         issues=(IssueSummary("error", "now", "failure " * 10_000),),
     )
     output = _render(summary, width)
-    assert len(output.splitlines()) < 130
+    assert len(output.splitlines()) < 150
     assert "succeeded (reused)" in output
     assert "1m 20.1s" in output
     assert "Full issue in summary.md" in " ".join(output.split())
@@ -510,7 +513,9 @@ def test_label_linebreaks_and_control_characters_are_normalized(tmp_path: Path) 
 @pytest.mark.parametrize(
     "legacy_windows", [False, True], ids=["modern", "legacy-windows"]
 )
-@pytest.mark.parametrize("width", [39, 40, 41, 59, 60, 61, 79, 80, 81, 120])
+@pytest.mark.parametrize(
+    "width", [39, 40, 41, 59, 60, 61, 66, 67, 68, 79, 80, 81, 99, 100, 101, 120]
+)
 def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
     tmp_path: Path, width: int, legacy_windows: bool
 ) -> None:
@@ -547,11 +552,11 @@ def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
 
     effective_width = console.width
     assert ("Model /" in durations) is (effective_width >= 100)
-    assert ("Call / model" in durations) is (40 <= effective_width < 100)
+    assert ("Node" in durations and "Round" in durations) is (effective_width >= 60)
     for value in ("1.0s", "0.5s", "<0.1s", "0.0s", "n/a"):
         assert value in durations
     tracks = re.findall(r"[#.]{12,30}", durations)
-    if effective_width >= 60:
+    if effective_width >= 67:
         assert len(tracks) == 4
         assert tracks[0] == "#" * len(tracks[0])
         assert tracks[1].count("#") == (len(tracks[0]) + 1) // 2
@@ -567,8 +572,8 @@ def test_duration_layout_thresholds_preserve_proportional_and_missing_values(
     [
         ((None, None), []),
         ((0, 0), []),
-        ((1000, None), [30]),
-        ((1000, 0), [30]),
+        ((1000, None), [20]),
+        ((1000, 0), [20]),
     ],
 )
 def test_comparison_tracks_preserve_unknown_zero_and_single_measurement(
@@ -887,3 +892,40 @@ def test_narrow_breakdowns_never_split_fitting_exact_numbers(
     for value in ("12,000", "3,000", "4,000", "12345678", "$0.012340"):
         assert any(value in line for line in providers.splitlines())
     assert all(display_width(line) <= width for line in output.splitlines())
+
+
+@pytest.mark.parametrize("width", [120, 80, 60, 39, 24])
+def test_duration_identity_fields_keep_repeated_review_rounds_visible(
+    tmp_path: Path, width: int
+) -> None:
+    timings = tuple(
+        InvocationTimingSummary(
+            f"files.i{iteration}.refactor-file-loop",
+            "codex_reviewer_0",
+            "codex",
+            "gpt-6-astra",
+            1,
+            round_num,
+            "succeeded",
+            duration,
+            "max",
+        )
+        for iteration, round_num, duration in (
+            (1, 1, 182400),
+            (0, 1, 167600),
+            (1, 2, 153600),
+        )
+    )
+    output = _render(replace(_summary(tmp_path), invocation_timings=timings), width)
+    section = output.split("Agent call durations\n", 1)[1].split(
+        "Reported tokens by node", 1
+    )[0]
+    assert all(display_width(line) <= width for line in output.splitlines())
+    assert "reviewer_0" in section
+    assert "a1/r1" in section and "a1/r2" in section
+    assert "Provider: codex" in section
+    assert "i0" in section and "i1" in section
+    assert "3m 02.4s" in section
+    if width >= 80:
+        assert "Relative time" in section
+        assert "#" * 20 in section
