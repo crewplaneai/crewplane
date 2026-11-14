@@ -6,13 +6,8 @@ and details markup must already be prepared by callers.
 
 from __future__ import annotations
 
-import re
-from collections.abc import Sequence
-from html import escape
-
 from crewplane.architecture.contracts.run_summary import run_summary_header_lines
-from crewplane.observability.log_presentation.sanitize import sanitize_text
-from crewplane.observability.text_layout import fit_text, pad_text
+from crewplane.observability.text_layout import display_width, fit_text, pad_text
 
 from . import models as _models
 from . import workspace_markdown as _workspace_markdown
@@ -20,33 +15,39 @@ from .formatting import (
     ISSUE_LIMIT,
     call_identity,
     format_call_duration,
+    format_chart_duration,
     format_cost,
     format_count,
     format_duration,
     format_provider_tokens,
     format_visible_estimate,
+    full_track,
     invocation_coverage_label,
     invocation_label,
     selected_stages,
     selected_timings,
     stage_counts_label,
     stage_status,
+    timing_footer,
+    timing_model,
 )
-from .markdown_links import artifact_link, markdown_text
+from .markdown_links import (
+    artifact_link,
+    chart_text,
+    fenced_chart,
+    markdown_text,
+    table,
+)
+from .markdown_tokens import tokens_markdown
 from .models import (
-    InvocationTimingSummary,
     InvocationUsageSummary,
     NodeOutcomeSummary,
-    ProviderTokenAggregate,
     RunSummary,
 )
 from .spend import spend_overview_rows
+from .terminal_table_layout import DurationTableRow, duration_table_layout
 
 ATTENTION_MESSAGE_LIMIT = 400
-TIMING_IDENTITY_WIDTH = 36
-TIMING_PROVIDER_WIDTH = 28
-TIMING_STATUS_WIDTH = 10
-TIMING_BAR_WIDTH = 20
 
 
 workspace_markdown_lines = _workspace_markdown.workspace_markdown_lines
@@ -86,8 +87,8 @@ def render_run_summary_markdown(summary: RunSummary) -> str:
         "## Overview\n\n" + overview_markdown(summary),
         "## Needs attention\n\n" + attention_markdown(summary),
         "## Stages\n\n" + stages_markdown(summary, selected_stages(summary)),
-        "## Spend Observability\n\n" + spend_markdown(summary),
         "## Agent call durations\n\n" + timing_chart_markdown(summary),
+        "## Spend Observability\n\n" + spend_markdown(summary),
         "## Results and reports\n\n" + results_markdown(summary),
         details(
             "Invocation usage and timing details", invocation_details_markdown(summary)
@@ -121,17 +122,6 @@ def render_run_summary_markdown(summary: RunSummary) -> str:
     return "\n\n".join(sections) + "\n"
 
 
-def table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> str:
-    """Join pre-escaped cells into a Markdown table without a trailing LF."""
-    return "\n".join(
-        [
-            "| " + " | ".join(headers) + " |",
-            "| " + " | ".join("---" for _ in headers) + " |",
-            *("| " + " | ".join(row) + " |" for row in rows),
-        ]
-    )
-
-
 def details(title: str, content: str, anchor: str | None = None) -> str:
     """Wrap trusted markup in closed details, stripping content's trailing space."""
     prefix = f'<a id="{anchor}"></a>\n\n' if anchor is not None else ""
@@ -145,7 +135,7 @@ def overview_markdown(summary: RunSummary) -> str:
     tokens = (
         f"{format_count(overall.total)} across {overall.report_count} reports"
         if overall is not None
-        else "n/a (no provider reports captured)"
+        else "n/a (exact totals unavailable)"
     )
     values = [
         ("Elapsed", format_duration(summary.elapsed_seconds)),
@@ -232,11 +222,7 @@ def stages_markdown(summary: RunSummary, nodes: tuple[NodeOutcomeSummary, ...]) 
 
 def spend_markdown(summary: RunSummary) -> str:
     """Render usage, token, and provider tables in order, then retention notes."""
-    sections = [_spend_overview_markdown(summary)]
-    if tokens := _provider_tokens_markdown(summary):
-        sections.append(tokens)
-    if summary.provider_rollups:
-        sections.append(_provider_rollups_markdown(summary))
+    sections = [tokens_markdown(summary), _spend_overview_markdown(summary)]
     sections.append(
         "Provider buckets are reported independently; cached input and reasoning are not added to totals. Visible-text estimates are separate lower bounds, not provider-reported usage."
     )
@@ -257,106 +243,82 @@ def _spend_overview_markdown(summary: RunSummary) -> str:
     )
 
 
-def _provider_tokens_markdown(summary: RunSummary) -> str:
-    aggregates = summary.provider_token_aggregates
-    rows = [
-        _provider_token_row(aggregate)
-        for aggregate in (
-            (aggregates.overall,) if aggregates.overall is not None else ()
-        )
-        + aggregates.providers
-    ]
-    if not rows:
-        return ""
-    return table(
-        (
-            "Provider",
-            "Reports",
-            "Input",
-            "Cached input",
-            "Cache write",
-            "Output",
-            "Reasoning",
-            "Total",
-        ),
-        rows,
-    )
-
-
-def _provider_token_row(aggregate: ProviderTokenAggregate) -> tuple[str, ...]:
-    return (
-        markdown_text(aggregate.provider or "Overall"),
-        str(aggregate.report_count),
-        format_count(aggregate.input),
-        format_count(aggregate.cached_input),
-        format_count(aggregate.cache_write),
-        format_count(aggregate.output),
-        format_count(aggregate.reasoning),
-        format_count(aggregate.total),
-    )
-
-
-def _provider_rollups_markdown(summary: RunSummary) -> str:
-    return table(
-        (
-            "Provider",
-            "Usage calls / recorded attempts",
-            "CLI captured",
-            "Full / partial / malformed",
-            "Visible estimate (lower-bound)",
-            "Configured cost / confidence",
-        ),
-        [
-            (
-                markdown_text(rollup.provider),
-                f"{rollup.terminal_invocations} / {rollup.total_attempts}",
-                str(rollup.cli_captured_invocations),
-                f"{rollup.provider_usage_full_invocations} / {rollup.provider_usage_partial_invocations} / {rollup.provider_usage_malformed_invocations}",
-                format_count(rollup.visible_estimate_tokens),
-                f"{format_cost(rollup.configured_cost_usd)} / {rollup.configured_cost_confidence}",
-            )
-            for rollup in summary.provider_rollups
-        ],
-    )
-
-
 def timing_chart_markdown(summary: RunSummary) -> str:
-    """Render longest calls in a safe text fence; unknown durations have no bar."""
-    rows = selected_timings(summary)
-    if not rows:
+    """Render a literal, fixed-budget runtime preview with complete scale facts."""
+    timings = selected_timings(summary)
+    if not timings:
         return "No invocation timing captured."
-    longest = max((row.duration_ms or 0 for row in rows), default=0)
-    chart = "\n".join(_timing_chart_line(row, longest) for row in rows)
-    fence = "`" * max(
-        3,
-        max((len(match.group()) + 1 for match in re.finditer(r"`+", chart)), default=0),
+    rows = tuple(
+        DurationTableRow(
+            chart_text(call_identity(row)),
+            chart_text(timing_model(row)),
+            chart_text(row.status),
+            format_chart_duration(row.duration_ms),
+            row.duration_ms,
+        )
+        for row in timings
     )
-    result = f"Longest recorded calls. Individual durations may overlap; bars are not a workflow timeline or elapsed time.\n\n{fence}text\n{chart}\n{fence}"
+    layout = duration_table_layout(rows, 120)
+    widths = (
+        layout.label_width,
+        layout.provider_width,
+        layout.status_width,
+        layout.bar_width,
+        layout.duration_width,
+    )
+    values = [
+        (
+            "Call",
+            "Model / requested reasoning",
+            "Status",
+            "Relative runtime" if layout.bar_width else "",
+            "Duration",
+        )
+    ]
+    values.extend(
+        (
+            row.identity,
+            row.provider_model,
+            row.status,
+            full_track(row.duration_ms, layout.maximum_duration_ms, layout.bar_width),
+            row.duration,
+        )
+        for row in rows
+    )
+    if layout.stacked:
+        chart = "\n\n".join(
+            f"{row.identity}\n{row.provider_model}\n{row.status}: {row.duration}"
+            for row in rows
+        )
+    else:
+        chart = "\n".join(_timing_chart_line(row, widths) for row in values)
+    sections = [fenced_chart(chart), markdown_text(timing_footer(summary))]
+    durations = [row.duration_ms for row in rows if row.duration_ms is not None]
+    if not durations:
+        sections.append(
+            "No usable duration measurements were recorded; no runtime bars are shown."
+        )
+    elif max(durations) == 0:
+        sections.append("No positive duration was recorded.")
     omitted = len(summary.invocation_timings) - len(rows)
     if omitted:
-        result += f"\n\n{omitted} more calls in invocation timing details below."
-    return result
+        sections.append(f"{omitted} more calls in invocation timing details below.")
+    sections.append(
+        "Preview labels may be cropped; full identities, configured model, requested reasoning and exact timings are in invocation timing details below. Logical calls include retries and waits, exclude workspace preparation and later publication, and may overlap; bars are not workflow elapsed time. Cancelled durations end when cancellation was recorded."
+    )
+    return "\n\n".join(sections)
 
 
-def _timing_chart_line(row: InvocationTimingSummary, longest: int) -> str:
-    identity = fit_text(
-        " ".join(escape(sanitize_text(call_identity(row)), quote=False).splitlines()),
-        TIMING_IDENTITY_WIDTH,
-    )
-    provider_model = fit_text(
-        " ".join(
-            escape(
-                sanitize_text(f"{row.provider} / {row.model or 'n/a'}"), quote=False
-            ).splitlines()
-        ),
-        TIMING_PROVIDER_WIDTH,
-    )
-    bar_length = (
-        round(TIMING_BAR_WIDTH * row.duration_ms / longest)
-        if longest and row.duration_ms is not None
-        else 0
-    )
-    return f"{pad_text(identity, TIMING_IDENTITY_WIDTH)}  {pad_text(provider_model, TIMING_PROVIDER_WIDTH)}  {pad_text(row.status, TIMING_STATUS_WIDTH)}  {pad_text('#' * bar_length, TIMING_BAR_WIDTH)} {format_call_duration(row.duration_ms)}"
+def _timing_chart_line(row: tuple[str, ...], widths: tuple[int, ...]) -> str:
+    cells = []
+    for index, (value, width) in enumerate(zip(row, widths, strict=True)):
+        if width == 0:
+            continue
+        if index == 4:
+            cells.append(" " * (width - display_width(value)) + value)
+        else:
+            cells.append(pad_text(fit_text(value, width), width))
+    return "  ".join(cells).rstrip()
 
 
 def results_markdown(summary: RunSummary) -> str:
@@ -427,12 +389,20 @@ def _invocation_usage_line(usage: InvocationUsageSummary) -> str:
 
 def _invocation_timing_table(summary: RunSummary) -> str:
     return table(
-        ("Invocation", "Provider", "Recorded model", "Execution", "Duration"),
+        (
+            "Invocation",
+            "Provider",
+            "Recorded model",
+            "Requested reasoning",
+            "Execution",
+            "Duration",
+        ),
         [
             (
                 markdown_text(call_identity(timing)),
                 markdown_text(timing.provider),
                 markdown_text(timing.model or "n/a"),
+                markdown_text(timing.requested_reasoning or "n/a"),
                 markdown_text(timing.status),
                 format_call_duration(timing.duration_ms),
             )

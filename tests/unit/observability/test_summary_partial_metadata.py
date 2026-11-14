@@ -129,8 +129,10 @@ def test_terminal_spend_lines_preserves_provider_record_order_and_format(
     assert "Recorded attempts: 4" in terminal
     assert "1,234" in terminal
     assert "1 earlier invocation detail(s)" in markdown
-    assert "| alpha | 2 / 3 | 1 | 1 / 1 / 0 | 1,000 | n/a / none |" in markdown
-    assert "| beta | 1 / 1 | 1 | 0 / 0 / 1 | 234 | $0.500000 / full |" in markdown
+    assert "| alpha | 2 / 3 | 1 | 1 / 1 / 0 |" in markdown
+    assert "| beta | 1 / 1 | 1 | 0 / 0 / 1 |" in markdown
+    assert "| alpha | 1,000 | n/a / none |" in markdown
+    assert "| beta | 234 | $0.500000 / full |" in markdown
 
 
 def _invocation_usage(provider: str) -> InvocationUsageSummary:
@@ -164,14 +166,14 @@ def _invocation_usage(provider: str) -> InvocationUsageSummary:
     [
         (
             ProviderTokenAggregate("mock", 1, cached_input=3),
-            ("Provider-reported tokens: n/a across 1 reports", "cached input=3"),
+            ("Provider-reported tokens: n/a across 1 reports", "Cached input: 3"),
         ),
         (
             ProviderTokenAggregate("mock", 1, cache_write=4, reasoning=5),
             (
                 "Provider-reported tokens: n/a across 1 reports",
-                "cache write=4",
-                "reasoning=5",
+                "Cache write: 4",
+                "Reasoning: 5",
             ),
         ),
     ],

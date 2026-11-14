@@ -35,6 +35,7 @@ from crewplane.observability.run_summary.models import (
     IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
+    NodeTokenAggregate,
     ProviderTokenAggregate,
     ProviderTokenAggregates,
     ProviderUsageRollup,
@@ -47,6 +48,7 @@ from crewplane.observability.run_summary.models import (
     WorkspacePlanSummary,
     WorkspaceRunSummary,
 )
+from crewplane.observability.text_layout import display_width
 from crewplane.observability.types import RunResult
 
 
@@ -268,10 +270,11 @@ def test_large_report_keeps_all_stage_and_timing_facts(tmp_path: Path) -> None:
         assert f"| stage-{index} |" in markdown
         assert f"stage-{index} / task" in markdown
     assert (
-        "| stage-0 / task / round0 | provider | model | succeeded | n/a |" in markdown
+        "| stage-0 / task / round0 | provider | model | n/a | succeeded | n/a |"
+        in markdown
     )
     visible_stage_section = markdown.split("## Stages\n", 1)[1].split(
-        "## Spend Observability", 1
+        "## Agent call durations", 1
     )[0]
     assert "stage-15" in visible_stage_section
     assert "stage-19" not in visible_stage_section
@@ -396,24 +399,30 @@ def test_spend_tables_preserve_column_order_missing_counts_and_spacing(
         ),
     )
 
-    assert spend_markdown(summary) == (
-        "| Usage metric | Recorded value |\n"
-        "| --- | --- |\n"
-        "| Calls with usage facts | 2 |\n"
-        "| Recorded attempts | 3 |\n"
-        "| CLI invocations captured | 1/2 |\n"
-        "| Provider usage status | 1/2 full, 0/2 partial, 1/2 malformed |\n"
-        "| Visible-text estimate (lower-bound) | 1,234 tokens |\n"
-        "| Configured cost estimate | $0.500000 (confidence: mixed) |\n\n"
-        "| Provider | Reports | Input | Cached input | Cache write | Output | Reasoning | Total |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
-        "| Overall | 2 | 1,234 | 0 | n/a | 20 | 3 | 1,254 |\n"
-        "| p\\_\\| | 1 | n/a | n/a | n/a | 20 | n/a | n/a |\n\n"
-        "| Provider | Usage calls / recorded attempts | CLI captured | Full / partial / malformed | Visible estimate (lower-bound) | Configured cost / confidence |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        "| p\\_\\| | 2 / 3 | 1 | 1 / 0 / 1 | n/a | n/a / none |\n\n"
-        "Provider buckets are reported independently; cached input and reasoning are not added to totals. Visible-text estimates are separate lower bounds, not provider-reported usage."
+    rendered = spend_markdown(summary)
+    assert (
+        rendered.index("### Reported tokens by node")
+        < rendered.index("### Provider-reported tokens")
+        < rendered.index("### Visible estimates and configured cost")
     )
+    assert (
+        "| Provider | Reports | Input | Cached input | Cache write | Output | Reasoning | Total |"
+        in rendered
+    )
+    assert "| Overall | 2 | 1,234 | 0 | n/a | 20 | 3 | 1,254 |" in rendered
+    assert r"| p\_\| | 1 | n/a | n/a | n/a | 20 | n/a | n/a |" in rendered
+    assert r"| p\_\| | 2 / 3 | 1 | 1 / 0 / 1 |" in rendered
+    for fact in (
+        "| Calls with usage facts | 2 |",
+        "| Recorded attempts | 3 |",
+        "| CLI invocations captured | 1/2 |",
+        "| Provider usage status | 1/2 full, 0/2 partial, 1/2 malformed |",
+        "| Visible-text estimate (lower-bound) | 1,234 tokens |",
+        "| Configured cost estimate | $0.500000 (confidence: mixed) |",
+    ):
+        assert fact in rendered
+    assert "Node and provider rows are two views of the same reports" in rendered
+    assert "cached input and reasoning are not added to totals" in rendered
 
 
 def test_spend_provider_rows_do_not_require_an_overall_aggregate(
@@ -428,9 +437,9 @@ def test_spend_provider_rows_do_not_require_an_overall_aggregate(
 
     rendered = spend_markdown(summary)
 
-    assert rendered.startswith("No spend observability captured.\n\n| Provider |")
+    assert "No spend observability captured." in rendered
     assert "\n| p | 0 | n/a | n/a | n/a | n/a | n/a | 0 |\n" in rendered
-    assert "Overall" not in rendered
+    assert "| Overall |" not in rendered
     assert "Usage calls / recorded attempts" not in rendered
 
 
@@ -478,10 +487,10 @@ def test_invocation_details_preserve_retention_usage_and_timing_order(
         "visible estimate: 0 tokens via visible lower-bound; configured cost: $0.000000; "
         "confidence: none; provider report count: n/a; provider tokens: output=0, input=n/a; "
         "usage parse error: bad &lt;usage&gt; next; failure: ; failure source: cli; failure advice: retry\n\n"
-        "| Invocation | Provider | Recorded model | Execution | Duration |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        "| z / t | p | n/a | failed | n/a |\n"
-        "| a / t | p | m | succeeded | 0.000s |"
+        "| Invocation | Provider | Recorded model | Requested reasoning | Execution | Duration |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| z / t | p | n/a | n/a | failed | n/a |\n"
+        "| a / t | p | m | n/a | succeeded | 0.000s |"
     )
     assert (
         invocation_details_markdown(empty_summary)
@@ -507,15 +516,18 @@ def test_timing_chart_preserves_scale_zero_unknown_and_padding(
         ),
     )
 
-    assert timing_chart_markdown(summary) == (
-        "Longest recorded calls. Individual durations may overlap; bars are not a workflow timeline or elapsed time.\n\n"
-        "```text\n"
-        f"{'full / t':36}  {'p / n/a':28}  {'succeeded':10}  {'####################':20} 1.000s\n"
-        f"{'half / t':36}  {'p / n/a':28}  {'succeeded':10}  {'##########':20} 0.500s\n"
-        f"{'zero / t':36}  {'p / n/a':28}  {'succeeded':10}  {'':20} 0.000s\n"
-        f"{'unknown / t':36}  {'p / n/a':28}  {'succeeded':10}  {'':20} n/a\n"
-        "```"
+    rendered = timing_chart_markdown(summary)
+    lines = rendered.split("```text\n", 1)[1].split("\n```", 1)[0].splitlines()
+    assert lines[1].endswith("1.0s") and "#" * 30 in lines[1]
+    assert lines[2].endswith("0.5s") and "#" * 15 + "." * 15 in lines[2]
+    assert lines[3].endswith("0.0s") and "." * 30 in lines[3]
+    assert lines[4].endswith("n/a") and "#" not in lines[4] and "." not in lines[4]
+    assert len({len(line) for line in lines}) == 1
+    assert (
+        "Scale: longest recorded call = 1.0s. 4 shown of 4 observed; 4 succeeded"
+        in rendered
     )
+    assert "total call coverage unknown" in rendered
     assert timing_chart_markdown(empty_summary) == "No invocation timing captured."
 
 
@@ -588,3 +600,251 @@ def test_plan_and_invocation_contract_labels_preserve_missing_value_rules(
 
     assert plan_worktree_contract_label(plan) == expected
     assert worktree_contract_label(invocation) == expected
+
+
+def test_literal_fences_keep_labels_and_full_requested_reasoning(
+    empty_summary: RunSummary,
+) -> None:
+    summary = replace(
+        empty_summary,
+        invocation_timings=(
+            InvocationTimingSummary(
+                "<a>&```",
+                "t",
+                "p",
+                "模型 & <m>",
+                1,
+                2,
+                "failed",
+                59999,
+                requested_reasoning="max <&>",
+            ),
+        ),
+    )
+    chart = timing_chart_markdown(summary)
+    assert "````text\n" in chart and "\n````\n" in chart
+    assert "<a>&``` / t" in chart
+    assert "模型 & <m> / max <&>" in chart
+    assert "&lt;" not in chart and "&amp;" not in chart
+    assert "1m 00.0s" in chart
+    details = invocation_details_markdown(summary)
+    assert "max &lt;&amp;&gt;" in details and "59.999s" in details
+    assert "audit1/round2" in details
+
+
+def test_complete_node_tables_survive_preview_limits_and_unattributed(
+    empty_summary: RunSummary,
+) -> None:
+    nodes = tuple(
+        NodeTokenAggregate(
+            f"node-{i}",
+            input=i,
+            cached_input=0,
+            cache_write=None,
+            output=0,
+            reasoning=0,
+            total=i,
+            report_count=1,
+            attempt_count=2,
+            terminal_calls=1,
+            observed_calls=1,
+            calls_with_reports=1,
+            calls_without_terminal=0,
+            positive_report_calls=1,
+            status="succeeded",
+            exact=True,
+        )
+        for i in range(10)
+    )
+    summary = replace(
+        empty_summary,
+        node_token_aggregates=nodes,
+        unattributed_node_tokens=NodeTokenAggregate(None, total=999999, report_count=1),
+    )
+    rendered = spend_markdown(summary)
+    chart = rendered.split("```text\n", 1)[1].split("\n```", 1)[0]
+    assert "node-9" in chart and "node-1" not in chart and "node-0" not in chart
+    assert (
+        "Scale: largest node total = 9 reported tokens. 8 shown of 10 nodes" in rendered
+    )
+    assert "2 more nodes" in rendered
+    assert "Unattributed (node ID missing)" in rendered and "999,999" in rendered
+    for i in range(10):
+        assert f"| node-{i} | {i} | 0 | n/a | 0 | 0 | {i} | 1 | 2 |" in rendered
+        assert f"| node-{i} | succeeded / n/a | 1/1 |" in rendered
+
+
+def test_node_zero_unknown_resume_and_incomplete_evidence(
+    empty_summary: RunSummary,
+) -> None:
+    nodes = (
+        NodeTokenAggregate(
+            "zero",
+            total=0,
+            report_count=1,
+            observed_calls=1,
+            calls_with_reports=1,
+            exact=True,
+        ),
+        NodeTokenAggregate(
+            "partial",
+            input=20,
+            report_count=2,
+            attempt_count=3,
+            missing_attempt_count_calls=1,
+            missing_report_count_calls=1,
+            positive_report_calls=1,
+            zero_report_calls=1,
+            observed_calls=4,
+            calls_with_reports=1,
+            calls_without_terminal=1,
+            usage_partial_calls=1,
+            parse_error_calls=1,
+            exact=True,
+        ),
+        NodeTokenAggregate(
+            "reused",
+            observed_calls=0,
+            status="succeeded",
+            resume_kind="reused",
+            exact=True,
+        ),
+    )
+    rendered = spend_markdown(replace(empty_summary, node_token_aggregates=nodes))
+    assert "." * 30 in rendered and "No positive total was recorded." in rendered
+    assert "| reused | succeeded / reused | no new calls |" in rendered
+    assert (
+        "| partial | n/a / n/a | 1/4 | 0 | 1 / 1 / 1 | 1 | 1 | 0 / 1 / 0 | 1 | available |"
+        in rendered
+    )
+    assert "0/0" not in rendered
+
+
+def test_provider_preview_uses_union_and_independent_scale(
+    empty_summary: RunSummary,
+) -> None:
+    summary = replace(
+        empty_summary,
+        provider_token_aggregates=ProviderTokenAggregates(
+            ProviderTokenAggregate(None, 5, total=None),
+            tuple(ProviderTokenAggregate(f"p{i}", 1, total=i) for i in range(5)),
+        ),
+        provider_rollups=(
+            ProviderUsageRollup("rollup-only", 1, 1, 1, 0, 0, 0, None, None, "none"),
+        ),
+    )
+    rendered = spend_markdown(summary)
+    assert "Overall reported total: n/a across 5 reports." in rendered
+    assert (
+        "Scale: largest provider total = 4 reported tokens. 4 shown of 6 providers."
+        in rendered
+    )
+    assert "2 more providers" in rendered
+    assert "| rollup-only | n/a | n/a | n/a | n/a | n/a | n/a | n/a |" in rendered
+    chart = rendered.split("```text\n", 1)[1].split("\n```", 1)[0]
+    assert "p4" in chart and "p0" not in chart and "rollup-only" not in chart
+
+
+def test_runtime_unknown_and_zero_have_distinct_chart_guidance(
+    empty_summary: RunSummary,
+) -> None:
+    timing = InvocationTimingSummary("n", "t", "p", "m", None, None, "cancelled", None)
+    unknown = timing_chart_markdown(
+        replace(empty_summary, invocation_timings=(timing,))
+    )
+    assert "No usable duration measurements" in unknown
+    assert "Relative runtime" not in unknown and "#" not in unknown
+    zero = timing_chart_markdown(
+        replace(empty_summary, invocation_timings=(replace(timing, duration_ms=0),))
+    )
+    assert "." * 30 in zero and "No positive duration was recorded." in zero
+    assert "cancelled" in zero
+
+
+def test_chart_cell_width_and_numeric_overflow_preserve_evidence(
+    empty_summary: RunSummary,
+) -> None:
+    summary = replace(
+        empty_summary,
+        invocation_timings=(
+            InvocationTimingSummary(
+                "界" * 70, "t", "p", "e\u0301" * 80, None, None, "succeeded", 1
+            ),
+        ),
+        node_token_aggregates=(
+            NodeTokenAggregate("界" * 70, total=10**100, report_count=1, exact=True),
+        ),
+    )
+    chart = timing_chart_markdown(summary)
+    body = chart.split("```text\n", 1)[1].split("\n```", 1)[0]
+    assert max(display_width(line) for line in body.splitlines()) <= 120
+    assert "<0.1s" in body and "#" in body and "..." in body
+    rendered = spend_markdown(summary)
+    assert f"Total: {10**100:,}" in rendered
+    assert f"| {'界' * 70} |" in rendered
+    assert "e\u0301" * 80 in invocation_details_markdown(summary)
+
+
+@pytest.mark.parametrize(
+    "identity",
+    ["parent." + "child." * 24 + "task", "parent." + "子界e\u0301." * 24 + "task"],
+)
+def test_stacked_token_previews_bound_identities_without_losing_values(
+    empty_summary: RunSummary, identity: str
+) -> None:
+    total = 10**70
+    summary = replace(
+        empty_summary,
+        node_token_aggregates=(
+            NodeTokenAggregate(
+                identity,
+                input=123,
+                output=456,
+                total=total,
+                report_count=3,
+                observed_calls=1,
+                calls_with_reports=1,
+                exact=True,
+            ),
+        ),
+        provider_token_aggregates=ProviderTokenAggregates(
+            providers=(ProviderTokenAggregate(identity, 3, total=total),)
+        ),
+    )
+
+    rendered = spend_markdown(summary)
+    charts = re.findall(r"```text\n(.*?)\n```", rendered, re.DOTALL)
+
+    assert len(charts) == 2
+    for chart, label in zip(charts, ("Node", "Provider"), strict=True):
+        assert max(display_width(line) for line in chart.splitlines()) <= 120
+        assert chart.splitlines()[0].startswith(f"{label}: parent.")
+        assert chart.splitlines()[0].endswith("...")
+        assert f"{'Total' if label == 'Node' else 'Tokens'}: {total:,}" in chart
+        assert "Reports: 3" in chart
+    assert "Input: 123\nOutput: 456" in charts[0]
+    assert "Calls w/reports: 1/1" in charts[0]
+    assert f"| {identity} |" in rendered
+
+
+def test_token_chart_fences_sanitize_without_html_escaping(
+    empty_summary: RunSummary,
+) -> None:
+    label = "<n>&```\x1b[31m\tlabel\x80"
+    summary = replace(
+        empty_summary,
+        node_token_aggregates=(
+            NodeTokenAggregate(label, total=1, report_count=1, exact=True),
+        ),
+        provider_token_aggregates=ProviderTokenAggregates(
+            providers=(ProviderTokenAggregate(label, 1, total=1),)
+        ),
+    )
+    rendered = spend_markdown(summary)
+    assert rendered.count("````text\n") == 2
+    assert "<n>&```" in rendered
+    assert "\x1b" not in rendered
+    assert "\t" not in rendered and "\x80" not in rendered
+    assert "<n>&``` label" in rendered
+    assert "\x1b" not in rendered.split("````text\n", 1)[1].split("\n````", 1)[0]
+    assert "&lt;n&gt;&amp;\\`\\`\\`" in rendered

@@ -11,11 +11,7 @@ MIN_STATUS_WIDTH = display_width(EXECUTION_HEADER)
 DURATION_HEADER = "Duration"
 CALL_HEADER = "Call"
 COMBINED_CALL_HEADER = "Call / model"
-PROVIDER_HEADER = "Provider / model"
-
-_BAR_WIDTH_THRESHOLD = 60
-_PROVIDER_COLUMN_WIDTH = 80
-_MAX_BAR_WIDTH = 20
+PROVIDER_HEADER = "Model / requested reasoning"
 
 
 @dataclass(frozen=True)
@@ -37,52 +33,56 @@ class DurationTableLayout:
     duration_width: int
     bar_width: int
     maximum_duration_ms: int
+    stacked: bool = False
 
 
 def duration_table_layout(
     rows: tuple[DurationTableRow, ...], width: int
 ) -> DurationTableLayout:
-    maximum = max(row.duration_ms or 0 for row in rows)
-    bars = (
-        width >= _BAR_WIDTH_THRESHOLD
-        and maximum > 0
-        and sum(row.duration_ms is not None for row in rows) > 1
-    )
-    bar_width = min(_MAX_BAR_WIDTH, width // 5) if bars else 0
-    status_width = max(MIN_STATUS_WIDTH, *(display_width(row.status) for row in rows))
-    duration_width = max(
+    """Reserve complete numeric/status cells before bounding preview labels."""
+    maximum = max((row.duration_ms or 0 for row in rows), default=0)
+    status = max(display_width("Status"), *(display_width(row.status) for row in rows))
+    duration = max(
         display_width(DURATION_HEADER), *(display_width(row.duration) for row in rows)
     )
-    separate_provider = width >= _PROVIDER_COLUMN_WIDTH
-    column_count = 3 + int(bars) + int(separate_provider)
-    padding = (column_count - 1) * COLUMN_PADDING
-    available = max(1, width - status_width - duration_width - bar_width - padding)
-    provider_width = (
+    separate = width >= 100
+    natural_label = max(
+        display_width(CALL_HEADER if separate else COMBINED_CALL_HEADER),
+        *(display_width(row.identity) for row in rows),
+    )
+    natural_model = max(
+        display_width(PROVIDER_HEADER),
+        *(display_width(row.provider_model) for row in rows),
+    )
+    if not separate:
+        natural_label = max(natural_label, natural_model)
+    fixed = status + duration + (3 if separate else 2) * COLUMN_PADDING
+    label_minimum = 8 + (8 if separate else 0)
+    bars = width >= 60 and any(row.duration_ms is not None for row in rows)
+    bar = (
         min(
-            max(
-                display_width(PROVIDER_HEADER),
-                *(display_width(row.provider_model) for row in rows),
-            ),
-            max(1, available // 3),
+            30,
+            width
+            - fixed
+            - natural_label
+            - (natural_model if separate else 0)
+            - COLUMN_PADDING,
         )
-        if separate_provider
+        if bars
         else 0
     )
-    labels = [row.identity for row in rows]
-    if not separate_provider:
-        labels.extend(row.provider_model for row in rows)
-    label_width = min(
-        max(
-            display_width(COMBINED_CALL_HEADER),
-            *(display_width(value) for value in labels),
-        ),
-        max(1, available - provider_width),
-    )
+    if bars:
+        bar = max(12, bar)
+        if width - fixed - bar - COLUMN_PADDING < label_minimum:
+            bar = 0
+    available = width - fixed - (bar + COLUMN_PADDING if bar else 0)
+    stacked = width < 40 or available < label_minimum
+    label, model = natural_label, natural_model if separate else 0
+    while label + model > max(1, available):
+        if model > label:
+            model -= 1
+        else:
+            label -= 1
     return DurationTableLayout(
-        label_width,
-        provider_width,
-        status_width,
-        duration_width,
-        bar_width,
-        maximum,
+        max(1, label), max(0, model), status, duration, bar, maximum, stacked
     )

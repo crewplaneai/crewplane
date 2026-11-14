@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Align runtime and node/provider token comparisons in end-of-run summaries, with requested reasoning labels and clearer reporting coverage.
+
 ## [0.4.2] - 2026-11-11
 
 ### Changed

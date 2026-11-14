@@ -92,6 +92,50 @@ def test_refresh_historical_summary_replays_valid_historical_events(
     assert "ignored invalid log level" not in summary_text
 
 
+@pytest.mark.parametrize("requested_reasoning", [None, "high"])
+def test_historical_summary_preserves_recorded_node_tokens_and_reasoning(
+    tmp_path: Path, requested_reasoning: str | None
+) -> None:
+    record = _history_record(tmp_path)
+    events = [
+        {
+            **_base_record("invocation_finished"),
+            "workflow_name": record.manifest.workflow_name,
+            "node_id": node_id,
+            "task_id": "same-task",
+            "provider": "alpha",
+            "role": "executor",
+            "model": "recorded-model",
+            "requested_reasoning": requested_reasoning,
+            "audit_round_num": 2,
+            "round_num": 3,
+            "duration_ms": 1234,
+            "provider_usage_report_count": 1,
+            "provider_tokens": {"input": total - 2, "output": 2, "total": total},
+        }
+        for node_id, total in (("a", 10), ("b", 15))
+    ]
+    event_log = record.run_dir / "logs/events.ndjson"
+    event_log.parent.mkdir(parents=True)
+    event_log.write_bytes(
+        ("\n".join(json.dumps(event) for event in events) + "\n").encode()
+    )
+
+    summary = historical_summary.refresh_historical_run_summary(make_plan(), record)
+    payload = summary.read_bytes()
+    text = payload.decode("utf-8")
+
+    assert b"\r" not in payload and payload.endswith(b"\n")
+    assert "| Provider-reported tokens | 25 across 2 reports |" in text
+    assert "| a | 8 | n/a | n/a | 2 | n/a | 10 | 1 | n/a |" in text
+    assert "| b | 13 | n/a | n/a | 2 | n/a | 15 | 1 | n/a |" in text
+    assert (
+        f"| a / same-task / audit2/round3 | alpha | recorded-model | {requested_reasoning or 'n/a'} | succeeded | 1.234s |"
+        in text
+    )
+    assert "| a | pending / n/a | 1/1 | 1 | 1 / 0 / 0 | 1 | 0 |" in text
+
+
 def test_historical_log_lookup_does_not_create_missing_directories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

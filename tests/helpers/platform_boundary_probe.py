@@ -8,7 +8,8 @@ before normalization; workflow signatures and exception chains are retained.
 Event comparison uses a multiset because parallel completion order is unspecified.
 Summary rows for the two parallel invocations are sorted within each section.
 The duration chart's measured bars and row order are normalized independently;
-its recorded identities, models, and statuses remain part of the comparison.
+its recorded identities, models, requested reasoning, and statuses remain part of
+the comparison. Token charts, coverage, and literal labels are not normalized.
 Run-directory timestamps are fixed before execution so collision suffixes cannot
 change review-prompt lengths and their visible-token estimates.
 """
@@ -44,6 +45,7 @@ ISO_TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?"
 )
 ELAPSED_TEXT = re.compile(r"\b\d+(?:\.\d+)?s\b")
+SUMMARY_DURATION = r"(?:(?:<|&lt;)0\.1s|(?:\d+h\s*)?(?:\d+m\s*)?\d+(?:\.\d+)?s)"
 GENERATED_BYTES = "generated café\r\ncontrol-Z\x1a\n".encode()
 
 
@@ -55,7 +57,10 @@ def normalized_text(text: str, project: Path, run_id: str = "") -> str:
 
 
 def normalized_summary(text: str, project: Path, run_id: str) -> str:
-    sections = re.split(r"(\r?\n\r?\n)", normalized_text(text, project, run_id))
+    text = text.replace(str(project), "<project>")
+    if run_id:
+        text = text.replace(run_id, "<run-id>")
+    sections = re.split(r"(\r?\n\r?\n)", ISO_TIMESTAMP.sub("<timestamp>", text))
     duration_section = False
     for index in range(0, len(sections), 2):
         if sections[index].startswith("## "):
@@ -74,15 +79,53 @@ def _normalized_summary_section(section: str, duration_section: bool) -> str:
     ]
     fence = re.fullmatch(r"(`{3,})text", lines[0]) if duration_section else None
     if fence is not None and lines[-1] == fence[1]:
-        positions = list(range(2, len(lines) - 2, 2))
+        positions = [
+            position
+            for position in range(2, len(lines) - 2, 2)
+            if re.search(rf"\s+(?:{SUMMARY_DURATION}|n/a)$", lines[position])
+        ]
         for position in positions:
             lines[position] = re.sub(
-                r"[# ]{20}(?= <elapsed>$)", "<duration-bar>", lines[position]
+                rf"\s+[#.]{{12,30}}\s+({SUMMARY_DURATION})$",
+                "  <duration-bar> <elapsed>",
+                lines[position],
             )
+            lines[position] = re.sub(
+                rf"\s+{SUMMARY_DURATION}$", " <elapsed>", lines[position]
+            )
+        for position in range(2, len(lines) - 2, 2):
+            if lines[position].startswith("Call "):
+                lines[position] = re.sub(r" {2,}", "  ", lines[position])
+    else:
+        lines = _normalize_summary_duration_fields(lines, duration_section)
     ordered_rows = sorted(lines[position] for position in positions)
     for position, row in zip(positions, ordered_rows, strict=True):
         lines[position] = row
     return "".join(lines)
+
+
+def _normalize_summary_duration_fields(
+    lines: list[str], duration_section: bool
+) -> list[str]:
+    duration_column = None
+    for position in range(0, len(lines), 2):
+        line = lines[position]
+        if line.startswith("| "):
+            cells = re.split(r"(?<!\\)\|", line)
+            if " Duration " in cells:
+                duration_column = cells.index(" Duration ")
+            column = 2 if cells[1].strip() == "Elapsed" else duration_column
+            if column is not None and column < len(cells):
+                cells[column] = re.sub(SUMMARY_DURATION, "<elapsed>", cells[column])
+                line = "|".join(cells)
+        if duration_section:
+            line = re.sub(
+                rf"(?<=Scale: longest recorded call = ){SUMMARY_DURATION}",
+                "<elapsed>",
+                line,
+            )
+        lines[position] = line
+    return lines
 
 
 def invoke(arguments: list[str]) -> str:

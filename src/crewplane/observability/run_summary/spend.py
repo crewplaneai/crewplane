@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TypedDict, TypeGuard, get_args
 
@@ -12,18 +11,13 @@ from crewplane.architecture.contracts import (
     ProviderUsageStatus,
 )
 from crewplane.architecture.contracts.invocation import (
-    TOKEN_BUCKETS,
-    ProviderTokenUsage,
     reduce_cost_confidences,
 )
-from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
 
 from .formatting import format_cost, format_count
 from .models import (
     InvocationUsageSummary,
-    ProviderTokenAggregate,
-    ProviderTokenAggregates,
     ProviderUsageRollup,
     SpendOverviewRow,
     SpendTotals,
@@ -50,38 +44,6 @@ class _UsageRollupFields(TypedDict):
     visible_estimate_tokens: int | None
     configured_cost_usd: float | None
     configured_cost_confidence: AggregateCostConfidence
-
-
-@dataclass
-class _MutableProviderTokenAggregate:
-    provider: str | None
-    report_count: int = 0
-    tokens: ProviderTokenUsage = field(default_factory=ProviderTokenUsage)
-
-    def record(self, payload: InvocationEventPayload) -> None:
-        report_count = payload.provider_usage_report_count
-        if report_count is None or report_count < 0:
-            return
-        had_reports = self.report_count > 0
-        self.report_count += report_count
-        if report_count == 0:
-            return
-        provider_tokens = payload.provider_tokens or {}
-        tokens = ProviderTokenUsage(
-            **{
-                bucket: value if is_nonnegative_int(value) else None
-                for bucket, value in provider_tokens.items()
-                if bucket in TOKEN_BUCKETS
-            }
-        )
-        self.tokens = self.tokens.add_exact(tokens) if had_reports else tokens
-
-    def freeze(self) -> ProviderTokenAggregate:
-        return ProviderTokenAggregate(
-            provider=self.provider,
-            report_count=self.report_count,
-            **self.tokens.as_dict(),
-        )
 
 
 @dataclass
@@ -178,34 +140,6 @@ def invocation_usage_summaries(
             continue
         summaries.append(summary)
     return tuple(summaries)
-
-
-def provider_token_aggregates(
-    events: Iterable[ExecutionEvent],
-) -> ProviderTokenAggregates:
-    overall: _MutableProviderTokenAggregate | None = None
-    providers: dict[str, _MutableProviderTokenAggregate] = {}
-    for event in events:
-        if event.event_type not in _TERMINAL_INVOCATION_EVENT_TYPES:
-            continue
-        payload = invocation_payload(event)
-        if (
-            payload.provider_usage_report_count is None
-            or payload.provider_usage_report_count < 0
-        ):
-            continue
-        if overall is None:
-            overall = _MutableProviderTokenAggregate(provider=None)
-        overall.record(payload)
-        provider = event.context.provider or "unknown"
-        providers.setdefault(
-            provider,
-            _MutableProviderTokenAggregate(provider=provider),
-        ).record(payload)
-    return ProviderTokenAggregates(
-        overall=overall.freeze() if overall is not None else None,
-        providers=tuple(providers[provider].freeze() for provider in sorted(providers)),
-    )
 
 
 def invocation_usage_summary_from_event(

@@ -93,6 +93,46 @@ class ProviderTokenAggregates:
 
 
 @dataclass(frozen=True)
+class NodeTokenAggregate:
+    """Current-run reported tokens and independently known call coverage."""
+
+    node_id: str | None
+    input: int | None = None
+    cached_input: int | None = None
+    cache_write: int | None = None
+    output: int | None = None
+    reasoning: int | None = None
+    total: int | None = None
+    report_count: int | None = None
+    attempt_count: int | None = None
+    missing_report_count_calls: int = 0
+    missing_attempt_count_calls: int = 0
+    positive_report_calls: int = 0
+    zero_report_calls: int = 0
+    terminal_calls: int = 0
+    observed_calls: int | None = None
+    calls_with_reports: int | None = None
+    calls_without_terminal: int | None = None
+    usage_full_calls: int = 0
+    usage_partial_calls: int = 0
+    usage_malformed_calls: int = 0
+    parse_error_calls: int = 0
+    status: str | None = None
+    resume_kind: Literal["reused", "checkpoint"] | None = None
+    exact: bool = False
+
+
+@dataclass(frozen=True)
+class TokenAggregates:
+    """One durable-event pass projected into provider and node scopes."""
+
+    provider: ProviderTokenAggregates = field(default_factory=ProviderTokenAggregates)
+    nodes: tuple[NodeTokenAggregate, ...] = ()
+    unattributed: NodeTokenAggregate | None = None
+    exact: bool = False
+
+
+@dataclass(frozen=True)
 class InvocationUsageSummary:
     """Captured usage, extraction, cost, and failure facts for one invocation."""
 
@@ -149,6 +189,7 @@ class InvocationTimingSummary:
     round_num: int | None
     status: str
     duration_ms: int | None
+    requested_reasoning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +380,9 @@ class RunSummary:
     provider_token_aggregates: ProviderTokenAggregates = field(
         default_factory=ProviderTokenAggregates
     )
+
+    node_token_aggregates: tuple[NodeTokenAggregate, ...] = ()
+    unattributed_node_tokens: NodeTokenAggregate | None = None
 
 
 @dataclass(frozen=True)

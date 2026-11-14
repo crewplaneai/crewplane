@@ -79,6 +79,12 @@ def test_dry_run_reports_checkpoint_collection_without_writes(
     assert any(
         event.get("operation") == "review_checkpoint_resumed" for event in events
     )
+    summary = (runs[-1] / "logs/summary.md").read_bytes().decode("utf-8")
+    assert (
+        "| review.iterate | succeeded / checkpoint | 0/1 | 1 | 0 / 1 / 0 |" in summary
+    )
+    if predecessor:
+        assert "| requirements | succeeded / reused | no new calls |" in summary
 
 
 @requires_resume_support

@@ -15,10 +15,10 @@ from crewplane.observability.run_summary.spend import (
     UsageRollupAccumulator,
     aggregate_cost_confidence,
     invocation_usage_summaries,
-    provider_token_aggregates,
     provider_usage_rollups,
     spend_totals,
 )
+from crewplane.observability.run_summary.token_aggregation import aggregate_tokens
 
 
 def invocation_record(
@@ -67,7 +67,7 @@ def test_provider_token_aggregates_sum_terminal_reports_and_preserve_unknown_buc
     ]
     valid_events = [event for event in events if event is not None]
 
-    aggregates = provider_token_aggregates(valid_events)
+    aggregates = aggregate_tokens(valid_events).provider
 
     assert aggregates.overall is not None
     assert aggregates.overall.report_count == 2
@@ -105,7 +105,7 @@ def test_every_serialized_token_bucket_reaches_aggregation(bucket, value) -> Non
         event_from_record(invocation_record(tokens=usage.as_dict())) for _ in range(2)
     ]
     assert all(event is not None for event in events)
-    aggregate = provider_token_aggregates(events)
+    aggregate = aggregate_tokens(events).provider
     assert aggregate.overall is not None
     assert aggregate.overall.report_count == 2
     for result in (aggregate.overall, *aggregate.providers):
@@ -139,7 +139,7 @@ def test_token_aggregation_preserves_unknown_and_invalid_contributions(
         event = event_from_record(record)
         assert event is not None
         events.append(event)
-    aggregates = provider_token_aggregates(events)
+    aggregates = aggregate_tokens(events).provider
     assert aggregates.overall is not None
     for result in (aggregates.overall, *aggregates.providers):
         assert result.report_count == 2
@@ -155,7 +155,7 @@ def test_all_unknown_positive_report_poisoning_survives_zero_report_rows() -> No
         ),
     ]
     assert all(event is not None for event in events)
-    aggregates = provider_token_aggregates(events)
+    aggregates = aggregate_tokens(events).provider
     assert aggregates.overall is not None
     for result in (aggregates.overall, *aggregates.providers):
         assert result.report_count == 3

@@ -36,10 +36,10 @@ from .builder import build_run_summary
 from .markdown import render_run_summary_markdown
 from .models import (
     PersistentLoggerLifecycle,
-    ProviderTokenAggregates,
     RunSummary,
+    TokenAggregates,
 )
-from .spend import provider_token_aggregates
+from .token_aggregation import aggregate_tokens
 
 MAX_RETAINED_SUMMARY_EVENTS = 2_000
 
@@ -113,20 +113,23 @@ class PersistentRunLogger:
         with self._lock:
             if self._lifecycle == PersistentLoggerLifecycle.NEW:
                 return None
+            snapshot = self._latest_snapshot
         durable_events = read_event_log(self._event_log_path)
         return self._write_summary(
             result,
-            provider_token_aggregates(durable_events),
+            aggregate_tokens(durable_events, snapshot),
             token_aggregates_are_exact=True,
+            snapshot=snapshot,
         )
 
     def _write_summary(
         self,
         result: RunResult,
-        token_aggregates: ProviderTokenAggregates,
+        token_aggregates: TokenAggregates,
         token_aggregates_are_exact: bool,
+        snapshot: DashboardSnapshot | None,
     ) -> RunSummary | None:
-        summary = self._build_summary(result, token_aggregates)
+        summary = self._build_summary(result, token_aggregates, snapshot)
         if summary is None:
             return None
         return self._publish_summary(summary, token_aggregates_are_exact)
@@ -134,12 +137,12 @@ class PersistentRunLogger:
     def _build_summary(
         self,
         result: RunResult,
-        token_aggregates: ProviderTokenAggregates,
+        token_aggregates: TokenAggregates,
+        snapshot: DashboardSnapshot | None,
     ) -> RunSummary | None:
         with self._lock:
             if self._lifecycle == PersistentLoggerLifecycle.NEW:
                 return None
-            snapshot = self._latest_snapshot
             events = list(self._events)
             dropped_event_count = self._dropped_event_count
             summary_facts = self._summary_accumulator.snapshot()
@@ -210,11 +213,14 @@ class PersistentRunLogger:
             return
         if self._lifecycle == PersistentLoggerLifecycle.STOPPED:
             return
+        with self._lock:
+            snapshot = self._latest_snapshot
         try:
             self._write_summary(
                 result,
-                ProviderTokenAggregates(),
+                TokenAggregates(),
                 token_aggregates_are_exact=False,
+                snapshot=snapshot,
             )
         finally:
             with self._lock:

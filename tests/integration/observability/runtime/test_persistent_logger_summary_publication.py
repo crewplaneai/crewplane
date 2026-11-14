@@ -111,6 +111,13 @@ def test_stop_writes_bounded_summary_without_reading_event_log(tmp_path: Path) -
     assert bounded_summary is not None
     assert bounded_summary.workflow_status == "succeeded"
     assert bounded_summary.provider_token_aggregates.overall is None
+    assert not bounded_summary.node_token_aggregates
+    bounded_markdown = output.get_run_summary_path().read_text(encoding="utf-8")
+    assert (
+        "| Provider-reported tokens | n/a (exact totals unavailable) |"
+        in bounded_markdown
+    )
+    assert "Overall reported total: n/a (exact totals unavailable)." in bounded_markdown
 
     durable_summary = persistent_logger.refresh_summary(RunResult(status="succeeded"))
 
@@ -213,6 +220,7 @@ def test_exact_summary_wins_over_late_bounded_stop_write(tmp_path: Path) -> None
     assert not stop_thread.is_alive()
     assert exact_summary is not None
     assert exact_summary is not None
+    assert exact_summary.node_token_aggregates[0].total == 10
     exact_aggregate = exact_summary.provider_token_aggregates.overall
     assert exact_aggregate is not None
     assert exact_aggregate is not None
@@ -221,6 +229,7 @@ def test_exact_summary_wins_over_late_bounded_stop_write(tmp_path: Path) -> None
     final_summary = persistent_logger.last_summary
     assert final_summary is not None
     assert final_summary is not None
+    assert final_summary.node_token_aggregates == exact_summary.node_token_aggregates
     final_aggregate = final_summary.provider_token_aggregates.overall
     assert final_aggregate is not None
     assert final_aggregate is not None
