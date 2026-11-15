@@ -10,6 +10,7 @@ from crewplane.core.workspace.policy import WorktreeDeclaration
 from ..markdown import parse_workflow_markdown_document
 from ..markdown.frontmatter import read_workflow_text
 from ..models import WorkflowNode
+from ..normalization import resolve_memory_default
 from ..source_locations import SourceSpan
 from .foreach import resolve_foreach_inputs
 from .imports import (
@@ -88,6 +89,7 @@ class WorkflowComposer:
             inherited_params={},
             bound_inputs={},
             inherited_implicit_worktree_selector=None,
+            inherited_memory=False,
             import_stack=(),
         )
         return self._build_document(root_workflow, composition)
@@ -118,6 +120,7 @@ class WorkflowComposer:
         inherited_params: dict[str, ParamBinding],
         bound_inputs: dict[str, str],
         inherited_implicit_worktree_selector: str | None,
+        inherited_memory: bool,
         import_stack: tuple[Path, ...],
     ) -> CompositionResult:
         if path in import_stack:
@@ -130,6 +133,7 @@ class WorkflowComposer:
             inherited_params,
             bound_inputs,
             inherited_implicit_worktree_selector,
+            inherited_memory,
             import_stack,
         )
         import_result = self._compose_imports(context)
@@ -150,6 +154,7 @@ class WorkflowComposer:
         inherited_params: dict[str, ParamBinding],
         bound_inputs: dict[str, str],
         inherited_implicit_worktree_selector: str | None,
+        inherited_memory: bool,
         import_stack: tuple[Path, ...],
     ) -> CompositionContext:
         workflow = self._load_workflow_file(path)
@@ -169,6 +174,7 @@ class WorkflowComposer:
                 workflow.worktrees,
                 inherited_implicit_worktree_selector,
             ),
+            memory_default=resolve_memory_default(workflow.memory, inherited_memory),
         )
 
     def _compose_imports(self, context: CompositionContext) -> CompositionResult:
@@ -209,6 +215,7 @@ class WorkflowComposer:
             ),
             bound_inputs=_resolve_import_inputs(context, import_spec),
             inherited_implicit_worktree_selector=context.implicit_worktree_selector,
+            inherited_memory=context.memory_default,
             import_stack=context.import_stack,
         )
         validate_import_params_consumed(import_spec, child_namespace, child_result)
@@ -292,6 +299,7 @@ class WorkflowComposer:
                 params,
                 node.inputs,
                 None,
+                context.memory_default,
                 context.import_stack,
             )
         finally:

@@ -113,6 +113,14 @@ def _frozen_template_inventory(
                 *plan.render_plans,
                 *(render for template in templates for render in template.render_plans),
             ],
+            "memory_selections": [
+                *plan.memory_selections,
+                *(
+                    selection
+                    for template in templates
+                    for selection in template.memory_selections
+                ),
+            ],
             "workspace_file_locators": [
                 *plan.workspace_file_locators,
                 *(
@@ -153,6 +161,7 @@ def apply_expansion(
             "execution_order": topological_order(nodes),
             "dependency_graph": edges,
             "render_plans": [*plan.render_plans, *batch.render_plans],
+            "memory_selections": [*plan.memory_selections, *batch.memory_selections],
             "workspace_file_locators": [
                 *plan.workspace_file_locators,
                 *batch.workspace_file_locators,
@@ -283,6 +292,15 @@ def validate_expansion_provenance(plan: PreflightExecutionPlan) -> None:
         _validate_expansion_evidence(template, state)
         derived = _reconstruct_expansion(template, state)
         _validate_generated_nodes(nodes, derived)
+        generated_ids = {node.id for node in derived.nodes}
+        if [
+            selection
+            for selection in plan.memory_selections
+            if selection.node_id in generated_ids
+        ] != derived.memory_selections:
+            raise ValueError(
+                "Generated memory selections differ from their frozen child template."
+            )
         expected[group_id] = state.provenance()
         for generated in derived.nodes:
             expected[generated.id] = generated.expansion

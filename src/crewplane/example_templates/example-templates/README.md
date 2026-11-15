@@ -9,6 +9,7 @@ links to complete recipes and guides.
 
 | Example | Default agent profiles | What to prepare | Outcome with real providers |
 | --- | --- | --- | --- |
+| [Project memory](project-memory-example.task.md) | `codex`, `claude` | Explicit memory initialization, extractor policy (or recall-only mode), and a current feature brief | Reviews a brief with frozen accepted lessons and leaves proposed lessons pending for human review. |
 | [Code review](code-review-example.task.md) | `codex`, `claude`, `gemini` | The project to inspect | Reports findings, including unresolved concerns and missing coverage. |
 | [Text generation](text-generation-example.task.md) | `local` | The [Ollama profile](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#local-ollama-tool-enabled-execution) and a local tool-capable model | Summarizes an injected brief and refines the upstream answer. |
 | [Feature implementation](feature-implement-example.task.md) | `claude`, `codex`, `gemini` | A [feature brief](sample-inputs/feature-brief.md) | Implements, reviews, and fixes code and tests. |
@@ -45,6 +46,10 @@ Before running your chosen example:
   See the [bug-fix](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/bug-fix.md)
   and [existing-change](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/review-existing-change.md)
   recipes.
+- Project memory requires `crewplane memory init` and `settings.memory.extractor`
+  naming a configured agent, or `settings.memory.learn: false` for recall only.
+  See the [project memory guide](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/project-memory.md)
+  before sending retained task evidence to an extractor.
 - Workspace examples need a supported clean Git repository,
   `settings.workspace.enabled: true`, and a committed
   `docs/crewplane-change-request.md`. Follow

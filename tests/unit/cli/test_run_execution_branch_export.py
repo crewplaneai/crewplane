@@ -16,6 +16,7 @@ from crewplane.artifacts.resume.validation import ValidatedResumeFrontier
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.run import execution as execution_module
 from crewplane.cli.run import execution_helpers as execution_helpers_module
+from crewplane.cli.run import execution_resume as execution_resume_module
 from crewplane.cli.run.context import WorkflowRunContext
 from crewplane.cli.run.observability import WorkflowWarningRecorder
 from crewplane.cli.run.resume import ResumePlan
@@ -87,7 +88,7 @@ def test_successful_run_prints_branch_export_fulfillment(
         del args
         on_scheduler_succeeded = kwargs["on_scheduler_succeeded"]
         assert callable(on_scheduler_succeeded)
-        on_scheduler_succeeded(plan)
+        await on_scheduler_succeeded(plan)
 
     async def noop_execute_workflow(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -201,7 +202,7 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
         / manifest.run_key_name,
     )
 
-    def fake_compile_preview(*args: object, **kwargs: object) -> object:
+    async def fake_compile_preview(*args: object, **kwargs: object) -> object:
         del args, kwargs
         return preview
 
@@ -237,9 +238,9 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
         )
         return (record_path,)
 
-    monkeypatch.setattr(execution_module, "compile_preview", fake_compile_preview)
+    monkeypatch.setattr(execution_module, "compile_preview_async", fake_compile_preview)
     monkeypatch.setattr(
-        execution_module,
+        execution_resume_module,
         "build_resume_plan",
         fake_build_resume_plan,
     )
@@ -314,7 +315,7 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
         encoding="utf-8",
     )
 
-    def fake_compile_preview(*args: object, **kwargs: object) -> object:
+    async def fake_compile_preview(*args: object, **kwargs: object) -> object:
         del args, kwargs
         return preview
 
@@ -363,9 +364,9 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
         assert payload["status"] == "fulfilled"
         raise OutputAllocationReached
 
-    monkeypatch.setattr(execution_module, "compile_preview", fake_compile_preview)
+    monkeypatch.setattr(execution_module, "compile_preview_async", fake_compile_preview)
     monkeypatch.setattr(
-        execution_module,
+        execution_resume_module,
         "build_resume_plan",
         fake_build_resume_plan,
     )

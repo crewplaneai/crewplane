@@ -43,6 +43,7 @@ from .normalization import (
     normalize_worktree_declarations,
     normalize_worktree_selector,
     reject_removed_workspace_block,
+    validate_memory_declaration,
     validate_workflow_schema_version,
 )
 from .syntax import INPUT_SOURCE_PATTERN
@@ -99,6 +100,7 @@ class WorkflowProviderPayload(TypedDict):
 class WorkflowNodePayload(TypedDict):
     id: str
     mode: NodeMode
+    memory: NotRequired[bool]
     providers: NotRequired[list[WorkflowProviderPayload]]
     needs: list[str]
     continue_on_failure: NotRequired[bool]
@@ -135,6 +137,7 @@ class WorkflowPayload(TypedDict):
     schema_version: str
     name: str
     description: str
+    memory: NotRequired[bool]
     repeat_force_run_count: NotRequired[int]
     inputs: dict[str, str]
     worktrees: NotRequired[dict[str, WorktreeDeclarationPayload]]
@@ -163,6 +166,7 @@ class WorkflowNode(BaseModel):
 
     id: str
     mode: NodeMode
+    memory: bool | None = None
     findings: bool = False
     prompt_segments: list[PromptSegment] = Field(default_factory=list)
     source: str | None = None
@@ -186,6 +190,11 @@ class WorkflowNode(BaseModel):
     def _validate_mode(cls, value: object) -> object:
         return normalize_node_mode(value)
 
+    @field_validator("memory", mode="before")
+    @classmethod
+    def _validate_memory(cls, value: object) -> bool:
+        return validate_memory_declaration(value)
+
     @field_validator("review_starts_with", mode="before")
     @classmethod
     def _validate_review_starts_with(cls, value: object) -> object:
@@ -200,6 +209,8 @@ class WorkflowNode(BaseModel):
     def _validate_input_worktree_selector(self) -> WorkflowNode:
         if self.mode == "input" and "worktree" in self.model_fields_set:
             raise ValueError("input nodes cannot declare worktree selectors")
+        if self.mode == "input" and "memory" in self.model_fields_set:
+            raise ValueError("input nodes cannot declare memory")
         return self
 
 
@@ -228,6 +239,7 @@ INPUT_NODE_CONTRACT_RULES = (
     ),
     InputNodeContractRule("continue_on_failure", lambda node: node.continue_on_failure),
     InputNodeContractRule("token_budget", lambda node: node.token_budget is not None),
+    InputNodeContractRule("memory", lambda node: "memory" in node.model_fields_set),
 )
 
 
@@ -293,6 +305,8 @@ def workflow_node_payload_dict(node: WorkflowNode) -> WorkflowNodePayload:
         node_payload["token_budget"] = token_budget_payload_dict(node.token_budget)
     if node.worktree is not None:
         node_payload["worktree"] = node.worktree
+    if node.memory is not None:
+        node_payload["memory"] = node.memory
     return node_payload
 
 
@@ -308,6 +322,8 @@ def workflow_payload_dict(workflow: WorkflowPlan) -> WorkflowPayload:
         payload["repeat_force_run_count"] = workflow.repeat_force_run_count
     if workflow.worktrees:
         payload["worktrees"] = worktree_declarations_payload(workflow.worktrees)
+    if workflow.memory is not None:
+        payload["memory"] = workflow.memory
     return payload
 
 
@@ -335,6 +351,7 @@ class WorkflowPlan(BaseModel):
     schema_version: str = SCHEMA_VERSION
     name: str
     description: str = ""
+    memory: bool | None = None
     repeat_force_run_count: int | None = Field(default=None, strict=True, gt=0)
     inputs: dict[str, str] = Field(default_factory=dict)
     worktrees: dict[str, WorktreeDeclaration] = Field(default_factory=dict)
@@ -346,6 +363,11 @@ class WorkflowPlan(BaseModel):
         if value is None:
             raise ValueError("repeat_force_run_count must be a positive integer")
         return value
+
+    @field_validator("memory", mode="before")
+    @classmethod
+    def _validate_memory(cls, value: object) -> bool:
+        return validate_memory_declaration(value)
 
     @model_validator(mode="before")
     @classmethod

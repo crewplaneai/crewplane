@@ -221,6 +221,11 @@ def _compile_foreach_template(
         render_plans=[
             render for render in preview.render_plans if render.node_id in ids
         ],
+        memory_selections=[
+            selection
+            for selection in preview.memory_selections
+            if selection.node_id in ids
+        ],
         workspace_file_locators=[
             locator
             for locator in preview.workspace_file_locators
@@ -251,6 +256,11 @@ def _parent_preview(
             ],
             "render_plans": [
                 render for render in preview.render_plans if render.node_id in authored
+            ],
+            "memory_selections": [
+                selection
+                for selection in preview.memory_selections
+                if selection.node_id in authored
             ],
             "workspace_file_locators": [
                 locator

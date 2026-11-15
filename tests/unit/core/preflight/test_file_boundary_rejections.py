@@ -144,6 +144,55 @@ def test_static_file_policy_rechecks_symlink_destination_after_existence_check(
     )
 
 
+@pytest.mark.parametrize("reference", ["direct", "absolute", "alias"])
+@pytest.mark.parametrize("allowlisted", [False, True])
+def test_memory_store_cannot_be_read_through_file_tokens(
+    tmp_path: Path, reference: str, allowlisted: bool
+) -> None:
+    store = tmp_path / ".crewplane" / "memory" / "store.json"
+    store.parent.mkdir(parents=True)
+    store.write_bytes(b'{"accepted": "mutable memory"}')
+    raw = ".crewplane/memory/store.json"
+    if reference == "absolute":
+        raw = store.as_posix()
+    elif reference == "alias":
+        alias = tmp_path / "context.json"
+        symlink_or_skip(alias, store)
+        raw = alias.name
+
+    result = resolve_static_file(
+        raw, tmp_path, tmp_path, (store.parent,) if allowlisted else ()
+    )
+
+    assert result.resource is None
+    assert result.payload is None
+    assert "runtime-owned" in result.diagnostics[0].message
+
+
+@requires_workspace_support
+@pytest.mark.usefixtures("isolated_git")
+@pytest.mark.parametrize("allowlisted", [False, True])
+def test_workspace_memory_locator_is_excluded_before_capturing_bytes(
+    tmp_path: Path, allowlisted: bool
+) -> None:
+    store = tmp_path / ".crewplane" / "memory" / "store.json"
+    store.parent.mkdir(parents=True)
+    store.write_bytes(b'{"accepted": "mutable memory"}')
+    snapshot = init_git_repo(tmp_path)
+    raw = store.as_posix() if allowlisted else ".crewplane/memory/store.json"
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workspace_workflow(f"Read {{{{file:{raw}}}}}"),
+        snapshot,
+        (store.parent,) if allowlisted else (),
+    )
+
+    assert preview.workflow_signature is None
+    assert preview.static_file_payloads == {}
+    assert preview.workspace_file_payloads == {}
+    assert any("runtime" in diagnostic.message for diagnostic in preview.diagnostics)
+
+
 @pytest.mark.parametrize(
     ("path", "content", "message"),
     [

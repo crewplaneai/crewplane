@@ -22,6 +22,7 @@ from ..normalization import (
     normalize_worktree_declarations,
     normalize_worktree_selector,
     reject_removed_workspace_block,
+    validate_memory_declaration,
     validate_workflow_schema_version,
 )
 from ..source_locations import SourceSpan
@@ -54,6 +55,7 @@ class WorkflowNodeConfig(BaseModel):
 
     id: str
     mode: NodeMode
+    memory: bool | None = None
     findings: bool = False
     providers: list[str | ProviderSpec] = Field(default_factory=list)
     needs: list[str] = Field(default_factory=list)
@@ -75,6 +77,17 @@ class WorkflowNodeConfig(BaseModel):
     @classmethod
     def _validate_mode(cls, value: object) -> object:
         return normalize_node_mode(value)
+
+    @field_validator("memory", mode="before")
+    @classmethod
+    def _validate_memory(cls, value: object) -> bool:
+        return validate_memory_declaration(value)
+
+    @model_validator(mode="after")
+    def _validate_input_memory(self) -> WorkflowNodeConfig:
+        if self.mode == "input" and "memory" in self.model_fields_set:
+            raise ValueError("input nodes cannot declare memory")
+        return self
 
     @field_validator("review_starts_with", mode="before")
     @classmethod
@@ -197,6 +210,7 @@ class WorkflowFrontmatter(BaseModel):
     schema_version: str = SCHEMA_VERSION
     name: str
     description: str | None = None
+    memory: bool | None = None
     repeat_force_run_count: int | None = Field(default=None, strict=True, gt=0)
     inputs: dict[str, str] = Field(default_factory=dict)
     worktrees: dict[str, WorktreeDeclaration] = Field(default_factory=dict)
@@ -209,6 +223,11 @@ class WorkflowFrontmatter(BaseModel):
         if value is None:
             raise ValueError("repeat_force_run_count must be a positive integer")
         return value
+
+    @field_validator("memory", mode="before")
+    @classmethod
+    def _validate_memory(cls, value: object) -> bool:
+        return validate_memory_declaration(value)
 
     @model_validator(mode="before")
     @classmethod

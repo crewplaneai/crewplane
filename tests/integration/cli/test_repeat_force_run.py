@@ -12,6 +12,7 @@ import pytest
 import crewplane.cli.app as cli
 from crewplane.adapters.invokers.mock_invoker.invoker import MockAgentInvoker
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.cli.run.completion import CompletedRun
 from crewplane.core.config import AgentConfig
 from crewplane.observability import ObservabilityHub
 from tests.helpers import isolated_git as isolated_git_support
@@ -222,10 +223,10 @@ def test_reload_count_changes_keep_original_total_and_manifest_evidence(
     captured_forces = []
     completed_runs: list[Path] = []
 
-    async def run_and_edit(**kwargs: Any) -> None:
+    async def run_and_edit(**kwargs: Any) -> CompletedRun:
         captured_forces.append(kwargs["force"])
         previous_runs = set(run_directories(tmp_path))
-        await original(**kwargs)
+        completed = await original(**kwargs)
         new_runs = set(run_directories(tmp_path)) - previous_runs
         assert len(new_runs) == 1
         completed_runs.append(new_runs.pop())
@@ -234,6 +235,7 @@ def test_reload_count_changes_keep_original_total_and_manifest_evidence(
         (project.workflow_path.parent / "extra.task.md").write_text(
             "invalid", encoding="utf-8"
         )
+        return completed
 
     with patch.object(cli.workflow_runner, "execute_workflow_run", new=run_and_edit):
         from typer.testing import CliRunner

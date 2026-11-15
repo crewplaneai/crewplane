@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from crewplane.architecture.contracts import JsonObject, JsonValue
+from crewplane.core.memory.retrieval import MemorySelection
 from crewplane.core.workflow.models import WorkflowNode
 
 from .compile_state import PreflightCompileOptions
@@ -38,9 +39,19 @@ def workflow_signature(
     dependency_graph: list[DependencyEdge],
     nodes: list[PreflightExecutionNode],
     value_fingerprints: list[dict[str, str]],
+    memory_selections: list[MemorySelection] | None = None,
 ) -> str:
     workflow = source.workflow
     semantic_workflow = semantic_workflow_payload(source.composed_workflow)
+    memory_payload = (
+        {
+            "memory_selections": [
+                selection.semantic_payload() for selection in memory_selections
+            ]
+        }
+        if memory_selections
+        else {}
+    )
     return signature_for_payload(
         {
             "execution_semantics_revision": EXECUTION_SEMANTICS_REVISION,
@@ -62,6 +73,7 @@ def workflow_signature(
             ),
             "workflow_semantic_sha256": signature_for_payload(semantic_workflow),
             "workflow_name": workflow.name,
+            **memory_payload,
         }
     )
 
@@ -134,13 +146,17 @@ def semantic_workflow_payload(payload: object) -> JsonValue:
 
     semantic_payload = dict(semantic_payload)
     semantic_payload.pop("repeat_force_run_count", None)
+    semantic_payload.pop("memory", None)
     nodes = semantic_payload.get("nodes")
     if isinstance(nodes, list):
         normalized_nodes: list[JsonValue] = []
         for node in nodes:
-            if isinstance(node, dict) and node.get("review_starts_with") == "executor":
+            if isinstance(node, dict):
                 normalized_node = dict(node)
-                normalized_node.pop("review_starts_with", None)
+                if node.get("review_starts_with") == "executor":
+                    normalized_node.pop("review_starts_with", None)
+                if not node.get("memory"):
+                    normalized_node.pop("memory", None)
                 normalized_nodes.append(normalized_node)
             else:
                 normalized_nodes.append(node)
@@ -180,6 +196,8 @@ def semantic_node_payload(node: PreflightExecutionNode) -> JsonValue:
     payload = semantic_source_location_payload(node)
     if not isinstance(payload, dict):
         return payload
+    if not node.memory:
+        payload.pop("memory", None)
     payload = semantic_execution_policy_payload(payload)
     return semantic_workspace_policy_payload(payload)
 

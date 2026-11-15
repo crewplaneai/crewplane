@@ -181,6 +181,21 @@ reconstruct the effective plan. Observers receive topology updates; event logs
 are not the authority for reconstruction. See
 [ADR 0020](adr/0020-bounded-workflow-iteration.md) for the decision and tradeoffs.
 
+## Project Memory Boundary
+
+Project memory follows [ADR 0021](adr/0021-project-memory.md): preflight
+fixes accepted lessons before execution, and the CLI owns optional post-run
+learning. Core selects lessons from a snapshot supplied by the CLI; it does not
+open mutable memory. Selected lessons are treated as text, included in reuse
+identity, and reused by generated children without another store lookup.
+
+The artifact layer owns protected storage, locking, and retained evidence. The
+CLI owns memory commands, review, and separate extraction. Learning starts only
+after the parent outcome is committed, required cleanup and lock release are
+confirmed, and the result is displayed. A completion receipt preserves those
+facts for later explicit extraction. Default-disabled workflows do not depend on
+the memory store or its lock.
+
 ## Extending This Architecture
 ### LLM API invoker adapter (future)
 Implement `InvokerAdapterPort.create_invoker(...)` and return an `AgentInvoker` compatible object.
