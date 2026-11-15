@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from crewplane.runtime.execution.input import InputContentError, execute_input_stage
+from crewplane.runtime.execution.preflight_files import read_verified_static_text
 from crewplane.runtime.execution.workspace_files import (
     resolve_project_initial_workspace_file,
 )
@@ -150,32 +152,163 @@ def test_unsafe_or_missing_content_keeps_caller_error_policy(
         assert "node 'a'" in str(caught.value).lower()
 
 
-@pytest.mark.parametrize("payload", [b"first\r\nsecond\r\n", b"text\x00", b"\xff"])
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        (b"", None),
+        (b"first\r\nsecond\r\n", None),
+        ("café 🐍\r\n".encode(), None),
+        (b"\xef\xbb\xbftext", None),
+        (b"text\x00", "nul"),
+        (b"\xff", "utf8"),
+        (b"\xe2\x82", "utf8"),
+        (b"\x00\xff", "utf8"),
+    ],
+)
 def test_content_readers_preserve_text_and_byte_semantics(
-    tmp_path, content_reader, payload
+    tmp_path, content_reader, payload, error
 ):
     kind, read = content_reader
     path = tmp_path / "preflight" / "content.txt"
     path.parent.mkdir()
     path.write_bytes(payload)
 
-    if kind == "workspace" and payload == b"\xff":
-        with pytest.raises(RuntimeError, match="not valid UTF-8") as caught:
+    if error is None:
+        if kind == "workspace":
+            resolved = read("./content.txt")
+            assert resolved.text.encode() == payload
+            assert resolved.byte_size == len(payload)
+            assert resolved.sha256 == hashlib.sha256(payload).hexdigest()
+        elif kind == "input" and not payload:
+            with pytest.raises(InputContentError) as caught:
+                read("content.txt", payload)
+            assert str(caught.value) == (
+                "Resolved input content for node 'a' is empty after preflight assembly."
+            )
+            assert caught.value.__cause__ is None
+        else:
+            assert read("content.txt", payload).encode() == payload
+        return
+
+    if kind == "workspace":
+        with pytest.raises(RuntimeError) as caught:
             read("./content.txt")
-        assert isinstance(caught.value.__cause__, UnicodeDecodeError)
-    elif kind == "workspace" and payload == b"text\x00":
-        with pytest.raises(RuntimeError, match="contains NUL bytes"):
-            read("./content.txt")
-    elif kind == "workspace":
-        resolved = read("./content.txt")
-        assert resolved.text == payload.decode()
-        assert resolved.byte_size == len(payload)
-        assert resolved.sha256 == hashlib.sha256(payload).hexdigest()
-    elif payload in (b"\xff", b"text\x00"):
-        message = "not valid UTF-8" if payload == b"\xff" else "contains NUL"
-        with pytest.raises(
-            InputContentError if kind == "input" else ValueError, match=message
-        ):
-            read("content.txt", payload)
+        detail = "is not valid UTF-8" if error == "utf8" else "contains NUL bytes"
+        assert str(caught.value) == (
+            f"Workspace file locator content {detail}: workspace-file-test."
+        )
+        if error == "utf8":
+            assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+            assert caught.value.__cause__.object == payload
+        else:
+            assert caught.value.__cause__ is None
+        return
+
+    with pytest.raises(InputContentError if kind == "input" else ValueError) as caught:
+        read("content.txt", payload)
+    prefix = "Input node 'a'" if kind == "input" else "Node 'a'"
+    detail = "is not valid UTF-8" if error == "utf8" else "contains NUL content"
+    inner_message = f"Static resource 'content.txt' {detail}."
+    assert str(caught.value) == f"{prefix}: {inner_message}"
+    inner = caught.value.__cause__
+    assert type(inner) is ValueError
+    assert str(inner) == inner_message
+    assert inner.__cause__ is None
+    if error == "utf8":
+        assert inner.__suppress_context__
+        assert isinstance(inner.__context__, UnicodeDecodeError)
+        assert inner.__context__.object == payload
     else:
-        assert read("content.txt", payload).encode() == payload
+        assert inner.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sha256", None),
+        ("sha256", False),
+        ("sha256", 0),
+        ("sha256", {}),
+        ("sha256", b"0" * 64),
+        ("sha256", "A" * 64),
+        ("sha256", "0" * 63),
+        ("sha256", "0" * 65),
+        ("sha256", "g" * 64),
+        ("sha256", "0" * 64 + "\n"),
+        ("encoding", "UTF-8"),
+        ("encoding", None),
+        ("size_bytes", -1),
+        ("size_bytes", False),
+        ("size_bytes", True),
+        ("size_bytes", 0.0),
+        ("size_bytes", "4"),
+        ("size_bytes", None),
+    ],
+)
+def test_static_resource_metadata_rejection_precedes_file_access(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    resource = static_resource(b"text", "missing.txt").model_copy(update={field: value})
+    plan = make_plan().model_copy(
+        update={"context_root": str(tmp_path), "static_resources": [resource]}
+    )
+
+    with pytest.raises(ValueError) as caught:
+        read_verified_static_text(plan, "missing.txt")
+
+    assert str(caught.value) == (
+        "Static resource 'missing.txt' has invalid encoding, size, or SHA-256 metadata."
+    )
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert not (tmp_path / "preflight").exists()
+
+
+@pytest.mark.parametrize("descriptor_count", [0, 2])
+def test_static_resource_cardinality_precedes_metadata_and_file_access(
+    tmp_path: Path, descriptor_count: int
+) -> None:
+    resource = static_resource(b"text", "missing.txt").model_copy(
+        update={"sha256": None}
+    )
+    plan = make_plan().model_copy(
+        update={
+            "context_root": str(tmp_path),
+            "static_resources": [resource] * descriptor_count,
+        }
+    )
+
+    with pytest.raises(ValueError) as caught:
+        read_verified_static_text(plan, "missing.txt")
+
+    assert (
+        str(caught.value)
+        == "Static resource 'missing.txt' requires exactly one descriptor."
+    )
+    assert caught.value.__cause__ is None
+    assert not (tmp_path / "preflight").exists()
+
+
+@pytest.mark.parametrize("descriptor_payload", [b"valid", b"ok"])
+def test_static_resource_integrity_rejection_precedes_decoding(
+    tmp_path: Path, descriptor_payload: bytes
+) -> None:
+    payload = b"\x00\xff"
+    path = tmp_path / "preflight" / "content.txt"
+    path.parent.mkdir()
+    path.write_bytes(payload)
+    resource = static_resource(descriptor_payload, "content.txt")
+    plan = make_plan().model_copy(
+        update={"context_root": str(tmp_path), "static_resources": [resource]}
+    )
+
+    with pytest.raises(ValueError) as caught:
+        read_verified_static_text(plan, "content.txt")
+
+    assert (
+        str(caught.value)
+        == "Static resource 'content.txt' bytes do not match its descriptor."
+    )
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert path.read_bytes() == payload

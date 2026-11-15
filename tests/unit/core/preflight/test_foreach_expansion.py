@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.artifacts.expansions import caller_locators
 from crewplane.core.preflight.compiled_records import (
     Fragment,
     RenderStream,
@@ -38,6 +39,48 @@ def plan(tmp_path: Path) -> PreflightExecutionPlan:
         str(tmp_path),
         datetime(2026, 10, 28, tzinfo=UTC),
     )
+
+
+@pytest.mark.parametrize(
+    "artifact_name,expected_kind",
+    [
+        ("output", "output"),
+        ("output_path", "output"),
+        ("output_size", "output"),
+        ("output_sha256", "output"),
+        ("findings", "findings"),
+        ("findings_path", "findings"),
+        ("findings_size", "findings"),
+        ("findings_sha256", "findings"),
+    ],
+)
+@pytest.mark.parametrize("collection_kind", ["output", "findings"])
+def test_caller_locators_select_underlying_external_artifacts_once(
+    plan: PreflightExecutionPlan,
+    artifact_name: str,
+    expected_kind: str,
+    collection_kind: str,
+) -> None:
+    template = plan.foreach_templates[0].model_copy(deep=True)
+    local_source, target = template.nodes[:2]
+    template.shared_bindings = {"first": "shared", "second": "shared"}
+    template.items = "{{collection." + collection_kind + "}}"
+    template.dependency_graph = [
+        scheduling_edge("caller", target.id, artifact_name),
+        scheduling_edge("caller", target.id, artifact_name),
+        scheduling_edge(local_source.id, target.id, artifact_name),
+        scheduling_edge("scheduling-only", target.id),
+        scheduling_edge("shared", target.id, "output_sha256"),
+        scheduling_edge("collection", target.id, collection_kind + "_path"),
+    ]
+    before = template.model_dump()
+
+    assert caller_locators(template) == {
+        ("caller", expected_kind),
+        ("shared", "output"),
+        ("collection", collection_kind),
+    }
+    assert template.model_dump() == before
 
 
 @pytest.mark.parametrize(

@@ -241,7 +241,9 @@ def inspect_args(runtime_root: Path, view: str = "auto") -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("snapshot_kind", ["missing", "stale", "no-log", "no-format"])
+@pytest.mark.parametrize(
+    "snapshot_kind", ["missing", "stale", "request-mismatch", "no-log", "no-format"]
+)
 def test_inspect_rejects_unusable_selection_without_changing_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snapshot_kind: str
 ) -> None:
@@ -249,6 +251,8 @@ def test_inspect_rejects_unusable_selection_without_changing_mode(
     snapshot = selected_snapshot_data(tmp_path / "provider.log", "node.a", 0)
     if snapshot_kind == "stale":
         snapshot["selection_generation"] = 99
+    if snapshot_kind == "request-mismatch":
+        snapshot["requested_selected_index"] = 1
     if snapshot_kind == "no-log":
         snapshot["log_file"] = None
     if snapshot_kind != "missing":

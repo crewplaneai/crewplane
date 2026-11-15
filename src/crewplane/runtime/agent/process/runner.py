@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from crewplane.architecture.contracts.provider_log import encode_retry_log_header
+
 from .diagnostics import PROCESS_EXIT_WARNING_MESSAGE
 from .signals import reap_failed_process
 from .streams import (
@@ -24,5 +26,4 @@ __all__ = [
 
 def build_retry_log_header(attempt_number: int) -> bytes:
     started_at = datetime.now(UTC).isoformat()
-    header = f"\n---\nretry_attempt: {attempt_number}\nstarted_at: {started_at}\n---\n"
-    return header.encode("utf-8")
+    return encode_retry_log_header(attempt_number, started_at)

@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from crewplane.architecture.contracts.provider_log import provider_log_body_start
+from crewplane.architecture.contracts.provider_log import (
+    RETRY_LOG_DELIMITER,
+    RETRY_LOG_MARKER,
+    provider_log_body_start,
+)
 
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 from .models import LogReadResult
-
-_RETRY_MARKER = b"\n---\nretry_attempt:"
 
 
 @dataclass(frozen=True)
@@ -78,14 +80,14 @@ def read_latest_attempt_body(
 
 
 def latest_attempt_bytes(body: bytes, truncated: bool = False) -> LatestAttemptBody:
-    marker_index = body.rfind(_RETRY_MARKER)
+    marker_index = body.rfind(RETRY_LOG_MARKER)
     if marker_index == -1:
         return LatestAttemptBody(body=body, truncated=truncated)
-    header_end = body.find(b"\n---\n", marker_index + len(_RETRY_MARKER))
+    header_end = body.find(RETRY_LOG_DELIMITER, marker_index + len(RETRY_LOG_MARKER))
     if header_end == -1:
         return LatestAttemptBody(body=body[marker_index:], truncated=truncated)
     return LatestAttemptBody(
-        body=body[header_end + len(b"\n---\n") :],
+        body=body[header_end + len(RETRY_LOG_DELIMITER) :],
         truncated=False,
     )
 

@@ -15,7 +15,11 @@ from crewplane.architecture.contracts.execution_event import (
 )
 from crewplane.architecture.contracts.observer import TopologyNode
 from crewplane.architecture.safe_files import contained_regular_file
-from crewplane.core.value_checks import optional_strict_int
+from crewplane.core.value_checks import (
+    is_nonnegative_int,
+    is_strict_int,
+    optional_strict_int,
+)
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
 )
@@ -268,12 +272,7 @@ def _string(value: object) -> str | None:
 
 
 def _report_count(value: object) -> int | None:
-    if value is None:
-        return None
-    integer = optional_strict_int(value)
-    if integer is None or integer < 0:
-        return None
-    return integer
+    return value if is_nonnegative_int(value) else None
 
 
 def _float(value: object) -> float | None:
@@ -295,9 +294,7 @@ def _integer_mapping(value: object) -> Mapping[str, int | None] | None:
     for key, item in value.items():
         if not isinstance(key, str):
             return None
-        if item is not None and not (
-            isinstance(item, int) and not isinstance(item, bool)
-        ):
+        if item is not None and not is_strict_int(item):
             return None
         result[key] = item
     return result

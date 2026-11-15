@@ -142,3 +142,52 @@ def test_partial_retry_header_preserves_truncation(truncated: bool) -> None:
 
     assert result.body == b"\n---\nretry_attempt: 2\n"
     assert result.truncated is truncated
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+@pytest.mark.parametrize(
+    "body,expected,complete_header",
+    [
+        (b"no retry\n", b"no retry\n", False),
+        (
+            b"old\n---\nretry_attempt: nonsense\n---\nlatest",
+            b"latest",
+            True,
+        ),
+        (
+            b"old\n---\nretry_attempt:\nextra: arbitrary\n---\nlatest",
+            b"latest",
+            True,
+        ),
+        (
+            b"old\n---\nretry_attempt: 2\n---\nmiddle"
+            b"\n---\nretry_attempt: 3\n---\nlatest",
+            b"latest",
+            True,
+        ),
+        (
+            b"old\n---\nretry_attempt: 2\n---\nmiddle"
+            b"\n---\nretry_attempt: 3\nstarted_at: incomplete",
+            b"\n---\nretry_attempt: 3\nstarted_at: incomplete",
+            False,
+        ),
+        (
+            b"old\r\n---\r\nretry_attempt: 2\r\n---\r\nlatest",
+            b"old\r\n---\r\nretry_attempt: 2\r\n---\r\nlatest",
+            False,
+        ),
+        (
+            b"old\n---\nretry_attempt: 2\r\n---\r\nlatest",
+            b"\n---\nretry_attempt: 2\r\n---\r\nlatest",
+            False,
+        ),
+        (b"old\n---\nretry_attempt: 2\n---\n", b"", True),
+    ],
+)
+def test_latest_attempt_preserves_permissive_lf_only_framing(
+    body: bytes, expected: bytes, complete_header: bool, truncated: bool
+) -> None:
+    result = latest_attempt_bytes(body, truncated)
+
+    assert result.body == expected
+    assert result.truncated is (False if complete_header else truncated)

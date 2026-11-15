@@ -11,6 +11,7 @@ from crewplane.core.expansion_state import ExpansionProvenance
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
+from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.value_checks import is_sha256
 
 RUN_STATE_SCHEMA_VERSION = 1
@@ -91,7 +92,7 @@ class ReviewCheckpointResumeSummary(BaseModel):
     node_id: str = Field(min_length=1)
     source_audit: int = Field(ge=1)
     source_local_round: int = Field(ge=0)
-    source_phase: Literal["executors", "reviewers", "finalize"]
+    source_phase: CheckpointPhase
     resume_origin: ResumeOrigin
 
     @model_validator(mode="after")

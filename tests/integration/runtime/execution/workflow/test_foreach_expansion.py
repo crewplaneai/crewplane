@@ -6,8 +6,14 @@ import pytest
 
 from crewplane.architecture.contracts import EventType, ExecutionStatus
 from crewplane.artifacts import OutputManager
-from crewplane.artifacts.expansions import reconstruct_expansions
+from crewplane.artifacts.expansions import (
+    load_expansion,
+    reconstruct_expansions,
+    verify_caller_artifacts,
+)
 from crewplane.core.file_hashing import file_size_and_sha256
+from crewplane.core.preflight.foreach.expansion import descriptor
+from crewplane.runtime.execution import execute_workflow
 from crewplane.runtime.execution.workflow.execution_session import (
     initialize_workflow_execution,
 )
@@ -19,6 +25,93 @@ from tests.helpers.foreach import (
     workflow_document,
     write_workflow_document,
 )
+from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
+    MockAgentInvoker,
+)
+
+
+@pytest.mark.parametrize(
+    "artifact_name", ["findings_path", "findings_size", "findings_sha256"]
+)
+def test_expansion_records_and_verifies_external_findings_metadata_dependency(
+    tmp_path: Path, artifact_name: str
+) -> None:
+    compile_literal_foreach(tmp_path, "[{}]")
+    child_path = tmp_path / "child.md"
+    child, _ = workflow_document(child_path)
+    child["inputs"]["source"] = "source"
+    child["nodes"].insert(
+        1, {"id": "source", "mode": "input", "source": "{{file:absent-source.md}}"}
+    )
+    analyze = next(node for node in child["nodes"] if node["id"] == "analyze")
+    analyze["needs"].append("source")
+    child_body = (
+        "## analyze\nRead {{item.output}} and producer metadata {{source."
+        + artifact_name
+        + "}}.\n## independent\nIndependent root.\n"
+    )
+    write_workflow_document(child_path, child, child_body)
+    parent_path = tmp_path / "parent.md"
+    parent, parent_body = workflow_document(parent_path)
+    parent["nodes"][0].update(needs=["producer"], inputs={"source": "producer"})
+    parent["nodes"].insert(
+        0,
+        {
+            "id": "producer",
+            "mode": "parallel",
+            "providers": ["alpha"],
+            "findings": True,
+        },
+    )
+    write_workflow_document(
+        parent_path, parent, parent_body + "\n## producer\nProduce findings.\n"
+    )
+    preview = compile_foreach_file(parent_path)
+    output = OutputManager("foreach", base_dir=tmp_path)
+    plan = freeze_foreach(preview, output)
+    original_plan = (output.stages_dir / "preflight/execution-plan.json").read_bytes()
+    invoker = MockAgentInvoker(
+        outputs=["<!-- findings -->evidence<!-- /findings -->", "ok", "ok"]
+    )
+
+    asyncio.run(execute_workflow(plan, output, invoker, preview.secret_context))
+
+    batch, items = load_expansion(plan, plan.foreach_templates[0], output.stages_dir)
+    producer = next(node for node in plan.nodes if node.id == "producer")
+    contract = producer.artifact_contract
+    assert contract.findings_path is not None
+    findings_path = output.results_dir / contract.findings_path
+    findings_bytes = findings_path.read_bytes()
+    assert items == [{}]
+    assert batch.state.caller_artifacts == {
+        "producer.output": descriptor(
+            contract.output_path,
+            (output.results_dir / contract.output_path).read_bytes(),
+        ),
+        "producer.findings": descriptor(contract.findings_path, findings_bytes),
+    }
+    bundle = output.stages_dir / "preflight/expansions/chunks"
+    evidence_before = {
+        path: path.read_bytes() for path in bundle.rglob("*") if path.is_file()
+    }
+    assert (
+        verify_caller_artifacts(plan, batch, output.stages_dir, output.results_dir)
+        is None
+    )
+    reconstruction = reconstruct_expansions(plan, output.stages_dir)
+    assert not reconstruction.invalid_groups
+    assert reconstruction.batches["chunks"] == batch
+    findings_path.write_bytes(b"x" * len(findings_bytes))
+
+    with pytest.raises(ValueError, match="findings artifact bytes do not match state"):
+        verify_caller_artifacts(plan, batch, output.stages_dir, output.results_dir)
+
+    assert {
+        path: path.read_bytes() for path in bundle.rglob("*") if path.is_file()
+    } == (evidence_before)
+    assert (
+        output.stages_dir / "preflight/execution-plan.json"
+    ).read_bytes() == original_plan
 
 
 @pytest.mark.race

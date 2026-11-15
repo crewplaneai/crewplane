@@ -6,9 +6,8 @@ import pytest
 from crewplane.observability.tmux.inspect_snapshot import (
     read_inspect_snapshot,
     read_snapshot,
-    selected_snapshot_is_current,
 )
-from crewplane.observability.tmux.selection_control import SelectionControlState
+from crewplane.observability.tmux.snapshot_types import selected_snapshot_is_current
 
 
 @pytest.mark.parametrize("version", [None, 2, "1", True, 1.0])
@@ -26,7 +25,29 @@ def test_snapshot_readers_reject_wrong_schema_versions(tmp_path, version, inspec
 def test_snapshot_currentness_preserves_numeric_equality(generation):
     assert selected_snapshot_is_current(
         {"selection_generation": generation, "requested_selected_index": -1.0},
-        SelectionControlState(-1, 0, 0.0),
+        selected_index=-1,
+        selection_generation=0,
+    )
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        pytest.param(
+            {"selection_generation": 1, "requested_selected_index": -1},
+            id="generation-mismatch",
+        ),
+        pytest.param(
+            {"selection_generation": 0, "requested_selected_index": 1},
+            id="request-mismatch",
+        ),
+        pytest.param({"requested_selected_index": -1}, id="missing-generation"),
+        pytest.param({"selection_generation": 0}, id="missing-request"),
+    ],
+)
+def test_snapshot_currentness_rejects_mismatched_or_missing_identity(snapshot):
+    assert not selected_snapshot_is_current(
+        snapshot, selected_index=-1, selection_generation=0
     )
 
 

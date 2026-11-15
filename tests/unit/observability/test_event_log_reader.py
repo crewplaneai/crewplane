@@ -121,9 +121,67 @@ def test_event_reader_preserves_nullable_and_zero_report_counts(
     assert event.payload.provider_usage_report_count == report_count
 
 
-@pytest.mark.parametrize("invalid_count", [-1, True, "2", 2.5, {}])
+@pytest.mark.parametrize("invalid_count", [-1, False, True, "2", 0.0, 2.0, 2.5, {}])
 def test_event_reader_skips_invalid_report_counts(invalid_count: object) -> None:
     assert event_from_record(invocation_record(invalid_count)) is None
+
+
+def test_durable_report_counts_preserve_exact_totals_and_coverage(
+    tmp_path: Path,
+) -> None:
+    legacy_record = invocation_record()
+    legacy_record.pop("provider_usage_report_count")
+    records = [legacy_record, *(invocation_record(count) for count in (None, 0, 2))]
+    event_log = tmp_path / "events.ndjson"
+    event_log.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    events = read_event_log(event_log)
+
+    assert [event.payload.provider_usage_report_count for event in events] == [
+        None,
+        None,
+        0,
+        2,
+    ]
+    totals = aggregate_tokens(events)
+    assert totals.provider.overall is not None
+    assert totals.provider.overall.report_count == 2
+    assert totals.provider.overall.input == 10
+    assert totals.provider.overall.output == 3
+    assert totals.provider.overall.total == 13
+    node = totals.nodes[0]
+    assert node.terminal_calls == 4
+    assert node.missing_report_count_calls == 2
+    assert node.zero_report_calls == 1
+    assert node.positive_report_calls == 1
+    assert node.report_count == 2
+
+
+@pytest.mark.parametrize("token_count", [None, -1, 0, 2])
+def test_event_reader_preserves_nullable_and_signed_token_counts(
+    token_count: int | None,
+) -> None:
+    tokens = {"input": token_count, "output": None}
+    event = event_from_record({**invocation_record(), "provider_tokens": tokens})
+
+    assert event is not None
+    assert event.payload.provider_tokens == tokens
+
+
+@pytest.mark.parametrize("token_count", [False, True, 0.0, 2.0])
+def test_event_reader_rejects_boolean_and_float_token_counts(
+    token_count: object,
+) -> None:
+    event = event_from_record(
+        {**invocation_record(), "provider_tokens": {"input": token_count}}
+    )
+
+    assert event is not None
+    assert event.payload.provider_tokens is None
 
 
 def test_event_reader_accepts_serialized_event_and_legacy_omitted_field() -> None:

@@ -231,3 +231,68 @@ def test_persisted_sequential_role_boundary(
         assert [
             provider.role for provider in restored.nodes[0].provider_records
         ] == roles
+
+
+@pytest.mark.parametrize(
+    ("artifact", "requires_findings"),
+    [
+        ("output", False),
+        ("output_path", False),
+        ("output_size", False),
+        ("output_sha256", False),
+        ("findings", True),
+        ("findings_path", True),
+        ("findings_size", True),
+        ("findings_sha256", True),
+    ],
+)
+@pytest.mark.parametrize("findings", [False, True])
+def test_persisted_artifact_dependency_findings_availability(
+    artifact: str, requires_findings: bool, findings: bool
+) -> None:
+    payload = make_plan(findings_edge=findings).model_dump(mode="json")
+    payload["dependency_graph"][0].update(
+        artifact_name=artifact,
+        artifact_key=artifact,
+        target_locator=f"a.{artifact}",
+    )
+
+    if requires_findings and not findings:
+        with pytest.raises(ValidationError) as caught:
+            PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+        assert [error["msg"] for error in caught.value.errors()] == [
+            "Value error, Persisted dependency graph requests findings from node "
+            "'a', which does not publish findings."
+        ]
+    else:
+        restored = PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+        assert restored.dependency_graph[0].artifact_name == artifact
+        assert restored.nodes[0].findings is findings
+
+
+@pytest.mark.parametrize("findings", [False, True])
+def test_persisted_unknown_findings_artifact_precedes_availability(
+    findings: bool,
+) -> None:
+    payload = make_plan(findings_edge=findings).model_dump(mode="json")
+    payload["dependency_graph"][0]["artifact_name"] = "findings_unknown"
+
+    with pytest.raises(ValidationError) as caught:
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+    assert [error["msg"] for error in caught.value.errors()] == [
+        "Value error, Persisted dependency graph contains unknown artifact "
+        "'findings_unknown'."
+    ]
+
+
+def test_persisted_scheduling_dependency_does_not_require_findings() -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["dependency_graph"][0].update(
+        artifact_name=None, artifact_key=None, target_locator="a"
+    )
+
+    restored = PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+    assert restored.dependency_graph[0].artifact_name is None
+    assert restored.nodes[0].findings is False

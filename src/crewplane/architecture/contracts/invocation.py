@@ -10,7 +10,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 
-from crewplane.core.value_checks import is_strict_int, positive_strict_int
+from crewplane.core.value_checks import (
+    is_nonnegative_int,
+    is_strict_int,
+    positive_strict_int,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .invocation_failures import InvocationFailureSummary
@@ -166,11 +170,7 @@ class InvocationUsage:
 
     def __post_init__(self) -> None:
         report_count = self.provider_usage_report_count
-        if report_count is not None and (
-            isinstance(report_count, bool)
-            or not isinstance(report_count, int)
-            or report_count < 0
-        ):
+        if report_count is not None and not is_nonnegative_int(report_count):
             raise ValueError(
                 "provider_usage_report_count must be a non-negative integer"
             )

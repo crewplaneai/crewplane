@@ -18,6 +18,7 @@ from crewplane.observability.tmux.runtime_files import (
 from crewplane.observability.tmux.snapshot_types import (
     SNAPSHOT_SCHEMA_VERSION,
     initial_selection_control_values,
+    selected_snapshot_is_current,
 )
 
 SELECTION_CONTROL_SCHEMA_VERSION = _snapshot_types.SELECTION_CONTROL_SCHEMA_VERSION
@@ -97,9 +98,9 @@ def _resolved_snapshot_index(
         return None
     if value.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
         return None
-    if value.get("selection_generation") != current.selection_generation:
-        return None
-    if value.get("requested_selected_index") != current.selected_index:
+    if not selected_snapshot_is_current(
+        value, current.selected_index, current.selection_generation
+    ):
         return None
     return optional_strict_int(value.get("resolved_selected_index"))
 

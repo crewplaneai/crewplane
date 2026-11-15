@@ -2,6 +2,7 @@ import asyncio
 import json
 import subprocess
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from crewplane.runtime.agent.process.drain import (
     ProcessDrainEvidence,
 )
 from crewplane.runtime.agent.process.runner import (
+    build_retry_log_header,
     collect_process_output,
     reap_failed_process,
 )
@@ -23,6 +25,19 @@ from crewplane.runtime.agent.process.streams import (
 )
 from tests.helpers.capture_memory_probe import run_probe
 from tests.helpers.fixture_files import copy_fixture
+
+
+def test_retry_log_header_uses_runtime_utc_clock() -> None:
+    started_at = datetime(2026, 11, 13, 3, 45, 12, tzinfo=UTC)
+    with patch("crewplane.runtime.agent.process.runner.datetime") as clock:
+        clock.now.return_value = started_at
+
+        header = build_retry_log_header(3)
+
+    clock.now.assert_called_once_with(UTC)
+    assert header == (
+        b"\n---\nretry_attempt: 3\nstarted_at: 2026-11-13T03:45:12+00:00\n---\n"
+    )
 
 
 class _RecordingLogHandle:

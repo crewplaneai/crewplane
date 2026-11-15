@@ -13,6 +13,7 @@ from .composition.models import (
     ComposedWorkflowDocument,
     WorkflowSourceRecord,
 )
+from .markdown.frontmatter import read_workflow_text
 from .models import WorkflowPayload, WorkflowPlan, workflow_payload_dict
 from .source_locations import SourceSpan
 
@@ -75,8 +76,7 @@ def load_tasks_with_sources(
 ) -> WorkflowLoadResult:
     """Load a workflow file and retain the composed source provenance records."""
 
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        workflow_content = handle.read()
+    workflow_content = read_workflow_text(path)
     data: object
     if path.suffix.lower() == ".md":
         composed: ComposedWorkflowDocument = compose_workflow_markdown(

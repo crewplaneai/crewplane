@@ -8,6 +8,7 @@ from pathlib import Path
 from crewplane.core.workspace.policy import WorktreeDeclaration
 
 from ..markdown import parse_workflow_markdown_document
+from ..markdown.frontmatter import read_workflow_text
 from ..models import WorkflowNode
 from ..source_locations import SourceSpan
 from .foreach import resolve_foreach_inputs
@@ -343,8 +344,7 @@ class WorkflowComposer:
             return cached
 
         self._assert_file_exists(path, "Workflow file")
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            raw_content = handle.read()
+        raw_content = read_workflow_text(path)
         if path not in self._source_hashes:
             self._source_hashes[path] = hashlib.sha256(
                 raw_content.encode("utf-8")

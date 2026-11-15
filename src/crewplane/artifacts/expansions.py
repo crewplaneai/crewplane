@@ -32,6 +32,7 @@ from crewplane.core.workflow.collections import (
     collection_reference,
     decode_collection,
 )
+from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
 from .naming import node_state_relative_path
 from .verification import read_verified_node_artifact
@@ -53,7 +54,7 @@ def caller_locators(template: CompiledForeach) -> set[tuple[str, str]]:
                 (
                     edge.source_node,
                     "findings"
-                    if edge.artifact_name.startswith("findings")
+                    if edge.artifact_name in FINDINGS_ARTIFACT_KEYS
                     else "output",
                 )
             )

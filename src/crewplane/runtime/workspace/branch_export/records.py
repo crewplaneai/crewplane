@@ -191,7 +191,7 @@ def branch_name(
     logical_worktree_name: str,
     run_key_name: str,
 ) -> str:
-    return policy.branch_export.branch_name or _generated_branch_name(
+    return policy.branch_export.branch_name or generated_branch_name(
         plan.workflow_name,
         logical_worktree_name,
         run_key_name,
@@ -246,14 +246,6 @@ def branch_export_operation(payload: JsonObject) -> BranchExportOperation:
     if operation in _BRANCH_EXPORT_OPERATIONS:
         return cast(BranchExportOperation, operation)
     raise RuntimeError(f"Invalid branch export operation: {operation!r}")
-
-
-def _generated_branch_name(
-    workflow_name: str,
-    logical_worktree_name: str,
-    run_key_name: str,
-) -> str:
-    return generated_branch_name(workflow_name, logical_worktree_name, run_key_name)
 
 
 def _mapping(value: object) -> dict[str, object]:

@@ -1,4 +1,4 @@
-"""Initial provider-log encoding and byte-offset recognition."""
+"""Persisted provider-log framing and initial-header recognition."""
 
 from __future__ import annotations
 
@@ -15,6 +15,18 @@ _PROVIDER_LOG_HEADER_PREFIXES = (
     _OUTPUT_FILE_PREFIX,
 )
 _OPTIONAL_REASONING_PREFIX = "requested_reasoning:"
+STDERR_PREFIX_TEXT = "[stderr] "
+STDERR_PREFIX_BYTES = STDERR_PREFIX_TEXT.encode("utf-8")
+RETRY_LOG_DELIMITER = b"\n---\n"
+RETRY_LOG_MARKER = RETRY_LOG_DELIMITER + b"retry_attempt:"
+
+
+def encode_retry_log_header(attempt_number: int, started_at: str) -> bytes:
+    return (
+        RETRY_LOG_MARKER
+        + f" {attempt_number}\n{_STARTED_AT_PREFIX} {started_at}".encode()
+        + RETRY_LOG_DELIMITER
+    )
 
 
 def build_provider_log_header(

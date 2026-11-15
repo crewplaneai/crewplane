@@ -489,9 +489,9 @@ def test_fulfill_branch_exports_validates_generated_branch_name(
     records = fulfill_branch_exports(plan, output)
 
     record = json.loads(records[0].read_text(encoding="utf-8"))
-    assert record["branch_name"].startswith(
-        "crewplane/Workspace-Feature-thing/primary/"
-    )
+    expected_name = f"crewplane/Workspace-Feature-thing/primary/{output.run_key_name}"
+    assert record["branch_name"] == expected_name
+    assert record["branch_ref"] == f"refs/heads/{expected_name}"
     assert run_git_text(repo, "rev-parse", record["branch_ref"]) == result_commit
 
 
