@@ -9,6 +9,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | `crewplane onboarding` | Prepare real providers after the provider-free first run. |
 | `crewplane validate` | Check workflow/config validity and provider availability, including configured diagnostic probes. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
+| `crewplane runs` | List saved executions, read reports, open results, or inspect logs. |
 | `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
 
 ## Global Options
@@ -203,6 +204,143 @@ runs the whole workflow three times, one after another. Each run starts from
 the beginning. Crewplane stops if a run fails or is cancelled. `--force` does
 not add more runs. See
 [run a workflow more than once](../guides/running-workflows.md#run-a-workflow-more-than-once).
+
+## `crewplane runs`
+
+Inspect saved executions under the current directory's `.crewplane/`, without
+loading current config or workflow files, probing providers, acquiring run locks,
+repairing state, or attaching tmux. Deleted workflows and unavailable providers
+do not prevent inspection. These commands never regenerate reports or create
+missing artifact directories.
+
+```bash
+crewplane runs list
+crewplane runs show RUN
+crewplane runs open RUN [--results]
+crewplane runs logs RUN [--node NODE] [--follow]
+```
+
+`RUN` is required for `show`, `open`, and `logs`. `NODE` is an exact logical
+node ID, including any import namespace or foreach suffix. There are no filters,
+JSON export, pagination, remote history, or retention controls in this group.
+
+### Catalogue and selectors
+
+Only valid current-schema execution manifests produce rows. Directories without
+an execution manifest are excluded and reported separately; they may contain
+preflight-only or incomplete attempts. Malformed or unsupported manifests are
+reported on stderr without hiding valid runs. Unsafe metadata or unreadable
+catalogue roots fail the command. Duplicate-context skips do not create execution
+rows. Missing summaries or results directories do not exclude a valid run.
+
+The catalogue sorts by persisted start time, newest first, then by full run key
+for equal starts, never by directory modification time. Offset-bearing timestamps
+are compared as instants. Timestamps without an offset are labeled recorded local
+time and interpreted in the inspecting machine's local timezone for sorting;
+the original timezone cannot be recovered. An absent state directory or empty
+catalogue prints `No saved execution runs found.` and succeeds without creating
+anything.
+
+Selectors resolve in this order:
+
+1. `latest`: the newest valid execution record.
+2. An exact full run key.
+3. A unique exact run ID.
+4. A unique nonempty prefix of a run ID or full key.
+
+Ambiguous selectors fail and list candidate workflow names, start times, and full
+keys; they never silently choose the newest match. A selector is an identifier,
+not a path: path separators and traversal selectors are rejected. An exact key
+for an excluded directory reports that directory's diagnostic. Use `runs list`
+to find a valid selector. The Run column normally shows the run ID; when IDs
+collide across records it shows full keys for all colliding rows. Copy an exact
+full key into scripts when the selected run must remain fixed.
+
+### `runs list`
+
+The table shows Workflow, Run, Started, Outcome, Elapsed, Reused, and Attention.
+Outcome is the manifest's recorded lifecycle state: `succeeded`, `failed`,
+`cancelled`, or `running (recorded)`. A recorded running state is not a liveness
+check. Elapsed is the finalized manifest interval, not the saved summary's
+execution-only interval; unfinalized or inconsistent intervals show `n/a`, not a
+growing duration. Reused reports both completed-node and review-checkpoint counts.
+
+Attention can combine `failed`, `cancelled`, `errors recorded`, `review unresolved`,
+and `evidence incomplete`. Unresolved review means review continued after
+consensus exhaustion or stopped for no progress; it is distinct from execution
+failure. Ordinary warnings do not expand this compact column. Missing, corrupt,
+partial, mismatched, or unfinalized relevant evidence remains incomplete even when
+other facts are known. `none recorded` does not claim all reviews passed.
+
+Completed-node reuse follows saved provenance and inherits only that node's
+unresolved-review evidence, not unrelated source-run issues. Missing, mismatched,
+or cyclic source evidence is incomplete. Checkpoints that resume review use the
+current run's decision. A checkpoint resumed only to finalize results retains its
+saved review decision, including unresolved review; missing or mismatched saved
+decisions are incomplete.
+
+### `runs show RUN` and `runs open RUN [--results]`
+
+`show` prints the full key, recorded manifest outcome, summary path, and
+relative-link base directory before rendering the saved `logs/summary.md`.
+The body is a saved report snapshot and may predate recovery or finalization;
+it is not rewritten to agree with the manifest header. Generated collapsible
+section labels become visible headings in the terminal, with their bodies
+retained. Relative links display their paths rather than terminal hyperlinks;
+resolve them from the printed summary directory.
+
+`open` submits a nonblocking request to open the exact saved summary in the local
+associated application. `--results` instead opens the matching existing results
+directory. Neither target falls back to the other, and no missing target is
+created. The printed success message means the open request was submitted, not
+that a desktop application was observed opening. On headless systems use `show`.
+
+`show` fails without regeneration when a summary is missing, unreadable, unsafe,
+changing, or invalid UTF-8. Retry if publication is in progress, or inspect
+`runs logs RUN` and, if it exists, `runs open RUN --results`.
+
+### `runs logs RUN [--node NODE] [--follow]`
+
+Without `--node`, stdout contains the raw saved `logs/events.ndjson`, even if its
+events cannot be decoded. With `--node`, stdout contains one saved provider log.
+Selection details (node, task, provider, audit round, round, and path) and warnings
+go to stderr, leaving stdout as raw text with its original whitespace.
+
+Provider-log selection uses persisted events, not directory names or file mtimes.
+Repeated lifecycle references are deduplicated by node, task, provider, audit
+round, and round. Among invocations with a log reference and a retained start,
+the newest recorded start timestamp wins; event order breaks ties. A terminal-only
+invocation can supply a log when its start was not retained. The last such
+invocation in event order wins only if there is no recorded-start candidate or its
+event position follows the selected candidate's start. Its finish timestamp is
+never treated as a recorded start. This selects one stream, not merged provider
+output.
+
+Completed-node reuse selects from that node's effective source run. Checkpoint
+reuse prefers current-run invocation log evidence and only falls back to its
+explicit checkpoint source when no such evidence exists. Both requested and
+source runs are labeled when they differ. Corrupt, mismatched, or unfinished event
+evidence prevents a confident node-log selection; retry or inspect raw run events
+without `--node`. It is not permission to fall back to a different run.
+
+No provider-log evidence can mean an unknown, pending, input-only, or uncaptured
+node; it does not prove capture was disabled. A referenced file that disappeared
+is reported separately. References must identify safe regular files under their
+evidence run: relative references resolve there, and absolute references must
+already be contained there. Symlinks, hardlink aliases, traversal, and external
+paths are rejected. Moving an archive does not rebase saved absolute references.
+
+`--follow` reads from the beginning, then emits appended bytes until Ctrl-C. It
+resolves the run, node invocation, and file once: `latest` does not switch to a
+new run, and later rounds do not replace the selected log. It stays at EOF even
+when the run is complete. Ctrl-C ends only the reader, not the workflow. Deletion,
+replacement, truncation, decoding failures, and read failures stop the reader;
+rotation and reopening are not supported. A missing file fails immediately rather
+than waiting for it to appear.
+
+Usage, selection, and operational failures exit nonzero. Successfully inspecting
+a historically failed or cancelled run exits zero. Saved logs may contain
+sensitive provider output; inspection does not publish or upload it.
 
 ## `crewplane cleanup workspaces`
 

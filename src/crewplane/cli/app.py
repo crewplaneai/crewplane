@@ -35,6 +35,7 @@ from .onboarding import ONBOARDING_COMMAND_HELP, run_onboarding_command
 from .project_init import initialize_project_templates
 from .run.observability import ObservabilityHubInstance
 from .run.resume import print_dry_run_resume_advisory
+from .runs import runs_app
 from .update import UpdateError, installed_package_identity, update_crewplane
 from .workflow_context import (
     CliWorkflowContext,
@@ -48,6 +49,7 @@ from .workflow_context import (
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
+app.add_typer(runs_app, name="runs")
 
 
 def _configure_output_encoding() -> None:

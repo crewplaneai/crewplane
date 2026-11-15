@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,7 +12,7 @@ from crewplane.artifacts.run_history import (
     RunHistoryError,
     find_same_context_runs,
 )
-from tests.helpers.platforms import symlink_or_skip
+from tests.helpers.platforms import requires_posix, symlink_or_skip
 from tests.helpers.resume import (
     RUNTIME_SIGNATURE,
     WORKFLOW_IDENTITY,
@@ -324,3 +326,119 @@ def test_history_excludes_pre_fix_execution_signature(tmp_path):
         tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, current
     )
     assert [record.manifest.run_id for record in records] == ["current"]
+
+
+def test_context_filter_precedes_unrelated_results_containment(tmp_path) -> None:
+    unrelated = make_run_manifest("other", "other", workflow_name="Other workflow")
+    write_run_manifest(tmp_path, unrelated)
+    results = tmp_path / "execution-results"
+    results.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    symlink_or_skip(results / "other", outside, target_is_directory=True)
+    assert (
+        find_same_context_runs(
+            tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+        )
+        == ()
+    )
+    with pytest.raises(RunHistoryError, match="escapes"):
+        find_same_context_runs(
+            tmp_path, WORKFLOW_IDENTITY, "Other workflow", WORKFLOW_SIGNATURE
+        )
+
+
+def test_context_history_preserves_candidate_order_for_equal_instants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keys = ["z", "a"]
+    for key, started in zip(
+        keys,
+        ["2026-01-01T00:00:00+00:00", "2026-01-01T01:00:00+01:00"],
+        strict=True,
+    ):
+        manifest = make_run_manifest(key, key)
+        manifest.started_at = started
+        write_run_manifest(tmp_path, manifest)
+    stages = tmp_path / "execution-stages"
+    original_iterdir = Path.iterdir
+
+    def iterdir(path: Path):
+        if path == stages:
+            return iter(stages / key for key in keys)
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    records = find_same_context_runs(
+        tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+    )
+
+    assert [record.manifest.run_id for record in records] == keys
+    assert all(not record.results_dir.exists() for record in records)
+
+
+@pytest.mark.parametrize(
+    "started_at", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"]
+)
+def test_context_history_retains_offset_instants_outside_utc_datetime_range(
+    tmp_path: Path, started_at: str
+) -> None:
+    manifest = make_run_manifest("extreme", "extreme")
+    manifest.started_at = started_at
+    write_run_manifest(tmp_path, manifest)
+
+    records = find_same_context_runs(
+        tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+    )
+
+    assert [record.manifest for record in records] == [manifest]
+
+
+def test_context_history_preserves_naive_datetime_range(tmp_path: Path) -> None:
+    for key, started_at in [
+        ("oldest", "0001-01-01T00:00:00"),
+        ("newest", "9999-12-31T23:59:59.999999"),
+    ]:
+        manifest = make_run_manifest(key, key)
+        manifest.started_at = started_at
+        write_run_manifest(tmp_path, manifest)
+
+    records = find_same_context_runs(
+        tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+    )
+
+    assert [record.manifest.run_id for record in records] == ["newest", "oldest"]
+
+
+@requires_posix
+@pytest.mark.parametrize("timezone", ["UTC0", "UTC+7"])
+def test_context_history_compares_naive_local_times_with_offset_instants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timezone: str
+) -> None:
+    try:
+        with monkeypatch.context() as environment:
+            environment.setenv("TZ", timezone)
+            time.tzset()
+            local_start = datetime(2026, 1, 1, 12)
+            recorded_instant = local_start.astimezone(UTC)
+            for key, started_at in [
+                ("local", local_start.isoformat()),
+                ("older", (recorded_instant - timedelta(seconds=1)).isoformat()),
+                ("newer", (recorded_instant + timedelta(seconds=1)).isoformat()),
+            ]:
+                manifest = make_run_manifest(key, key)
+                manifest.started_at = started_at
+                write_run_manifest(tmp_path, manifest)
+
+            records = find_same_context_runs(
+                tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+            )
+
+            assert [record.manifest.run_id for record in records] == [
+                "newer",
+                "local",
+                "older",
+            ]
+            assert records[1].manifest.started_at == local_start.isoformat()
+    finally:
+        time.tzset()
