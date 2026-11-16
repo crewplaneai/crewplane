@@ -222,6 +222,17 @@ def test_exact_contained_log_paths(tmp_path: Path, kind: str) -> None:
     assert validate_log_reference(record, reference) == path
 
 
+def test_selection_allows_a_provider_log_with_an_active_writer(tmp_path: Path) -> None:
+    record = saved_run(tmp_path)
+    path = record.run_dir / "provider.log"
+    with path.open("ab") as writer:
+        writer.write(b"first\n")
+        writer.flush()
+        assert validate_log_reference(record, str(path)) == path
+        writer.write(b"second\n")
+    assert path.read_bytes() == b"first\nsecond\n"
+
+
 @pytest.mark.parametrize(
     "reference",
     [
@@ -261,12 +272,12 @@ def test_unsafe_references_are_not_rebased(tmp_path: Path, reference: str) -> No
         ),
         (
             "missing.log",
-            "Saved event references a missing provider log: {run_dir}/missing.log",
+            "Saved event references a missing provider log: {selected}",
             None,
         ),
         (
             "directory",
-            "Cannot safely read saved provider log: {run_dir}/directory",
+            "Cannot safely read saved provider log: {selected}",
             "not a single-link regular file",
         ),
     ],
@@ -276,9 +287,13 @@ def test_reference_failure_messages_and_causes(
 ) -> None:
     record = saved_run(tmp_path)
     (record.run_dir / "directory").mkdir()
+    if reference == "/outside/provider.log":
+        native_reference = str(Path(record.run_dir.anchor) / "outside/provider.log")
+        message = message.replace(reference, native_reference)
+        reference = native_reference
     with pytest.raises(SavedLogSelectionError) as error:
         validate_log_reference(record, reference)
-    assert str(error.value) == message.format(run_dir=record.run_dir)
+    assert str(error.value) == message.format(selected=record.run_dir / reference)
     if cause is None:
         assert error.value.__cause__ is None
     else:

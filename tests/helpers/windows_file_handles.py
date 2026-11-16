@@ -135,6 +135,7 @@ def local_windows_file_operations():
         safe_files_windows.ensure_regular_file,
         safe_files_windows.replace_contained_file,
         safe_files_windows.open_regular_file,
+        safe_files_windows.open_shared_regular_file,
         safe_files_windows.open_writable_file,
         safe_files_windows.open_contained_file,
         timestamp,

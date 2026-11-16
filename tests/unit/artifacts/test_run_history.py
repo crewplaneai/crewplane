@@ -132,6 +132,7 @@ def test_results_alias_within_expected_root_is_rejected(tmp_path) -> None:
         scan_run_history(tmp_path)
 
 
+@pytest.mark.race
 @pytest.mark.parametrize("corrupt", [False, True])
 def test_manifest_parent_substitution_during_protected_read_fails(
     tmp_path, monkeypatch, corrupt
@@ -142,23 +143,37 @@ def test_manifest_parent_substitution_during_protected_read_fails(
     parent = path.parent
     moved = parent.with_name("moved-manifests")
     real_read = os.read
-    swapped = False
+    attempted = False
+    original = path.read_bytes()
 
     def read_and_substitute(descriptor: int, size: int) -> bytes:
-        nonlocal swapped
+        nonlocal attempted
         payload = real_read(descriptor, size)
-        if payload and not swapped:
-            swapped = True
-            parent.rename(moved)
-            symlink_or_skip(parent, moved, target_is_directory=True)
+        if payload and not attempted:
+            attempted = True
+            if os.name == "nt":
+                with pytest.raises(PermissionError):
+                    parent.rename(moved)
+            else:
+                parent.rename(moved)
+                symlink_or_skip(parent, moved, target_is_directory=True)
         return payload
 
     monkeypatch.setattr(
         "crewplane.architecture.safe_file_reads.os.read", read_and_substitute
     )
-    with pytest.raises(RunHistoryError, match="symlink|retry"):
-        scan_run_history(tmp_path)
-    assert swapped
+    if os.name == "nt":
+        history = scan_run_history(tmp_path)
+        assert len(history.records) == (0 if corrupt else 1)
+        assert [item.category for item in history.diagnostics] == (
+            ["invalid_json"] if corrupt else []
+        )
+        assert path.read_bytes() == original
+        assert not moved.exists()
+    else:
+        with pytest.raises(RunHistoryError, match="symlink|retry"):
+            scan_run_history(tmp_path)
+    assert attempted
 
 
 @pytest.mark.parametrize("target", ["root", "run"])

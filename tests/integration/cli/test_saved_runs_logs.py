@@ -146,7 +146,7 @@ def test_closed_stdout_pipe_exits_without_shutdown_error(
             timeout=10,
         )
     assert result.returncode == 0, result.stderr.decode()
-    assert result.stderr == f"Log: {path}\n".encode()
+    assert result.stderr.decode().splitlines() == [f"Log: {path}"]
 
 
 @pytest.mark.race

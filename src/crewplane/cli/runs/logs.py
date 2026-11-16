@@ -8,8 +8,8 @@ from pathlib import Path
 import typer
 
 from crewplane.architecture.safe_files import (
-    contained_regular_file,
     is_safe_relative_path,
+    is_single_link_regular_file,
     path_has_symlink_component,
 )
 from crewplane.artifacts.naming import run_event_log_relative_path
@@ -240,7 +240,7 @@ def _retain_reference(
 
 
 def validate_log_reference(record: RunHistoryRecord, reference: str) -> Path:
-    """Return an absolute path to an existing, contained, single-link regular log.
+    """Inspect metadata for a contained log without excluding its active writer.
 
     Normalize references within the evidence run before filesystem checks;
     reject traversal and symlink components. Absolute references must already
@@ -257,27 +257,24 @@ def validate_log_reference(record: RunHistoryRecord, reference: str) -> Path:
     try:
         if path_has_symlink_component(selected):
             raise ValueError("symlink component")
-        safe = contained_regular_file(root, relative)
-        if safe is None:
-            if selected.exists():
-                raise ValueError("not a single-link regular file")
-            raise SavedLogSelectionError(
-                f"Saved event references a missing provider log: {selected}"
-            )
+        if not is_single_link_regular_file(selected.lstat()):
+            raise ValueError("not a single-link regular file")
+    except FileNotFoundError:
+        raise SavedLogSelectionError(
+            f"Saved event references a missing provider log: {selected}"
+        ) from None
     except (OSError, ValueError) as exc:
-        if isinstance(exc, SavedLogSelectionError):
-            raise
         raise SavedLogSelectionError(
             f"Cannot safely read saved provider log: {selected}"
         ) from exc
-    return safe.absolute()
+    return selected
 
 
 def _normalize_log_reference(
     record: RunHistoryRecord, reference: str
 ) -> tuple[Path, str]:
     path = Path(reference)
-    if ".." in path.parts or "\\" in reference:
+    if ".." in path.parts or ("\\" in reference and not path.is_absolute()):
         raise SavedLogSelectionError(
             "Saved log reference contains unsafe traversal or separators."
         )

@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from crewplane.architecture.safe_file_reads import open_regular_file
+from crewplane.architecture.safe_file_reads import open_shared_regular_file
 from crewplane.architecture.safe_files import (
     is_single_link_regular_file,
     path_has_symlink_component,
@@ -69,7 +69,7 @@ def read_event_snapshot(path: Path) -> bytes:
     """Capture initial bytes only; ordinary append does not invalidate evidence."""
     if path_has_symlink_component(path):
         raise ValueError("Event log path contains a symlink.")
-    with open_regular_file(path) as descriptor:
+    with open_shared_regular_file(path) as descriptor:
         initial = os.fstat(descriptor)
         _validate_snapshot_path(path, initial, initial)
         remaining = initial.st_size

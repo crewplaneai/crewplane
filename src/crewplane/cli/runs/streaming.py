@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import codecs
+import errno
+import io
 import os
+import stat
 import sys
 import time
 from pathlib import Path
 from typing import TextIO
 
-from crewplane.architecture.safe_file_reads import open_regular_file
+from crewplane.architecture.safe_file_reads import open_shared_regular_file
 from crewplane.architecture.safe_files import (
-    contained_regular_file,
     is_safe_relative_path,
     is_single_link_regular_file,
+    path_has_symlink_component,
 )
+from crewplane.core.platform import is_native_windows
 
 
 class SavedLogStreamError(RuntimeError):
@@ -26,12 +30,14 @@ def stream_saved_log(
 ) -> None:
     target = sys.stdout if output is None else output
     try:
+        if isinstance(target, io.TextIOWrapper):
+            target.reconfigure(newline="")
         relative = path.absolute().relative_to(root.absolute()).as_posix()
         if not is_safe_relative_path(relative):
             raise ValueError("Log path must be contained without traversal.")
-        if contained_regular_file(root, relative) is None:
+        if path_has_symlink_component(path) or not path.is_file():
             raise SavedLogStreamError(f"Saved log is missing or unsafe: {path}")
-        with open_regular_file(path) as descriptor:
+        with open_shared_regular_file(path) as descriptor:
             _stream_descriptor(root, relative, descriptor, follow, target)
     except KeyboardInterrupt:
         return
@@ -57,15 +63,27 @@ def _stream_descriptor(
         observed_size = _verify_file(root, relative, descriptor, initial, observed_size)
         chunk = os.read(descriptor, 64 * 1024)
         if chunk:
-            output.write(decoder.decode(chunk))
-            output.flush()
+            _write_output(output, decoder.decode(chunk))
             continue
         if not follow:
-            output.write(decoder.decode(b"", final=True))
-            output.flush()
+            _write_output(output, decoder.decode(b"", final=True))
             return
-        output.flush()
+        _write_output(output, "")
         time.sleep(0.1)
+
+
+def _write_output(output: TextIO, text: str) -> None:
+    try:
+        output.write(text)
+        output.flush()
+    except OSError as exc:
+        if (
+            is_native_windows()
+            and exc.errno == errno.EINVAL
+            and stat.S_ISFIFO(os.fstat(output.fileno()).st_mode)
+        ):
+            raise BrokenPipeError("Saved log output pipe was closed.") from exc
+        raise
 
 
 def _verify_file(
@@ -82,7 +100,7 @@ def _verify_file(
         raise SavedLogStreamError(f"Saved log was deleted: {path}") from exc
     if (current.st_dev, current.st_ino) != (initial.st_dev, initial.st_ino):
         raise SavedLogStreamError(f"Saved log was replaced: {path}")
-    if contained_regular_file(root, relative) is None:
+    if path_has_symlink_component(path) or not is_single_link_regular_file(current):
         raise SavedLogStreamError(f"Saved log path became unsafe: {path}")
     opened = os.fstat(descriptor)
     if not is_single_link_regular_file(opened):

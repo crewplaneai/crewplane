@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import io
 import os
 from collections.abc import Iterator
@@ -27,6 +28,58 @@ def test_stream_preserves_raw_text(tmp_path: Path, payload: bytes) -> None:
     output = io.StringIO(newline="")
     streaming.stream_saved_log(tmp_path, path, output=output)
     assert output.getvalue().encode() == payload
+
+
+def test_stdout_preserves_bytes_despite_text_newline_translation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = "one\n\ncafé\r\nlast\r".encode()
+    path = make_log(tmp_path, payload)
+    raw = io.BytesIO()
+    with io.TextIOWrapper(raw, encoding="utf-8", newline="\r\n") as output:
+        with monkeypatch.context() as captured:
+            captured.setattr(streaming.sys, "stdout", output)
+            streaming.stream_saved_log(tmp_path, path)
+        assert raw.getvalue() == payload
+
+
+@pytest.mark.parametrize("pipe_output", [False, True])
+@pytest.mark.parametrize("failure", ["write", "flush"])
+def test_windows_invalid_argument_is_graceful_only_for_output_pipes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pipe_output: bool,
+    failure: str,
+) -> None:
+    path = make_log(tmp_path, b"content")
+    if pipe_output:
+        reader, writer = os.pipe()
+        os.close(reader)
+    else:
+        writer = os.open(tmp_path / "sink", os.O_CREAT | os.O_WRONLY, 0o600)
+
+    class InvalidOutput(io.StringIO):
+        def fileno(self) -> int:
+            return writer
+
+        def write(self, text: str) -> int:
+            if failure == "write":
+                raise OSError(errno.EINVAL, "Invalid argument")
+            return super().write(text)
+
+        def flush(self) -> None:
+            if failure == "flush":
+                raise OSError(errno.EINVAL, "Invalid argument")
+
+    monkeypatch.setattr(streaming, "is_native_windows", lambda: True)
+    with os.fdopen(writer, "wb"), InvalidOutput() as output:
+        if pipe_output:
+            streaming.stream_saved_log(tmp_path, path, output=output)
+        else:
+            with pytest.raises(streaming.SavedLogStreamError) as error:
+                streaming.stream_saved_log(tmp_path, path, output=output)
+            assert isinstance(error.value.__cause__, OSError)
+            assert error.value.__cause__.errno == errno.EINVAL
 
 
 def test_follow_emits_appends_once_and_waits_at_eof(
@@ -151,7 +204,7 @@ def test_closes_descriptor_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     path = make_log(tmp_path, b"content")
-    original = streaming.open_regular_file
+    original = streaming.open_shared_regular_file
     descriptors: list[int] = []
 
     @contextmanager
@@ -181,7 +234,7 @@ def test_closes_descriptor_on_failure(
         assert descriptor >= 0 and size > 0
         raise OSError("read failure")
 
-    monkeypatch.setattr(streaming, "open_regular_file", track_open)
+    monkeypatch.setattr(streaming, "open_shared_regular_file", track_open)
     monkeypatch.setattr(streaming.time, "sleep", stop)
     if failure == "read":
         monkeypatch.setattr(streaming.os, "read", fail_read)

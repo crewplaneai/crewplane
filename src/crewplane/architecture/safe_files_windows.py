@@ -18,6 +18,7 @@ from .windows_file_handles import (
     FILE_OPEN,
     FILE_OPEN_IF,
     FILE_READ_ATTRIBUTES,
+    FILE_SHARE_DELETE,
     FILE_SHARE_READ,
     FILE_SHARE_WRITE,
     FILE_TRAVERSE,
@@ -93,6 +94,21 @@ def open_regular_file(path: Path) -> Iterator[int]:
             yield descriptor
         finally:
             os.close(descriptor)
+
+
+@contextmanager
+def open_shared_regular_file(path: Path) -> Iterator[int]:
+    """Protect path lookup, then observe the file without blocking its writer."""
+    share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+    with ExitStack() as descriptors:
+        with (
+            protected_directory(path.parent) as parent,
+            closing(parent.open_child(path.name, GENERIC_READ, share)) as handle,
+        ):
+            handle.validate(directory=False)
+            descriptor = handle.into_descriptor()
+            descriptors.callback(os.close, descriptor)
+        yield descriptor
 
 
 def contained_directory(
