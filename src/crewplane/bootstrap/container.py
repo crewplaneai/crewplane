@@ -1,3 +1,5 @@
+"""Assemble runtime integrations while preserving construction and policy order."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -5,15 +7,21 @@ from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.adapters.invokers.mock_invoker.options import bind_project_options
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.loader import (
     instantiate_adapter,
+    is_builtin_implementation,
     require_artifact_store,
     resolve_implementation_path,
 )
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.ports import (
+    ArtifactStorePort,
+    InvokerAdapterPort,
+    UIAdapterPort,
+)
 from crewplane.architecture.ports.runtime import RuntimeComponents, UIRuntimePlan
-from crewplane.core.config import Config
+from crewplane.core.config import Config, IntegrationSpec
 from crewplane.observability.types import WorkflowTopology
 
 
@@ -31,7 +39,25 @@ def build_runtime_components(
     ui_options: JsonObject | None = None,
     artifact_store: ArtifactStorePort | None = None,
 ) -> RuntimeComponents:
-    """Build the concrete runtime components for a workflow execution."""
+    """Assemble an invoker, artifact store, and optional live observer plan.
+
+    Without ``invoker_options``, copy configured options, bind built-in mock
+    fixture paths to ``project_root``, and canonicalize through the adapter.
+    Supplied options pass directly to invoker construction without those steps.
+
+    Load the invoker and eligible UI adapters before preparing the invoker.
+    Create and validate the invoker before selecting the artifact store. Without
+    ``artifact_store``, create a store using ``artifact_options`` or a copy of
+    configured options; the default filesystem store reserves run state here.
+    A supplied store is validated and reused without loading the artifacts
+    adapter, and ``artifact_options`` is ignored.
+
+    Plan live UI only for a terminal when ``no_live`` is false. Missing required
+    CLI logs emit a warning and skip UI construction, including UI options.
+    Otherwise, use ``ui_options`` or a copy of configured options. Return
+    observers without starting them. Errors propagate without rolling back
+    an already allocated store.
+    """
 
     settings = config.settings
 
@@ -45,12 +71,9 @@ def build_runtime_components(
         instantiate_adapter("ui", ui_spec.implementation) if live_ui_enabled else None
     )
 
-    if invoker_options is None:
-        invoker_options = invoker_adapter.canonicalize_options(
-            invoker_spec.implementation,
-            resolve_implementation_path("invoker", invoker_spec.implementation),
-            dict(invoker_spec.options),
-        ).options
+    invoker_options = _prepare_invoker_options(
+        invoker_adapter, invoker_spec, project_root, invoker_options
+    )
     base_invoker = invoker_adapter.create_invoker(
         config=config,
         options=invoker_options,
@@ -76,41 +99,80 @@ def build_runtime_components(
 
     resolved_artifact_store = require_artifact_store(selected_artifact_store)
 
-    ui_runtime = UIRuntimePlan(
-        observers=(),
-        suppress_progress_output=False,
+    ui_runtime = _plan_ui_runtime(
+        ui_adapter,
+        ui_spec,
+        config,
+        workflow_topology,
+        resolved_artifact_store,
+        console,
+        ui_options,
+        warning_sink,
+        which_fn,
     )
-
-    if ui_adapter is not None:
-        ui_capabilities = ui_adapter.capabilities
-        if (
-            ui_capabilities.requires_cli_output_logs
-            and not resolved_artifact_store.log_cli_output
-        ):
-            message = (
-                "tmux live dashboard requires artifacts option "
-                "'log_cli_output=true'; continuing without live dashboard."
-            )
-            if warning_sink is not None:
-                warning_sink(message)
-            else:
-                console.print(f"[yellow]WARN[/] {message}")
-        else:
-            ui_runtime = ui_adapter.create_runtime(
-                config=config,
-                workflow_topology=workflow_topology,
-                run_id=resolved_artifact_store.run_id,
-                console=console,
-                options=ui_options if ui_options is not None else dict(ui_spec.options),
-                warning_sink=warning_sink,
-                which_fn=(which_fn if ui_capabilities.accepts_which_override else None),
-            )
 
     return RuntimeComponents(
         artifact_store=resolved_artifact_store,
         base_invoker=base_invoker,
         observers=ui_runtime.observers,
         suppress_progress_output=ui_runtime.suppress_progress_output,
+    )
+
+
+def _prepare_invoker_options(
+    invoker_adapter: InvokerAdapterPort,
+    invoker_spec: IntegrationSpec,
+    project_root: Path,
+    options: JsonObject | None,
+) -> JsonObject:
+    if options is not None:
+        return options
+
+    authored_options = dict(invoker_spec.options)
+    if is_builtin_implementation("invoker", invoker_spec.implementation, "mock"):
+        authored_options = bind_project_options(authored_options, project_root)
+    return invoker_adapter.canonicalize_options(
+        invoker_spec.implementation,
+        resolve_implementation_path("invoker", invoker_spec.implementation),
+        authored_options,
+    ).options
+
+
+def _plan_ui_runtime(
+    ui_adapter: UIAdapterPort | None,
+    ui_spec: IntegrationSpec,
+    config: Config,
+    workflow_topology: WorkflowTopology,
+    artifact_store: ArtifactStorePort,
+    console: Console,
+    options: JsonObject | None,
+    warning_sink: Callable[[str], None] | None,
+    which_fn: Callable[[str], str | None] | None,
+) -> UIRuntimePlan:
+    ui_runtime = UIRuntimePlan(observers=(), suppress_progress_output=False)
+    if ui_adapter is None:
+        return ui_runtime
+
+    ui_capabilities = ui_adapter.capabilities
+    if ui_capabilities.requires_cli_output_logs and not artifact_store.log_cli_output:
+        message = (
+            "tmux live dashboard requires artifacts option "
+            "'log_cli_output=true'; continuing without live dashboard."
+        )
+        if warning_sink is not None:
+            warning_sink(message)
+        else:
+            console.print(f"[yellow]WARN[/] {message}")
+        return ui_runtime
+
+    return ui_adapter.create_runtime(
+        config=config,
+        workflow_topology=workflow_topology,
+        run_id=artifact_store.run_id,
+        console=console,
+        options=options if options is not None else dict(ui_spec.options),
+        warning_sink=warning_sink,
+        which_fn=which_fn if ui_capabilities.accepts_which_override else None,
     )
 
 

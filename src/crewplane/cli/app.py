@@ -42,6 +42,7 @@ from .workflow_context import (
     CliWorkflowPaths,
     compile_preview_for_context,
     compile_validate_preview_for_context,
+    format_cli_workflow_paths,
     load_cli_workflow_context,
     raise_context_loading_failure,
     resolve_cli_workflow_paths,
@@ -253,11 +254,10 @@ def run(
         typer.Option(
             "--tasks",
             "-t",
-            file_okay=True,
-            dir_okay=False,
+            readable=False,
             help=(
-                "Path to workflow file "
-                "(default: a single .crewplane/workflows/*.task.md)"
+                "Workflow file, relative to the selected project root "
+                "(default: its single .crewplane/workflows/*.task.md)"
             ),
         ),
     ] = None,
@@ -266,9 +266,11 @@ def run(
         typer.Option(
             "--config",
             "-c",
-            file_okay=True,
-            dir_okay=False,
-            help="Path to config file (default: .crewplane/config.yml)",
+            readable=False,
+            help=(
+                "Config file, relative to the invocation directory "
+                "(default: nearest ancestor .crewplane/config.yml)"
+            ),
         ),
     ] = None,
     dry_run: Annotated[
@@ -299,6 +301,7 @@ def run(
     paths: CliWorkflowPaths | None = None
     try:
         paths = resolve_cli_workflow_paths(tasks_file, config_file, console)
+        console.print(format_cli_workflow_paths(paths))
         context = load_cli_workflow_context(paths)
 
         if dry_run:
@@ -326,7 +329,7 @@ def run(
         raise
     except Exception as exc:
         raise_context_loading_failure(
-            exc, console, tasks_file, paths, write_diagnostics=not dry_run
+            exc, console, paths=paths, write_diagnostics=not dry_run
         )
 
     try:
@@ -372,11 +375,10 @@ def validate(
     tasks_file: Annotated[
         Path | None,
         typer.Argument(
-            file_okay=True,
-            dir_okay=False,
+            readable=False,
             help=(
-                "Path to workflow file to validate "
-                "(default: a single .crewplane/workflows/*.task.md)"
+                "Workflow file, relative to the selected project root "
+                "(default: its single .crewplane/workflows/*.task.md)"
             ),
         ),
     ] = None,
@@ -385,9 +387,11 @@ def validate(
         typer.Option(
             "--config",
             "-c",
-            file_okay=True,
-            dir_okay=False,
-            help="Path to config file (default: .crewplane/config.yml)",
+            readable=False,
+            help=(
+                "Config file, relative to the invocation directory "
+                "(default: nearest ancestor .crewplane/config.yml)"
+            ),
         ),
     ] = None,
 ) -> None:
@@ -397,7 +401,8 @@ def validate(
     """
     console = Console()
     paths = resolve_cli_workflow_paths(tasks_file, config_file, console)
-    console.print(f"Validating {paths.tasks}...")
+    console.print(format_cli_workflow_paths(paths))
+    console.print(Text(f"Validating {paths.tasks}..."))
     try:
         context = load_cli_workflow_context(paths)
         preview = compile_validate_preview_for_context(context, console)

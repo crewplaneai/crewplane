@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Protocol
 
 from rich.console import Console
@@ -29,6 +30,7 @@ from crewplane.observability.types import WorkflowTopology
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 
 from .best_effort_thread import run_best_effort_thread
+from .blocking_work import settle_run_work
 from .terminalization import (
     TerminalizationCommitter,
     commit_terminalization_with_retry,
@@ -354,14 +356,14 @@ async def _execute_observed_workflow(
         return exc
 
 
-def _run_scheduler_post_hook(
+async def _run_scheduler_post_hook(
     plan: PreflightExecutionPlan,
     on_scheduler_succeeded: Callable[[PreflightExecutionPlan], None],
     terminalization: TerminalizationCoordinatorProtocol,
     hub: ObservabilityHubInstance,
 ) -> BaseException | None:
     try:
-        on_scheduler_succeeded(plan)
+        _, cancellation = await settle_run_work(partial(on_scheduler_succeeded, plan))
     except Exception as exc:
         commit_terminalization_with_retry(
             terminalization,
@@ -370,6 +372,15 @@ def _run_scheduler_post_hook(
             str(exc),
         )
         return exc
+
+    if cancellation is not None:
+        commit_terminalization_with_retry(
+            terminalization,
+            hub,
+            "cancelled",
+            EXTERNAL_CANCEL_REASON,
+        )
+        return cancellation
 
     commit_terminalization_with_retry(
         terminalization,
@@ -438,7 +449,7 @@ async def execute_workflow_with_observability(
             if isinstance(completion, BaseException):
                 terminal_error = completion
             else:
-                terminal_error = _run_scheduler_post_hook(
+                terminal_error = await _run_scheduler_post_hook(
                     completion,
                     on_scheduler_succeeded,
                     terminalization,

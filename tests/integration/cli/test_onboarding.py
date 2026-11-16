@@ -1035,3 +1035,16 @@ def test_pi_conflicts_fail_all_cli_preflight_routes(
     assert result.exit_code != 0
     assert "Pi requires --mode text" in result.output
     assert not list((tmp_path / ".crewplane/execution-results").glob("*.md"))
+
+
+def test_onboarding_below_existing_project_still_offers_local_init(
+    tmp_path: Path,
+) -> None:
+    initialize_project_templates(Console(file=io.StringIO()), tmp_path)
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
+    output, _ = run_onboarding_in_project(child, answers=[""])
+    assert "Run non-overwriting crewplane init now? [y/N]: " in output
+    assert "No files changed." in output
+    assert not (child / ".crewplane").exists()
+    assert "Crewplane project:" not in output

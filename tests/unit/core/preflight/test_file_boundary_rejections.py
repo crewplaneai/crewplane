@@ -184,7 +184,7 @@ def test_corrupt_fingerprint_key_stops_preflight_without_persisting_secrets(
     if secret_location == "config":
         config.agents["alpha"].extra_args = ["--api-token", secret]
     runtime = build_runtime_config_snapshot(
-        config=config, console=Console(file=None), no_live=True
+        project_root=tmp_path, config=config, console=Console(file=None), no_live=True
     )
 
     preview = compile_preflight_preview(

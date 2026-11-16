@@ -36,6 +36,7 @@ def _compile_signature(
         config.settings = config.settings.model_copy(update=settings_update)
     selected_workflow = workflow or literal_workflow()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=no_live,
@@ -147,11 +148,13 @@ def test_mock_execution_options_change_runtime_signature() -> None:
     second_config.settings.integrations.invoker.options["seed"] = 2
 
     first_snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=first_config,
         console=Console(file=None),
         no_live=True,
     ).snapshot
     second_snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=second_config,
         console=Console(file=None),
         no_live=True,
@@ -193,6 +196,7 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
         ],
     )
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,

@@ -1,21 +1,28 @@
+import asyncio
 import io
 import unittest
 from dataclasses import FrozenInstanceError
 from datetime import datetime
 from pathlib import Path
 from tempfile import mkdtemp
+from unittest.mock import Mock
 
 import pytest
 from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
+from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
+from crewplane.adapters.ui.null import NullUIAdapter
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
+    JsonObject,
     ObserverCapabilities,
     build_findings_filename,
     build_result_filename,
 )
 from crewplane.architecture.errors import AdapterLoadError
+from crewplane.architecture.ports import UIAdapterCapabilities
 from crewplane.architecture.ports.runtime import UIRuntimePlan
 from crewplane.bootstrap import (
     build_runtime_components,
@@ -49,6 +56,7 @@ def _compiled_test_plan(
 ) -> tuple[PreflightExecutionPlan, object]:
     output = components.artifact_store
     snapshot = build_runtime_config_snapshot(
+        project_root=output.base_dir,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -261,6 +269,9 @@ class ContainerTests(unittest.TestCase):
                 no_live=True,
             )
 
+        self.assertFalse((tmp_path / "execution-stages").exists())
+        self.assertFalse((tmp_path / "execution-results").exists())
+
     def test_container_accepts_dotted_override_for_ui(self) -> None:
         workflow = self._build_workflow()
         config = self._build_config(
@@ -346,7 +357,10 @@ class ContainerTests(unittest.TestCase):
         config = self._build_config(
             Settings(
                 integrations={
-                    "invoker": {"implementation": "cli", "options": {}},
+                    "invoker": {
+                        "implementation": "cli",
+                        "options": {"unsupported": True},
+                    },
                     "ui": {
                         "implementation": "missing.module:MissingUIAdapter",
                         "options": {},
@@ -372,6 +386,9 @@ class ContainerTests(unittest.TestCase):
                 console=Console(file=io.StringIO(), force_terminal=True),
                 no_live=False,
             )
+
+        self.assertFalse((tmp_path / "execution-stages").exists())
+        self.assertFalse((tmp_path / "execution-results").exists())
 
     def test_container_validates_invoker_before_allocating_run_directories(
         self,
@@ -743,3 +760,229 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "Synthetic finding for review.context",
             findings_file.read_text(encoding="utf-8"),
         )
+
+
+@pytest.mark.parametrize("invoker_options", [{}, {"output_mode": "echo"}])
+def test_supplied_options_and_store_bypass_preparation_and_allocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invoker_options: JsonObject
+) -> None:
+    store = FilesystemArtifactsAdapter().create_store(
+        "existing", tmp_path / "existing", tmp_path
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=Settings(
+            integrations={
+                "invoker": {
+                    "implementation": "mock",
+                    "options": {"unsupported": True},
+                },
+                "artifacts": {"implementation": "missing.module:MissingArtifacts"},
+                "ui": {"implementation": "none"},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "crewplane.bootstrap.container.bind_project_options",
+        Mock(side_effect=AssertionError("supplied options must not be rebound")),
+    )
+    monkeypatch.setattr(
+        MockInvokerAdapter,
+        "canonicalize_options",
+        Mock(side_effect=AssertionError("supplied options must not be canonicalized")),
+    )
+    create_invoker = Mock(wraps=MockInvokerAdapter.create_invoker)
+    monkeypatch.setattr(MockInvokerAdapter, "create_invoker", create_invoker)
+    state_dir = tmp_path / "new-state"
+
+    components = build_runtime_components(
+        config,
+        topology_from_workflow(WorkflowPlan(name="reuse", nodes=[])),
+        state_dir,
+        tmp_path,
+        Console(file=io.StringIO()),
+        True,
+        invoker_options=invoker_options,
+        artifact_options={"unsupported": True},
+        artifact_store=store,
+    )
+
+    assert components.artifact_store is store
+    assert create_invoker.call_args.kwargs["options"] is invoker_options
+    assert not state_dir.exists()
+
+
+@pytest.mark.parametrize("accepts_which_override", [False, True])
+@pytest.mark.parametrize("ui_options", [None, {}])
+def test_ui_plan_preserves_runtime_dependencies_and_option_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    accepts_which_override: bool,
+    ui_options: JsonObject | None,
+) -> None:
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=Settings(
+            integrations={
+                "invoker": {"implementation": "mock"},
+                "ui": {"implementation": "none"},
+            }
+        ),
+    )
+    topology = topology_from_workflow(WorkflowPlan(name="ui-plan", nodes=[]))
+    console = Console(file=io.StringIO(), force_terminal=True)
+    warning_sink = Mock()
+    which_fn = Mock(return_value="/usr/bin/tmux")
+    observer = _ConformingObserverRuntime()
+    create_runtime = Mock(
+        return_value=UIRuntimePlan(observers=(observer,), suppress_progress_output=True)
+    )
+    monkeypatch.setattr(
+        NullUIAdapter,
+        "capabilities",
+        UIAdapterCapabilities(accepts_which_override=accepts_which_override),
+    )
+    monkeypatch.setattr(NullUIAdapter, "create_runtime", create_runtime)
+
+    components = build_runtime_components(
+        config,
+        topology,
+        tmp_path / "state",
+        tmp_path,
+        console,
+        False,
+        warning_sink=warning_sink,
+        which_fn=which_fn,
+        ui_options=ui_options,
+    )
+
+    create_runtime.assert_called_once_with(
+        config=config,
+        workflow_topology=topology,
+        run_id=components.artifact_store.run_id,
+        console=console,
+        options={} if ui_options is None else ui_options,
+        warning_sink=warning_sink,
+        which_fn=which_fn if accepts_which_override else None,
+    )
+    selected_options = create_runtime.call_args.kwargs["options"]
+    if ui_options is None:
+        assert selected_options is not config.settings.integrations.ui.options
+    else:
+        assert selected_options is ui_options
+    assert components.observers == (observer,)
+    assert components.suppress_progress_output is True
+
+
+@pytest.mark.parametrize("use_warning_sink", [False, True])
+def test_missing_logs_skip_ui_options_and_deliver_warning_after_allocation(
+    tmp_path: Path, use_warning_sink: bool
+) -> None:
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=Settings(
+            integrations={
+                "invoker": {"implementation": "mock"},
+                "ui": {"implementation": "tmux"},
+                "artifacts": {
+                    "implementation": "filesystem",
+                    "options": {"log_cli_output": False},
+                },
+            }
+        ),
+    )
+    state_dir = tmp_path / "state"
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=True, color_system=None, width=200)
+    warnings: list[str] = []
+
+    def record_warning(message: str) -> None:
+        assert (state_dir / "execution-stages").is_dir()
+        assert len(tuple((state_dir / "execution-stages").iterdir())) == 1
+        assert not (state_dir / "execution-results").exists()
+        warnings.append(message)
+
+    components = build_runtime_components(
+        config,
+        topology_from_workflow(WorkflowPlan(name="warning", nodes=[])),
+        state_dir,
+        tmp_path,
+        console,
+        False,
+        warning_sink=record_warning if use_warning_sink else None,
+        which_fn=Mock(side_effect=AssertionError("disabled UI must not probe tmux")),
+        ui_options={"unsupported": True},
+    )
+
+    message = (
+        "tmux live dashboard requires artifacts option "
+        "'log_cli_output=true'; continuing without live dashboard."
+    )
+    assert warnings == ([message] if use_warning_sink else [])
+    assert output.getvalue() == ("" if use_warning_sink else f"WARN {message}\n")
+    assert components.observers == ()
+    assert components.suppress_progress_output is False
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+def test_mock_fixture_binding_matches_snapshot_and_container_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, canonical: bool
+) -> None:
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    (fixtures / "default.md").write_bytes(b"source project fixture\n")
+    child = tmp_path / "nested"
+    child.mkdir()
+    monkeypatch.chdir(child)
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=Settings(
+            integrations={
+                "invoker": {
+                    "implementation": "mock",
+                    "options": {
+                        "output_mode": "file",
+                        "output_dir": "fixtures",
+                        "strict_file_mode": True,
+                        "delay_seconds": 0,
+                        "observation_delay_seconds": 0,
+                    },
+                },
+                "ui": {"implementation": "none"},
+            }
+        ),
+    )
+    workflow = WorkflowPlan(name="fixture-binding", nodes=[])
+    console = Console(file=io.StringIO())
+    options = (
+        build_runtime_config_snapshot(config, console, True, tmp_path).invoker_options
+        if canonical
+        else None
+    )
+    components = build_runtime_components(
+        config,
+        topology_from_workflow(workflow),
+        tmp_path / ".crewplane",
+        tmp_path,
+        console,
+        True,
+        invoker_options=options,
+    )
+    output = tmp_path / "result.md"
+    asyncio.run(
+        components.base_invoker.invoke(
+            config.agents["alpha"],
+            None,
+            "prompt",
+            output,
+            child,
+        )
+    )
+    assert output.read_bytes() == b"source project fixture\n"
+    assert config.settings.integrations.invoker.options["output_dir"] == "fixtures"
+    assert not (child / ".crewplane").exists()
+    assert Path.cwd() == child

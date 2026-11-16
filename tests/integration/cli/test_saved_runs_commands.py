@@ -153,6 +153,7 @@ def _saved_project(root: Path, config: str, workflows: str) -> Path:
     return state
 
 
+@pytest.mark.parametrize("descendant", [False, True])
 @pytest.mark.parametrize("config", ["absent", "invalid"])
 @pytest.mark.parametrize("workflows", ["multiple", "deleted"])
 @pytest.mark.parametrize(
@@ -171,7 +172,14 @@ def test_inspection_is_read_only_and_independent_of_execution_environment(
     config: str,
     workflows: str,
     arguments: list[str],
+    descendant: bool,
 ) -> None:
+    if descendant:
+        from tests.integration.cli.dry_run_helpers import write_standard_project
+
+        write_standard_project(tmp_path)
+        tmp_path = tmp_path / "backend/api"
+        tmp_path.mkdir(parents=True)
     state = _saved_project(tmp_path, config, workflows)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PATH", str(tmp_path / "no-provider-executables"))
@@ -183,6 +191,7 @@ def test_inspection_is_read_only_and_independent_of_execution_environment(
     result = CliRunner().invoke(app, ["runs", *arguments], terminal_width=120)
 
     assert result.exit_code == 0, (result.output, result.exception)
+    assert "Crewplane project:" not in result.output
     assert _snapshot(tmp_path) == before
     for guard in guards:
         guard.assert_not_called()

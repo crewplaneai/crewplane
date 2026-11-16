@@ -14,6 +14,17 @@ from crewplane.core.value_checks import is_strict_int
 from .selectors import validate_fail_selectors
 
 
+def bind_project_options(options: JsonObject, project_root: Path) -> JsonObject:
+    """Bind authored fixture paths to the source project before canonicalization."""
+    bound = dict(options)
+    output_dir = bound.get("output_dir")
+    if isinstance(output_dir, str) and output_dir.strip():
+        path = Path(output_dir)
+        if not path.is_absolute():
+            bound["output_dir"] = str(project_root / path)
+    return bound
+
+
 def _validate_non_negative_number(value: object, option_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"mock invoker option '{option_name}' must be a number >= 0")

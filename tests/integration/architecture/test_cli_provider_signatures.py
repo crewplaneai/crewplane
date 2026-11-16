@@ -1,5 +1,6 @@
 import copy
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -91,7 +92,9 @@ def test_registration_order_is_deterministic_and_canonical_values_persist(
     configuration,
 ):
     config, _ = configuration
-    before = build_runtime_config_snapshot(config, quiet_console(), True)
+    before = build_runtime_config_snapshot(
+        config, quiet_console(), True, project_root=Path.cwd()
+    )
     config.settings.integrations.invoker.options = copy.deepcopy(
         config.settings.integrations.invoker.options
     )
@@ -99,7 +102,9 @@ def test_registration_order_is_deterministic_and_canonical_values_persist(
     config.settings.integrations.invoker.options["providers"]["fixture"] = dict(
         reversed(list(record.items()))
     )
-    after = build_runtime_config_snapshot(config, quiet_console(), False)
+    after = build_runtime_config_snapshot(
+        config, quiet_console(), False, project_root=Path.cwd()
+    )
     assert (
         before.snapshot.effective_runtime_config_signature
         == after.snapshot.effective_runtime_config_signature

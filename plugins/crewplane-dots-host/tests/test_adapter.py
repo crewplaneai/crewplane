@@ -116,7 +116,9 @@ def test_workspace_disabled_invocation_publishes_output(
     config.agents["dots"].invocation_idle_timeout_seconds = idle_timeout
     runner = AsyncMock(wraps=invocation_command.run_command_once)
     monkeypatch.setattr(invocation_command, "run_command_once", runner)
-    snapshot = build_runtime_config_snapshot(config, Console(file=io.StringIO()), True)
+    snapshot = build_runtime_config_snapshot(
+        config, Console(file=io.StringIO()), True, project_root=tmp_path
+    )
     adapter = instantiate_adapter(
         "invoker", config.settings.integrations.invoker.implementation
     )

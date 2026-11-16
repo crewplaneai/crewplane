@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.text import Text
 
 from crewplane.core import platform
 from crewplane.runtime.workspace.cleanup import WorkspaceCleanupResult
@@ -30,9 +31,11 @@ def cleanup_workspaces(
         typer.Option(
             "--config",
             "-c",
-            file_okay=True,
-            dir_okay=False,
-            help="Path to config file (default: .crewplane/config.yml)",
+            readable=False,
+            help=(
+                "Config file, relative to the invocation directory "
+                "(default: nearest ancestor .crewplane/config.yml)"
+            ),
         ),
     ] = None,
     dry_run: Annotated[
@@ -93,6 +96,7 @@ def cleanup_workspaces(
             older_than=older_than,
             orphans=orphans,
         )
+        console.print(Text(f"Crewplane project: {context.project_root}"))
         destructive = yes and not dry_run
         warn_all_projects_cleanup(console, context.all_projects)
         result = execute_workspace_cleanup(context, destructive)

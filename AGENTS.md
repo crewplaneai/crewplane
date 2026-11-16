@@ -71,7 +71,7 @@ Important invariants:
 
 - Workflow schema version must match `src/crewplane/version.py`
 - Markdown workflows require one `## <node-id>` section per frontmatter node
-- Imports are Markdown-only, alias-namespaced, and must stay within `Path.cwd()`
+- Imports are Markdown-only, alias-namespaced, and must stay within the selected project root
 - `{{param:key}}` is composition-time only; unbound params are rewritten to `{{var:key}}`
 - `{{node.output}}` references should only be valid for upstream dependencies
 

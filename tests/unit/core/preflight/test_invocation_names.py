@@ -39,7 +39,9 @@ def name_preview(root, alias, mode, depth, role="executor", index=0, audits=1):
         node.audit_rounds = audits
         config.settings.max_audit_rounds = audits
         node.review_starts_with = "reviewer"
-    snapshot = build_runtime_config_snapshot(config, Console(), True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), True, project_root=root
+    ).snapshot
     return compile_preflight_preview(
         make_source(workflow),
         config,

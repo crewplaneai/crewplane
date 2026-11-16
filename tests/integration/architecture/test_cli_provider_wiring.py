@@ -58,7 +58,9 @@ def test_authored_and_supplied_canonical_construction_preserve_identity(
 ):
     module, metadata = plugin
     config = config_for()
-    snapshot = build_runtime_config_snapshot(config, quiet_console(), True)
+    snapshot = build_runtime_config_snapshot(
+        config, quiet_console(), True, project_root=tmp_path
+    )
     canonical = copy.deepcopy(snapshot.invoker_options)
     for options in (None, canonical):
         components = build_runtime_components(
@@ -112,7 +114,7 @@ def test_unused_unknown_agents_fail_preview_and_construction(plugin, tmp_path):
         "Agent 'unused'" in diagnostic.message for diagnostic in preview.diagnostics
     )
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=tmp_path
     ).invoker_options
     with pytest.raises(ValueError, match="unused"):
         CliInvokerAdapter().create_invoker(config, canonical)
@@ -130,7 +132,9 @@ def test_canonicalization_and_request_preview_never_probe_or_allocate(
         module, "FIXTURE", replace(module.FIXTURE, check_availability=probe)
     )
     config = config_for()
-    snapshot = build_runtime_config_snapshot(config, quiet_console(), True)
+    snapshot = build_runtime_config_snapshot(
+        config, quiet_console(), True, project_root=tmp_path
+    )
     assert snapshot.invoker_options["providers"]["fixture"]["version"] == "1.2.3"
     assert not preview_for(config, tmp_path).has_errors()
     assert not (tmp_path / ".crewplane").exists()
@@ -174,7 +178,7 @@ def test_sync_and_async_preflight_use_exact_effective_requests(
     config = config_for()
     assert not preview_for(config, tmp_path, availability=True).has_errors()
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=tmp_path
     ).invoker_options
     diagnostics = asyncio.run(
         collect_invoker_availability_diagnostics(
@@ -204,7 +208,7 @@ def test_invalid_requests_and_missing_executables_skip_callbacks(
     source.workflow.nodes[0].providers[0].reasoning = "high"
     config.agents["local"].cli_cmd = [sys.executable]
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=tmp_path
     ).invoker_options
     result = asyncio.run(
         collect_invoker_availability_diagnostics(

@@ -51,6 +51,7 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
         ],
     )
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -123,6 +124,7 @@ def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
         os.chdir(original_cwd)
     config = mock_config()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -149,6 +151,7 @@ def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None
     config = mock_config()
     workflow = literal_workflow()
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -188,6 +191,7 @@ def _persisted_plan_payload(root: Path) -> dict[str, Any]:
     config = mock_config()
     workflow = literal_workflow()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,

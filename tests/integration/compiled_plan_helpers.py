@@ -28,6 +28,7 @@ def compile_plan_for_components(
 ) -> tuple[PreflightExecutionPlan, SecretContext]:
     output = components.artifact_store
     snapshot = build_runtime_config_snapshot(
+        project_root=project_root,
         config=config,
         console=Console(file=None),
         no_live=True,

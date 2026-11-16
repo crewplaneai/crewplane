@@ -14,8 +14,13 @@ Start with a dry run so you can see exactly what would be deleted.
 For the workspace boundary and why cleanup only targets managed cache entries,
 see [Workspace isolation](workspace-isolation.md).
 
-By default, cleanup is scoped to the current Git repository. Use `--all-projects`
-to clean every repository bucket under the configured workspace cache root.
+Cleanup uses [project discovery](running-workflows.md#project-and-workflow-selection),
+so you can invoke it from a descendant directory. It displays the selected
+project before its warning and results. Check that project before proceeding:
+its config and saved artifacts determine cleanup scope.
+
+By default, cleanup is scoped to the selected project's Git repository. Use
+`--all-projects` to clean every repository bucket under the configured workspace cache root.
 Crewplane cannot tell whether another project's cached workspace is still in
 use, so always preview an all-projects cleanup first. Adding
 `--all-projects --yes` confirms that you accept this risk.

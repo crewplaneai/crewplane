@@ -236,6 +236,7 @@ def test_workspace_imported_file_token_resolves_from_project_root(
     source = load_workflow_source_for_preflight(root_workflow, project_root=root)
     config = workspace_config()
     runtime_snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,

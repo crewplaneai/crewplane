@@ -386,3 +386,21 @@ def test_cleanup_workspaces_rejects_project_cache_root(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "must not overlap" in result.output
     assert project_root.exists()
+
+
+@pytest.mark.parametrize("options", [[], ["--yes", "--dry-run"]])
+def test_cleanup_from_descendant_selects_and_reports_ancestor_without_deleting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: list[str]
+) -> None:
+    project_root, _, workspace_path = cleanup_project(tmp_path, initialize_git=True)
+    caller = project_root / "sub/child"
+    caller.mkdir(parents=True)
+    monkeypatch.chdir(caller)
+    monkeypatch.setenv("COLUMNS", "400")
+    result = CliRunner().invoke(app, ["cleanup", "workspaces", *options])
+    assert result.exit_code == 0, (result.output, result.exception)
+    assert result.output.startswith(f"Crewplane project: {project_root}\n")
+    assert "Would remove 1 workspace path(s)" in result.output
+    assert workspace_path.exists()
+    assert not (caller / ".crewplane").exists()
+    assert Path.cwd() == caller

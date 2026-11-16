@@ -73,3 +73,21 @@ def process_output(
     encoding: str,
 ) -> str:
     return (result.stdout + result.stderr).decode(encoding, errors="replace")
+
+
+def test_init_below_existing_project_still_initializes_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.integration.cli.dry_run_helpers import write_standard_project
+    from tests.integration.cli.repeat_force_run_support import filesystem_snapshot
+
+    write_standard_project(tmp_path)
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
+    before = filesystem_snapshot(tmp_path / ".crewplane")
+    monkeypatch.chdir(child)
+    result = CliRunner().invoke(cli.app, ["init"])
+    assert result.exit_code == 0, result.output
+    assert (child / ".crewplane/config.yml").is_file()
+    assert filesystem_snapshot(tmp_path / ".crewplane") == before
+    assert "Crewplane project:" not in result.output

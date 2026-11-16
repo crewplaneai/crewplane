@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from crewplane.adapters.invokers.cli import collect_cli_availability_errors
+from crewplane.adapters.invokers.cli_invoker.command_posix import PosixCommandStrategy
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.graph import topological_waves
@@ -250,7 +251,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
         with patch.dict("os.environ", {"PATH": "inherited-bin"}):
             errors = _collect_wrapped_cli_errors(
-                ["env", "custom-provider"],
+                ["/usr/bin/env", "custom-provider"],
                 project_root,
                 _platform_env_executable,
             )
@@ -637,3 +638,50 @@ def test_availability_classifies_both_path_separators(
     assert len(errors) == (0 if executable_file else 1)
     if errors:
         assert "not found or not executable" in errors[0]
+
+
+@requires_posix
+@pytest.mark.parametrize("search_path", ["tools", ""])
+def test_collector_rebases_inherited_path_without_ambient_lookup(
+    tmp_path, monkeypatch, search_path
+):
+    caller = tmp_path / "child"
+    caller.mkdir()
+    executable = tmp_path / search_path / "provider"
+    _write_executable(executable)
+    _write_executable(caller / search_path / "provider")
+    monkeypatch.chdir(caller)
+    monkeypatch.setenv("PATH", search_path)
+    workflow = WorkflowPlan(
+        name="Workflow",
+        nodes=[
+            WorkflowNode(
+                id="node.a",
+                mode="parallel",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                ],
+                providers=[ProviderSpec(provider="agent")],
+            )
+        ],
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"agent": AgentConfig(cli_cmd=["provider"])},
+    )
+    strategy = PosixCommandStrategy()
+
+    assert (
+        strategy.collect_availability_errors(
+            workflow, config, _missing_executable, tmp_path
+        )
+        == []
+    )
+    executable.unlink()
+    errors = strategy.collect_availability_errors(
+        workflow, config, _missing_executable, tmp_path
+    )
+
+    assert len(errors) == 1
+    assert "CLI 'provider' not found in PATH" in errors[0]
+    assert Path.cwd() == caller

@@ -92,7 +92,9 @@ def main():
             }
         },
     )
-    snapshot = build_runtime_config_snapshot(config, Console(), True)
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), True, project_root=Path.cwd()
+    )
     adapter = CliInvokerAdapter()
     canonical = snapshot.invoker_options
     invoker = adapter.create_invoker(config, canonical)

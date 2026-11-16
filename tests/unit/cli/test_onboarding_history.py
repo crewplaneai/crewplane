@@ -48,7 +48,9 @@ def test_successful_mock_manifest_is_authoritative_evidence(tmp_path: Path) -> N
 def test_runtime_snapshot_producer_matches_onboarding_evidence(tmp_path: Path) -> None:
     config, _, console = initialize_default_project(tmp_path)
     config.settings.integrations.invoker.implementation = "mock"
-    snapshot = build_runtime_config_snapshot(config, console, no_live=True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, console, no_live=True, project_root=tmp_path
+    ).snapshot
     manifest = make_run_manifest(
         run_id="snapshot-run", run_key_name="workflow--snapshot-run", status="succeeded"
     ).model_copy(update={"runtime_config_snapshot": snapshot.redacted_payload()})

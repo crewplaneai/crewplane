@@ -51,7 +51,13 @@ def resolve_cli_workflow_paths(
         "Run 'crewplane init' first.",
         console,
     )
-    project_root = project_root_from_config_path(config)
+    try:
+        project_root = project_root_from_config_path(config)
+    except (OSError, ValueError, RuntimeError) as exc:
+        console.print(
+            "[red]Error:[/]", Text(f"Cannot resolve project for {config}: {exc}")
+        )
+        raise typer.Exit(code=1) from exc
     tasks = resolve_tasks_file(
         tasks_file,
         "Run 'crewplane init' first.",
@@ -63,6 +69,21 @@ def resolve_cli_workflow_paths(
         config=config,
         project_root=project_root,
         state_dir=project_root / STATE_DIR_NAME,
+    )
+
+
+def format_cli_workflow_paths(paths: CliWorkflowPaths) -> Text:
+    def display(path: Path) -> str:
+        return str(
+            path.relative_to(paths.project_root)
+            if path.is_relative_to(paths.project_root)
+            else path
+        )
+
+    return Text(
+        f"Crewplane project: {paths.project_root}\n"
+        f"Config: {display(paths.config)}\n"
+        f"Workflow: {display(paths.tasks)}"
     )
 
 
@@ -124,7 +145,6 @@ def compile_validate_preview_for_context(
 def raise_context_loading_failure(
     exc: Exception,
     console: Console,
-    tasks_file: Path | None = None,
     paths: CliWorkflowPaths | None = None,
     write_diagnostics: bool = False,
 ) -> Never:
@@ -136,12 +156,12 @@ def raise_context_loading_failure(
             f"{cleanup_error} (PID {evidence.pid}, "
             f"process group {evidence.process_group_id})"
         )
-    if write_diagnostics:
+    if write_diagnostics and paths is not None:
         workflow_runner.write_early_preflight_failure_run(
-            paths.tasks if paths is not None else tasks_file,
+            paths.tasks,
             message,
-            project_root=paths.project_root if paths is not None else None,
-            state_dir=paths.state_dir if paths is not None else None,
+            project_root=paths.project_root,
+            state_dir=paths.state_dir,
         )
     console.print("[red]✗[/] Invalid:", Text(message))
     raise typer.Exit(code=1) from exc

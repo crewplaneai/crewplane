@@ -589,6 +589,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
 
             output_text = stream.getvalue()
             self.assertIn(
-                ".crewplane/config.ymlnotfound",
+                "No.crewplane/config.ymlfoundfrom",
                 "".join(output_text.replace("\\", "/").split()),
             )
+            self.assertIn("--config", output_text)
+            self.assertIn("through its ancestors", " ".join(output_text.split()))

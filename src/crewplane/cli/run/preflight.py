@@ -89,6 +89,7 @@ def compile_workflow_preview(
         config=config,
         console=console,
         no_live=no_live,
+        project_root=context.project_root,
     )
     diagnostics = (
         asyncio.run(

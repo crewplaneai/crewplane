@@ -81,6 +81,7 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
             config.agents["mock"].model_dump(mode="json", exclude_none=True)
         )
         snapshot = build_runtime_config_snapshot(
+            project_root=tmp_path,
             config=config,
             console=Console(file=None),
             no_live=True,
@@ -165,7 +166,7 @@ def test_agent_environment_round_trip_preserves_literal_names(
     config = mock_config()
     config.agents["mock"].environment = {name: value}
     snapshot = build_runtime_config_snapshot(
-        config=config, console=Console(file=None), no_live=True
+        project_root=tmp_path, config=config, console=Console(file=None), no_live=True
     )
     preview = compile_preflight_preview(
         source=make_source(literal_workflow()),
@@ -209,6 +210,7 @@ def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
             options={"api_token": token_value},
         )
         snapshot = build_runtime_config_snapshot(
+            project_root=tmp_path,
             config=config,
             console=Console(file=None),
             no_live=True,
@@ -286,6 +288,7 @@ def test_sensitive_adapter_options_discard_raw_redaction_metadata() -> None:
     )
 
     snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -318,6 +321,7 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
         ],
     )
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -363,6 +367,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
         ],
     )
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,

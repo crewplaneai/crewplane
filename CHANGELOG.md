@@ -4,6 +4,12 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Find the nearest Crewplane project from descendant directories for validation, runs, and workspace cleanup.
+- Resolve relative workflow paths, `allowed_template_paths`, and mock `output_dir`
+  from the selected project root instead of the invocation directory.
+
 ## [0.4.3] - 2026-11-15
 
 ### Added

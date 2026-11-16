@@ -1,4 +1,5 @@
 import unittest
+from contextlib import chdir
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -20,7 +21,7 @@ from crewplane.core.config import (
 from crewplane.core.token_budget import TokenBudgetOverride, resolve_token_budget
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.config_secrets import CONFIG_FAILURES, assert_no_secret
-from tests.helpers.platforms import requires_workspace_support
+from tests.helpers.platforms import requires_workspace_support, symlink_or_skip
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -752,3 +753,96 @@ def test_load_config_errors_do_not_echo_rejected_values(tmp_path, case):
     assert_no_secret(str(raised.value))
     assert location in str(raised.value)
     assert raised.value.__suppress_context__
+
+
+@pytest.mark.parametrize("config_directory", [".crewplane", "settings"])
+def test_file_loaded_allowlists_use_config_project_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_directory: str
+) -> None:
+    config_parent = tmp_path / config_directory
+    config_parent.mkdir()
+    project_root = tmp_path if config_directory == ".crewplane" else config_parent
+    descendant = project_root / "nested" / "child"
+    descendant.mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    absolute = tmp_path / "external"
+    config_path = config_parent / "config.yml"
+    config_path.write_text(
+        f'version: "{SCHEMA_VERSION}"\n'
+        "agents: {}\n"
+        "settings:\n"
+        "  file_access:\n"
+        "    allowed_template_paths:\n"
+        "      - ../shared\n"
+        f"      - '{absolute.as_posix()}'\n"
+        "      - ~/fixtures\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    with chdir(project_root):
+        root_config = load_config(config_path)
+    with chdir(descendant):
+        descendant_config = load_config(config_path)
+
+    expected = [
+        (project_root.parent / "shared").resolve().as_posix(),
+        absolute.resolve().as_posix(),
+        (home / "fixtures").resolve().as_posix(),
+    ]
+    assert root_config.settings.file_access.allowed_template_paths == expected
+    assert descendant_config.settings.file_access.allowed_template_paths == expected
+
+
+def test_file_loaded_allowlists_follow_config_and_directory_symlinks(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    state = source / ".crewplane"
+    state.mkdir(parents=True)
+    target = tmp_path / "shared"
+    target.mkdir()
+    symlink_or_skip(source / "allowed", target, target_is_directory=True)
+    config_path = state / "config.yml"
+    config_path.write_text(
+        f'version: "{SCHEMA_VERSION}"\n'
+        "agents: {}\n"
+        "settings:\n"
+        "  file_access:\n"
+        "    allowed_template_paths: [allowed]\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    alias = tmp_path / "alias.yml"
+    symlink_or_skip(alias, config_path)
+    caller = tmp_path / "caller"
+    caller.mkdir()
+
+    with chdir(caller):
+        config = load_config(alias)
+
+    assert config.settings.file_access.allowed_template_paths == [
+        target.resolve().as_posix()
+    ]
+
+
+@pytest.mark.parametrize("value", ["['   ']", "[null]", "[42]"])
+def test_file_loaded_allowlists_preserve_invalid_value_rejection(
+    tmp_path: Path, value: str
+) -> None:
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        f'version: "{SCHEMA_VERSION}"\n'
+        "agents: {}\n"
+        "settings:\n"
+        "  file_access:\n"
+        f"    allowed_template_paths: {value}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    with pytest.raises(ValueError):
+        load_config(config_path)
