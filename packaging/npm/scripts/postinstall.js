@@ -14,32 +14,32 @@ const packageVersion =
   process.env.CREWPLANE_VERSION || packageJson.crewplane.pythonPackageVersion;
 const DEFAULT_PYTHON = "3.13";
 // BEGIN GENERATED UV BOOTSTRAP METADATA
-const UV_VERSION = "0.13.7";
+const UV_VERSION = "0.13.8";
 const UV_RELEASE_BASE_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`;
 const UV_ARCHIVES = {
   "darwin:arm64": {
     target: "aarch64-apple-darwin",
-    sha256: "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731",
+    sha256: "6b71028a6b904f2ae3340ef52e595512de807d06c0a20eaef2f692581b246558",
   },
   "darwin:x64": {
     target: "x86_64-apple-darwin",
-    sha256: "20c47e4c1f630b8abaff8c291fa9b9aa300fef92c4fbff95adf198b55287cda7",
+    sha256: "a04c2ffeac28b2003a2c13caf538ab425fcd7def3e4a41571f4a8fb370a66af3",
   },
   "linux:arm64:gnu": {
     target: "aarch64-unknown-linux-gnu",
-    sha256: "71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc",
+    sha256: "74f2f5c6024d397481db228db8fc25eed420db192243f88438c118e7e013e585",
   },
   "linux:arm64:musl": {
     target: "aarch64-unknown-linux-musl",
-    sha256: "2d3ec076a0c4c0e8250bb6418c44080828b544f1a3be0b6e46adf9fb6923de45",
+    sha256: "0c6f8593fcf1eadfc60e663b685c408267559d7c5d61c689bbb9f3a7e369ba32",
   },
   "linux:x64:gnu": {
     target: "x86_64-unknown-linux-gnu",
-    sha256: "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83",
+    sha256: "5acfd9177cfecf0bf87578f059728215ccc884388988f55f7a65041b57387d91",
   },
   "linux:x64:musl": {
     target: "x86_64-unknown-linux-musl",
-    sha256: "287491da03f2a785c70fa75b13e1f849918c2f2b5415fe84876b8214eeb792f9",
+    sha256: "61fb26dabc4f0cf1d050fc6c67d40e43e4fae2994af21ebc1e050b233bf2b5ed",
   },
 };
 // END GENERATED UV BOOTSTRAP METADATA
