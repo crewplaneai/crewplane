@@ -1,5 +1,5 @@
 from pathlib import Path
-from stat import S_ISREG
+from stat import S_ISDIR, S_ISREG
 from typing import Never
 
 import typer
@@ -79,6 +79,16 @@ def resolve_state_file(
             try:
                 candidate.lstat()
             except FileNotFoundError:
+                # Windows also reports a non-directory parent as a missing file.
+                try:
+                    parent_mode = candidate.parent.stat().st_mode
+                except FileNotFoundError:
+                    continue
+                if not S_ISDIR(parent_mode):
+                    raise ValueError(
+                        f"Cannot inspect config {candidate}: "
+                        f"{candidate.parent} is not a directory"
+                    ) from None
                 continue
             except OSError as exc:
                 raise ValueError(f"Cannot inspect config {candidate}: {exc}") from exc

@@ -132,6 +132,32 @@ def test_probe_errors_are_not_treated_as_missing(
     assert str(marker) in stream.getvalue()
 
 
+def test_missing_config_error_does_not_hide_non_directory_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file(tmp_path)
+    caller = tmp_path / "child"
+    caller.mkdir()
+    state_dir = caller / ".crewplane"
+    state_dir.write_bytes(b"not a directory")
+    marker = state_dir / "config.yml"
+    original_lstat = Path.lstat
+
+    def report_missing(path: Path) -> Any:
+        if path == marker:
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", report_missing)
+    monkeypatch.chdir(caller)
+    stream = io.StringIO()
+    with pytest.raises(typer.Exit):
+        resolve_state_file(None, "config.yml", "", Console(file=stream, width=400))
+    assert str(marker) in stream.getvalue()
+    assert "not a directory" in stream.getvalue()
+    assert Path.cwd() == caller
+
+
 @pytest.mark.parametrize("spelling", ["relative", "absolute", "home"])
 def test_explicit_config_uses_invocation_base_and_bypasses_discovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelling: str
