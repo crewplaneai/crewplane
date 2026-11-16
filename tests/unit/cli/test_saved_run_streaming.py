@@ -164,14 +164,20 @@ def test_follow_rejects_changed_file(
         elif change == "replace":
             replacement = tmp_path / "replacement"
             replacement.write_bytes(b"replacement\n")
+            # Windows cannot overwrite an open destination, even with delete sharing.
+            path.rename(tmp_path / "original")
             replacement.replace(path)
         elif change == "truncate":
             path.write_bytes(b"")
         elif change == "hardlink":
             os.link(path, tmp_path / "alias")
         else:
-            path.parent.rename(tmp_path / "moved")
-            symlink_or_skip(path.parent, tmp_path / "moved", target_is_directory=True)
+            moved = tmp_path / "moved"
+            moved.mkdir()
+            # Windows also prevents renaming a directory containing an open file.
+            path.rename(moved / path.name)
+            path.parent.rmdir()
+            symlink_or_skip(path.parent, moved, target_is_directory=True)
 
     monkeypatch.setattr(streaming.time, "sleep", poll)
     expected = {

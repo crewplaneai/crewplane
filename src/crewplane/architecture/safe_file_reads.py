@@ -16,7 +16,7 @@ def open_regular_file(path: Path) -> AbstractContextManager[int]:
 
 
 def open_shared_regular_file(path: Path) -> AbstractContextManager[int]:
-    """Allow log appends and replacement; callers must revalidate file identity."""
+    """Allow log appends; callers must revalidate file identity."""
     return safe_file_operations.safe_file_operations().open_shared_regular_file(path)
 
 
