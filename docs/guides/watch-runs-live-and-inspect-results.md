@@ -59,6 +59,10 @@ While you inspect a log, the right pane stays on that log until you press
 The files under `.crewplane/` are the source of truth after a run. The dashboard
 is only a live view on top of those same records.
 
+Use `crewplane runs list` and `crewplane runs show latest` after a run. See
+[Inspecting Run Records](inspecting-artifacts.md#find-the-latest-run) for saved
+report, results, and log commands that do not require the dashboard.
+
 | Need | Where to look |
 | --- | --- |
 | Live workflow status | tmux dashboard while the run is active. |

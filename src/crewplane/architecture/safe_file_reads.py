@@ -15,6 +15,11 @@ def open_regular_file(path: Path) -> AbstractContextManager[int]:
     return safe_file_operations.safe_file_operations().open_regular_file(path)
 
 
+def open_shared_regular_file(path: Path) -> AbstractContextManager[int]:
+    """Allow log appends; callers must revalidate file identity."""
+    return safe_file_operations.safe_file_operations().open_shared_regular_file(path)
+
+
 def stable_file_signature(
     metadata: os.stat_result,
 ) -> tuple[int, int, int, int, int, int]:

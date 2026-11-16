@@ -132,6 +132,9 @@ independent bootstrap limit before it can read the file.
   configuration by execution impact, regardless of file extension.
 - During code review or bug investigation, run targeted tests only when needed
   to reproduce a defect or resolve a concrete behavior question.
+- For filesystem, stream, and process changes, inspect the affected POSIX and
+  Windows implementations. Report native-platform validation separately from
+  static checks, and identify unverified platforms.
 - Do not run broad validation by default, including `make check` or unscoped
   `make test`. Broaden only for an explicit request for that scope, a procedure
   requiring that local gate, or a concrete impact that narrower checks cannot

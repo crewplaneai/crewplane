@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import TypeGuard, get_args
+from typing import TypeIs, get_args
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -22,6 +22,12 @@ from crewplane.core.value_checks import (
 )
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
+)
+from crewplane.observability.events.inspection import (
+    EventLogDiagnostic,
+    EventLogInspection,
+    inspection_event_problem,
+    read_event_snapshot,
 )
 from crewplane.observability.events.payloads import (
     EventPayload,
@@ -60,7 +66,101 @@ def read_event_log(event_log_path: Path) -> list[ExecutionEvent]:
     return [event for line in lines if (event := event_from_line(line)) is not None]
 
 
+def inspect_event_log(
+    event_log_path: Path, workflow_name: str, run_id: str
+) -> EventLogInspection:
+    """Retain validated events and disclose incomplete saved evidence."""
+    try:
+        snapshot = read_event_snapshot(event_log_path)
+    except FileNotFoundError:
+        return EventLogInspection(
+            diagnostics=(EventLogDiagnostic("missing", "Saved event log is missing."),)
+        )
+    except OSError:
+        return EventLogInspection(
+            diagnostics=(
+                EventLogDiagnostic(
+                    "unreadable",
+                    "Saved event log cannot be read safely; retry inspection.",
+                ),
+            )
+        )
+    except ValueError:
+        return EventLogInspection(
+            diagnostics=(
+                EventLogDiagnostic(
+                    "unsafe", "Saved event log is unsafe or changed; retry inspection."
+                ),
+            )
+        )
+    return _inspect_event_snapshot(snapshot, workflow_name, run_id)
+
+
+def _inspect_event_snapshot(
+    snapshot: bytes, workflow_name: str, run_id: str
+) -> EventLogInspection:
+    events: list[ExecutionEvent] = []
+    diagnostics: list[EventLogDiagnostic] = []
+    lines = snapshot.split(b"\n")
+    for line_number, raw_line in enumerate(lines[:-1], 1):
+        if not raw_line.strip():
+            continue
+        result = _inspect_event_line(raw_line, line_number, workflow_name, run_id)
+        if isinstance(result, EventLogDiagnostic):
+            diagnostics.append(result)
+        else:
+            events.append(result)
+    if lines[-1].strip():
+        diagnostics.append(
+            EventLogDiagnostic(
+                "partial",
+                "Unfinished trailing event append; retry inspection.",
+                len(lines),
+            )
+        )
+    return EventLogInspection(tuple(events), tuple(diagnostics))
+
+
+def _inspect_event_line(
+    raw_line: bytes, line_number: int, workflow_name: str, run_id: str
+) -> ExecutionEvent | EventLogDiagnostic:
+    try:
+        line = raw_line.decode("utf-8")
+    except UnicodeDecodeError:
+        return EventLogDiagnostic(
+            "encoding", "Invalid UTF-8 in saved event record.", line_number
+        )
+    try:
+        event = event_from_line(line)
+    except (ValueError, OverflowError, OSError, RecursionError):
+        event = None
+    if event is None:
+        return EventLogDiagnostic(
+            "malformed", "Malformed saved event record.", line_number
+        )
+    if event.workflow_name != workflow_name or event.run_id != run_id:
+        return EventLogDiagnostic(
+            "identity", "Saved event workflow/run identity mismatch.", line_number
+        )
+    problem = inspection_event_problem(event, json.loads(line))
+    if problem is not None:
+        return EventLogDiagnostic(
+            "invalid", f"Invalid saved event {problem}.", line_number
+        )
+    return event
+
+
 def event_from_line(line: str) -> ExecutionEvent | None:
+    """Decode one JSON object using the tolerant ``event_from_record`` contract.
+
+    Return ``None`` for blank lines, invalid JSON syntax, non-object JSON, or
+    rejected records. Optional-field normalization and timestamp fallback follow
+    ``event_from_record``; strict saved-evidence validation is not performed.
+
+    Only ``JSONDecodeError`` is caught here. Other parser failures, such as
+    ``ValueError`` for oversized integer literals or ``RecursionError`` for deep
+    nesting, and exceptions propagated by ``event_from_record`` escape.
+    """
     if not line.strip():
         return None
     try:
@@ -73,6 +173,23 @@ def event_from_line(line: str) -> ExecutionEvent | None:
 
 
 def event_from_record(record: Mapping[str, object]) -> ExecutionEvent | None:
+    """Decode a historical record without strict saved-evidence validation.
+
+    Return ``None`` for an unknown or non-string event type, missing/non-string
+    workflow, run, or timestamp fields, invalid required payload fields, or
+    ``TypeError``/``ValueError`` during context or event construction. A non-null
+    usage report count must be a nonnegative integer, excluding booleans.
+
+    Missing or malformed optional fields generally become ``None``; an unknown
+    string role rejects the record. Invalid token or runtime-attribute mappings
+    become ``None`` as a whole. Preserve timestamp text, using ``0.0`` when ISO
+    parsing or timestamp conversion raises ``ValueError``.
+
+    Payload decoding occurs outside the context/event exception handler; its
+    uncaught errors propagate, including numeric conversion ``OverflowError``.
+    Timestamp ``OverflowError`` and ``OSError`` also propagate. Use
+    ``inspect_event_log`` for strict timestamp, identity, and invocation checks.
+    """
     raw_event_type = record.get("event_type")
     if not isinstance(raw_event_type, str):
         return None
@@ -263,7 +380,7 @@ def _output_extraction_status(value: object) -> OutputExtractionStatus | None:
 
 def _is_output_extraction_status(
     value: object,
-) -> TypeGuard[OutputExtractionStatus]:
+) -> TypeIs[OutputExtractionStatus]:
     return isinstance(value, str) and value in _OUTPUT_EXTRACTION_STATUSES
 
 
@@ -313,5 +430,5 @@ def _runtime_log_attributes(
     return result
 
 
-def _is_runtime_log_value(value: object) -> TypeGuard[RuntimeLogValue]:
+def _is_runtime_log_value(value: object) -> TypeIs[RuntimeLogValue]:
     return value is None or isinstance(value, str | int | float | bool)

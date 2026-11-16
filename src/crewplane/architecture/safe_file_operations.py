@@ -17,6 +17,7 @@ class SafeFileOperations:
     ensure_regular_file: Callable[[Path], Path]
     replace_contained_file: Callable[[Path, tuple[str, ...], Path], Path]
     open_regular_file: Callable[[Path], AbstractContextManager[int]]
+    open_shared_regular_file: Callable[[Path], AbstractContextManager[int]]
     open_destination: Callable[[Path], AbstractContextManager[int]]
     open_contained_file: Callable[[Path, str], AbstractContextManager[int]]
     signature_timestamp: Callable[[os.stat_result], int]
@@ -33,6 +34,7 @@ def safe_file_operations() -> SafeFileOperations:
             ensure_regular_file=safe_files_windows.ensure_regular_file,
             replace_contained_file=safe_files_windows.replace_contained_file,
             open_regular_file=safe_files_windows.open_regular_file,
+            open_shared_regular_file=safe_files_windows.open_shared_regular_file,
             open_destination=safe_files_windows.open_writable_file,
             open_contained_file=safe_files_windows.open_contained_file,
             signature_timestamp=safe_files_windows.signature_timestamp,
@@ -46,6 +48,7 @@ def safe_file_operations() -> SafeFileOperations:
         ensure_regular_file=safe_files_posix.ensure_single_link_regular_file,
         replace_contained_file=safe_files_posix.replace_contained_file,
         open_regular_file=safe_files_posix.open_regular_file,
+        open_shared_regular_file=safe_files_posix.open_regular_file,
         open_destination=safe_files_posix.open_destination,
         open_contained_file=safe_files_posix.open_contained_file,
         signature_timestamp=safe_files_posix.signature_timestamp,

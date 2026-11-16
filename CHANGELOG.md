@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Inspect project-local saved executions with `crewplane runs list`, `show`, `open`, and `logs`, including reused-node evidence and pinned log following.
+
 ### Changed
 
 - Align runtime and node/provider token comparisons in end-of-run summaries, with requested reasoning labels and clearer reporting coverage.

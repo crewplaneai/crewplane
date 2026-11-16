@@ -101,6 +101,31 @@ def test_contained_directory_creation_and_binary_append(tmp_path, handles):
     assert calls
 
 
+def test_shared_reader_releases_lookup_handles_and_preserves_file_ownership(
+    tmp_path, handles
+):
+    opened, calls = handles
+    target = tmp_path / "log"
+    target.write_bytes(b"first\n")
+
+    with operations.open_shared_regular_file(target) as descriptor:
+        assert all(handle.closed for handle in opened)
+        assert calls[-1] == (
+            "open",
+            target,
+            operations.GENERIC_READ,
+            operations.FILE_SHARE_READ
+            | operations.FILE_SHARE_WRITE
+            | operations.FILE_SHARE_DELETE,
+        )
+        with target.open("ab") as writer:
+            writer.write(b"second\r\n")
+        assert os.read(descriptor, 100) == b"first\nsecond\r\n"
+
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
+
+
 def test_long_path_failures_retain_actionable_note(tmp_path, handles, monkeypatch):
     opened, calls = handles
     error = OSError("too long")
