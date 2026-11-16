@@ -60,6 +60,12 @@ def test_every_pass_reloads_execution_inputs(
     with patch.object(cli.workflow_runner, "execute_workflow_run", new=run_and_edit):
         result = project.run("--no-live")
     assert result.exit_code == 0, (result.output, result.exception)
+    assert result.output.count("Crewplane project:") == 1
+    assert result.output.count("Config:") == 1
+    assert (
+        result.output.count(f"Workflow: {project.workflow_path.relative_to(tmp_path)}")
+        == 1
+    )
     signatures = [
         record["workflow_signature"] for record in project.manifests(completed_runs)
     ]

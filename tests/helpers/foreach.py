@@ -60,7 +60,9 @@ def compile_foreach_file(
 ) -> PreflightCompilationPreview:
     config = config or foreach_config()
     source = load_workflow_source_for_preflight(path, path.parent)
-    snapshot = build_runtime_config_snapshot(config, Console(), no_live=True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), no_live=True, project_root=path.parent
+    ).snapshot
     return compile_preflight_preview(
         source,
         config,

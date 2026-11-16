@@ -65,6 +65,7 @@ def _config(
 
 def _snapshot_for_agent(agent_config: AgentConfig) -> RuntimeConfigSnapshot:
     return build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(agent_config=agent_config),
         console=Console(file=None),
         no_live=True,
@@ -74,11 +75,13 @@ def _snapshot_for_agent(agent_config: AgentConfig) -> RuntimeConfigSnapshot:
 def test_observer_only_no_live_is_excluded_from_runtime_signature() -> None:
     console = Console(file=None)
     first = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(),
         console=console,
         no_live=False,
     ).snapshot
     second = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(),
         console=console,
         no_live=True,
@@ -96,11 +99,13 @@ def test_observer_only_no_live_is_excluded_from_runtime_signature() -> None:
 
 def test_disabled_workspace_settings_are_runtime_snapshot_equivalent() -> None:
     default_snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(),
         console=Console(file=None),
         no_live=True,
     ).snapshot
     disabled_snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(
             workspace={
                 "enabled": False,
@@ -126,6 +131,7 @@ def test_agent_snapshot_preserves_default_disabled_invocation_timeout() -> None:
     config = _config()
 
     snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -183,6 +189,7 @@ def test_snapshot_invalid_options_fail_before_artifact_allocation(
 
     with pytest.raises(ValueError, match="allowed_template_paths"):
         build_runtime_config_snapshot(
+            project_root=tmp_path,
             config=_config({"allowed_template_paths": "bad"}),
             console=Console(file=None),
             no_live=True,
@@ -270,6 +277,7 @@ def test_dotted_artifact_adapter_non_policy_allowlist_option_stays_owned() -> No
     )
 
     snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -302,6 +310,7 @@ def test_dotted_adapter_mixed_allowlist_option_stays_adapter_owned() -> None:
     )
 
     snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -323,6 +332,7 @@ def test_adapter_option_validation_errors_do_not_expose_adapter_details() -> Non
 
     with pytest.raises(ValueError) as exc_info:
         build_runtime_config_snapshot(
+            project_root=Path.cwd(),
             config=config,
             console=Console(file=None),
             no_live=True,
@@ -339,6 +349,7 @@ def test_adapter_option_validation_errors_do_not_expose_adapter_details() -> Non
 def test_snapshot_validates_inactive_ui_configuration() -> None:
     with pytest.raises(ValueError, match="none ui implementation does not support"):
         build_runtime_config_snapshot(
+            project_root=Path.cwd(),
             config=_config(ui_options={"unsupported": True}),
             console=Console(file=None),
             no_live=True,
@@ -348,6 +359,7 @@ def test_snapshot_validates_inactive_ui_configuration() -> None:
 def test_snapshot_resolves_inactive_ui_implementation() -> None:
     with pytest.raises(IntegrationResolutionError, match="Unknown ui implementation"):
         build_runtime_config_snapshot(
+            project_root=Path.cwd(),
             config=_config(ui_implementation="missing"),
             console=Console(file=None),
             no_live=True,
@@ -611,6 +623,7 @@ def test_canonical_options_accept_duplicate_sensitive_option_pointers() -> None:
 
 def test_command_argv_secrets_are_redacted_across_runtime_snapshot_fields() -> None:
     snapshot = build_runtime_config_snapshot(
+        project_root=Path.cwd(),
         config=_config(
             agent_config=AgentConfig(
                 cli_cmd=["provider", "--api-key", "AGENT_SECRET"],
@@ -681,3 +694,92 @@ def test_initial_snapshot_matches_keyless_refresh_and_preserves_secret_handles(
         snapshot.effective_runtime_config_signature
         == changed.effective_runtime_config_signature
     )
+
+
+@pytest.mark.parametrize(
+    "implementation",
+    [
+        "mock",
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+        "crewplane.adapters.invokers.mock.MockInvokerAdapter",
+    ],
+)
+def test_mock_fixtures_are_bound_before_snapshot_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, implementation: str
+) -> None:
+    child = tmp_path / "nested"
+    child.mkdir()
+    config = _config()
+    config.settings.integrations.invoker = IntegrationSpec(
+        implementation=implementation,
+        options={"output_mode": "file", "output_dir": "fixtures"},
+    )
+    monkeypatch.chdir(tmp_path)
+    first = build_runtime_config_snapshot(config, Console(), True, tmp_path)
+    monkeypatch.chdir(child)
+    second = build_runtime_config_snapshot(config, Console(), True, tmp_path)
+    assert first.invoker_options == second.invoker_options
+    assert first.invoker_options["output_dir"] == str(tmp_path / "fixtures")
+    assert (
+        first.snapshot.effective_runtime_config_signature
+        == second.snapshot.effective_runtime_config_signature
+    )
+    assert config.settings.integrations.invoker.options == {
+        "output_mode": "file",
+        "output_dir": "fixtures",
+    }
+    assert not (tmp_path / ".crewplane").exists()
+    assert Path.cwd() == child
+
+
+@pytest.mark.parametrize("value", [None, "fixtures", "~/fixtures", "/fixtures"])
+def test_mock_fixture_binding_preserves_path_syntax(
+    tmp_path: Path, value: str | None
+) -> None:
+    config = _config()
+    config.settings.integrations.invoker.options["output_dir"] = value
+    result = build_runtime_config_snapshot(config, Console(), True, tmp_path)
+    expected = None if value is None else str((tmp_path / value).resolve())
+    assert result.invoker_options["output_dir"] == expected
+    assert config.settings.integrations.invoker.options["output_dir"] == value
+
+
+@pytest.mark.parametrize("value", ["", "  ", 12, [], {}])
+def test_mock_fixture_binding_preserves_invalid_option_validation(
+    tmp_path: Path, value: object
+) -> None:
+    config = _config()
+    config.settings.integrations.invoker.options["output_dir"] = value
+    with pytest.raises(ValueError, match="output_dir"):
+        build_runtime_config_snapshot(config, Console(), True, tmp_path)
+
+
+class OwnedFixtureInvokerAdapter:
+    def canonicalize_options(
+        self,
+        implementation: str,
+        resolved_identity: str,
+        options: dict[str, object] | None = None,
+    ) -> CanonicalIntegrationConfig:
+        return CanonicalIntegrationConfig(
+            implementation=implementation,
+            resolved_identity=resolved_identity,
+            options=dict(options or {}),
+            option_scopes={"output_dir": "execution"},
+        )
+
+    def create_invoker(
+        self, config: Config, options: dict[str, object] | None = None
+    ) -> object:
+        del config, options
+        raise AssertionError("snapshot must not create an invoker")
+
+
+def test_external_invoker_fixture_option_remains_adapter_owned(tmp_path: Path) -> None:
+    config = _config()
+    config.settings.integrations.invoker = IntegrationSpec(
+        implementation=f"{__name__}:OwnedFixtureInvokerAdapter",
+        options={"output_dir": "external-owned"},
+    )
+    result = build_runtime_config_snapshot(config, Console(), True, tmp_path)
+    assert result.invoker_options == {"output_dir": "external-owned"}

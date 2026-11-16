@@ -37,7 +37,9 @@ def compiled_execution_signatures(root):
     )
 
     config = mock_config()
-    snapshot = build_runtime_config_snapshot(config, Console(), True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), True, project_root=root
+    ).snapshot
     options = PreflightCompileOptions(
         project_root=root,
         state_dir=root / ".crewplane",

@@ -27,6 +27,7 @@ from crewplane.version import SCHEMA_VERSION
 from .agent_environment import validate_agent_environment
 from .config_errors import model_error_message, yaml_error_message
 from .provider_names import normalize_provider_name
+from .state_paths import project_root_from_config_path
 from .token_budget import TokenBudgetSettings
 from .workflow.keywords import (
     ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES,
@@ -252,12 +253,17 @@ class FileAccessSettings(BaseModel):
 
     @field_validator("allowed_template_paths")
     @classmethod
-    def _validate_allowed_template_paths(cls, value: list[str]) -> list[str]:
+    def _validate_allowed_template_paths(
+        cls, value: list[str], info: ValidationInfo
+    ) -> list[str]:
+        project_root = info.context.get("project_root") if info.context else None
         normalized: list[str] = []
         for raw_path in value:
             if not raw_path.strip():
                 raise ValueError("allowed_template_paths cannot contain blank paths")
             path = Path(raw_path).expanduser()
+            if not path.is_absolute() and project_root is not None:
+                path = project_root / path
             normalized.append(path.resolve(strict=False).as_posix())
         return normalized
 
@@ -332,7 +338,9 @@ def load_config(path: Path) -> Config:
         data = load_yaml_unique(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Config file must contain a YAML object.")
-        return Config.model_validate(data)
+        return Config.model_validate(
+            data, context={"project_root": project_root_from_config_path(path)}
+        )
     except ValidationError as error:
         raise ValueError(model_error_message(error, Config)) from None
     except YAMLError as error:

@@ -108,34 +108,68 @@ By default, Crewplane may skip a run when it finds an earlier success with the
 same tracked inputs. After a failed run, it may reuse completed steps. Use
 `crewplane run --force` to run the whole workflow from the beginning once.
 
-## Default Discovery
+## Project And Workflow Selection
 
-`crewplane validate` and `crewplane run` look for exactly one top-level
-`.task.md` file in `.crewplane/workflows/` when no workflow path is supplied.
-Fresh projects contain:
+`crewplane validate`, `crewplane run` (including `--dry-run`), and
+`crewplane cleanup workspaces` search for `.crewplane/config.yml` in the
+current directory, then each parent directory, nearest first. A bare
+`.crewplane/` directory is not a project marker, and Git boundaries do not
+stop the search.
+
+The first present config entry selects the project. A directory, broken
+symlink, unreadable file, malformed YAML, or invalid config there is an error;
+Crewplane does not fall back to a parent project's config. If no marker is
+found, run `crewplane init` in the intended project root or supply `--config`.
+
+An explicit `--config` bypasses discovery. Relative config paths start from
+the directory where you invoke the command; `~` expands to your home
+directory. The selected config's canonical target determines the project root:
+its parent, or its grandparent if the parent is named `.crewplane`. Config
+symlinks therefore use the target's project, and a symlinked working directory
+follows canonical ancestry.
+
+### Default Discovery
+
+When no workflow path is supplied, `validate` and `run` require exactly one
+top-level `*.task.md` entry in the selected project's `.crewplane/workflows/`.
+It must be a readable file. Fresh projects contain:
 
 ```text
 .crewplane/workflows/single-agent-review.task.md
 ```
 
-Advanced examples are copied under `.crewplane/workflows/example-templates/`.
-They are not selected by default.
-
-If there are zero or multiple top-level workflow files, select one explicitly:
+Advanced examples under `.crewplane/workflows/example-templates/` are not
+selected by default. If there are zero or multiple top-level candidates,
+select one explicitly:
 
 ```bash
 crewplane validate .crewplane/workflows/single-agent-review.task.md
 crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
 ```
 
-## Config Selection
+### Path Bases And Visible Context
 
-By default, commands use `.crewplane/config.yml`. Override it with:
+Relative workflow operands always start from the selected project root,
+including `./` and `../`; there is no caller-directory fallback. Absolute
+workflow paths and expanded `~` paths select that file without changing the
+project. Use an absolute path to select a caller-local workflow.
 
-```bash
-crewplane validate --config .crewplane/config.yml
-crewplane run --config .crewplane/config.yml
+After successful path selection, `validate`, `run`, and dry-run display the
+selected context before loading or checking the workflow. For example:
+
+```text
+Crewplane project: /home/user/my-project
+Config: .crewplane/config.yml
+Workflow: .crewplane/workflows/single-agent-review.task.md
 ```
+
+Paths inside the project are shown relative to it; external paths are absolute.
+Runs from a descendant share the project's artifacts and skip/resume history
+under its `.crewplane/`, without changing your working directory. Cleanup also
+displays its selected project before reporting its scope.
+
+`init`, onboarding, and saved-run inspection retain their current-directory
+scope. Run saved-run commands from the project root to inspect these runs.
 
 ## Validate
 

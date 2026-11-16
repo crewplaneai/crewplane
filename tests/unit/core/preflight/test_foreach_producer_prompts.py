@@ -227,7 +227,9 @@ def compile_source(
     source: PreflightWorkflowSource, root: Path
 ) -> PreflightCompilationPreview:
     config = foreach_config()
-    snapshot = build_runtime_config_snapshot(config, Console(), no_live=True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), no_live=True, project_root=root
+    ).snapshot
     return compile_preflight_preview(
         source, config, snapshot, PreflightCompileOptions(root, root / ".crewplane")
     )

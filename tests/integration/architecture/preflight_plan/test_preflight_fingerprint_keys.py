@@ -44,6 +44,7 @@ def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
         ],
     )
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,

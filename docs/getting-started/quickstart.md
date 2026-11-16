@@ -76,7 +76,7 @@ using the same folder layout as a run with a real AI tool. Use the sample
 responses to check that your setup works; they are not an AI review of your
 project.
 
-The run should start with:
+After the project, config, and workflow context block, the run reports:
 
 ```text
 Mock invoker active: no provider CLI commands will be started.

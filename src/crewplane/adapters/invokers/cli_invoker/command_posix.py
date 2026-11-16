@@ -46,7 +46,7 @@ def _collect_availability_errors(
             agent_config = config.agents.get(provider.provider)
             if agent_config is None:
                 continue
-            agent_lookup = environment_executable_lookup(
+            agent_lookup = _availability_executable_lookup(
                 agent_config.environment, executable_base_dir, executable_lookup
             )
             for requirement in _required_cli_executables(
@@ -185,6 +185,18 @@ def _env_command_search_path(command_context: EnvCommandContext) -> str | None:
     return None
 
 
+def _availability_executable_lookup(
+    overrides: Mapping[str, str],
+    root: Path,
+    fallback: Callable[[str], str | None],
+) -> Callable[[str], str | None]:
+    effective_environment = {**os.environ, **overrides}
+    search_path = effective_environment.get("PATH", os.defpath)
+    if "PATH" in overrides or _has_relative_search_path_entry(search_path):
+        return environment_executable_lookup({"PATH": search_path}, root, fallback)
+    return fallback
+
+
 def _has_relative_search_path_entry(search_path: str) -> bool:
     return any(not Path(entry).is_absolute() for entry in search_path.split(os.pathsep))
 
@@ -282,10 +294,10 @@ class PosixCommandStrategy:
         lookup: Callable[[str], str | None],
         environment: Mapping[str, str] | None = None,
     ) -> CommandAvailability:
-        lookup = environment_executable_lookup(environment or {}, root, lookup)
+        lookup = _availability_executable_lookup(environment or {}, root, lookup)
         executable_lookup = cache(lookup)
         requirements = _required_cli_executables(
-            command, root, executable_lookup, environment
+            command, root, executable_lookup, {**os.environ, **(environment or {})}
         )
         return CommandAvailability(
             all(
@@ -302,6 +314,19 @@ class PosixCommandStrategy:
             return resolve_command(
                 executable, request.working_directory, request.environment
             ).executable
+        search_path = request.environment.get("PATH", os.defpath)
+        if _has_relative_search_path_entry(search_path) and not (
+            Path(executable).is_absolute() or contains_path_separator(executable)
+        ):
+            root = request.working_directory or Path.cwd()
+            resolved = shutil.which(
+                executable, path=rebase_search_path(search_path, root)
+            )
+            return (
+                executable
+                if resolved is None
+                else _resolved_existing_executable(Path(resolved))
+            )
         return resolved_cli_executable(executable)
 
     def prepare_arguments(

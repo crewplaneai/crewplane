@@ -436,3 +436,33 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
         self.assertFalse(
             (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
         )
+
+
+@requires_resume_support
+def test_descendant_dry_run_reads_root_failed_history_without_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path, workflow_path = write_standard_project(tmp_path)
+    preview = compile_preview(tmp_path, config_path, workflow_path)
+    manifest = write_run_history(
+        tmp_path, preview, workflow_path, run_id="root-failure", status="failed"
+    )
+    node = preview.nodes[0]
+    descriptor = write_result(
+        tmp_path / ".crewplane/execution-results" / manifest.run_key_name,
+        node.artifact_contract.output_path,
+        "completed at root",
+    )
+    write_node_state(
+        tmp_path / ".crewplane/execution-stages" / manifest.run_key_name,
+        make_node_state(manifest, node.id, [descriptor]),
+    )
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
+    before = filesystem_snapshot(tmp_path)
+    monkeypatch.chdir(child)
+    result = CliRunner().invoke(cli.app, ["run", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Resume advisory: would_resume 1 node(s) from root-failure" in result.output
+    assert filesystem_snapshot(tmp_path) == before
+    assert Path.cwd() == child

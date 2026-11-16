@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Never
 
@@ -18,10 +19,13 @@ from crewplane.artifacts.resume.checkpoint_hydration import hydrate_review_check
 from crewplane.artifacts.resume.expansions import hydrate_expansions
 from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.bootstrap import (
+    RuntimeConfigSnapshotBuildResult,
     build_runtime_config_snapshot,
 )
 from crewplane.core.config import Config
+from crewplane.core.execution_state import TerminalRunStatus
 from crewplane.core.preflight import (
+    PreflightCompilationPreview,
     PreflightExecutionPlan,
 )
 from crewplane.core.preflight.diagnostics import (
@@ -33,12 +37,14 @@ from crewplane.core.preflight.foreach.compilation import inventory_workflow
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.observability import ObservabilityHub, PersistentRunLogger
+from crewplane.observability.types import WorkflowTopology
 from crewplane.runtime.agent.process.drain import unconfirmed_process_cleanup
 from crewplane.runtime.execution import execute_workflow
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
 )
 
+from .blocking_work import run_blocking_work, settle_run_work
 from .branch_export_output import print_branch_export_fulfillments
 from .components import allocate_run_output, build_components_for_run
 from .context import WorkflowRunContext, build_workflow_run_context
@@ -54,9 +60,9 @@ from .manifest import (
     print_resume_context_message,
 )
 from .observability import (
+    EXTERNAL_CANCEL_REASON,
     ExecuteWorkflowCallable,
     ObservabilityHubFactory,
-    WorkflowCancelledByUser,
     WorkflowWarningRecorder,
     execute_workflow_with_observability,
     print_end_of_run_summary,
@@ -69,6 +75,7 @@ from .preflight import (
     write_preflight_diagnostics,
 )
 from .resume import (
+    ResumePlan,
     build_resume_plan,
     require_filesystem_artifacts_backend,
     workflow_identity_for_source,
@@ -117,6 +124,13 @@ async def run_and_finalize_workflow(
     terminalization: TerminalizationCoordinator,
     resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
+    """Execute with observers and publish exports before terminal success.
+
+    The observability layer terminalizes execution, export failure, and
+    cancellation, then shuts down observers before committing the manifest.
+    Print the available summary once on success, exceptions, or cancellation;
+    propagate failures unchanged. Successful export records precede the summary.
+    """
     branch_export_records: tuple[Path, ...] = ()
     persistent_logger: PersistentRunLogger | None = None
 
@@ -149,13 +163,7 @@ async def run_and_finalize_workflow(
             workflow_identity=workflow_identity,
             resumed_node_ids=resumed_node_ids,
         )
-    except asyncio.CancelledError:
-        print_end_of_run_summary(context.console, persistent_logger)
-        raise
-    except WorkflowCancelledByUser:
-        print_end_of_run_summary(context.console, persistent_logger)
-        raise
-    except Exception:
+    except (asyncio.CancelledError, Exception):
         print_end_of_run_summary(context.console, persistent_logger)
         raise
     print_branch_export_fulfillments(branch_export_records, context.console)
@@ -168,6 +176,33 @@ def terminalize_component_setup_failure(
     warning_recorder: WorkflowWarningRecorder,
     terminalization: TerminalizationCoordinator,
     exc: Exception,
+    observability_hub_cls: ObservabilityHubFactory | None,
+) -> None:
+    """Publish a failed outcome for hydration or component construction errors.
+
+    Bind persistent logging, flush queued warnings, and publish terminal views
+    with one retry before shutting down observers and committing the manifest.
+    Publication or shutdown errors propagate; the caller re-raises ``exc`` on
+    success. This synchronous operation does not handle task cancellation.
+    """
+    _terminalize_component_setup(
+        output,
+        plan,
+        warning_recorder,
+        terminalization,
+        "failed",
+        exc,
+        observability_hub_cls,
+    )
+
+
+def _terminalize_component_setup(
+    output: ArtifactStorePort,
+    plan: PreflightExecutionPlan,
+    warning_recorder: WorkflowWarningRecorder,
+    terminalization: TerminalizationCoordinator,
+    status: TerminalRunStatus,
+    reason: Exception | str,
     observability_hub_cls: ObservabilityHubFactory | None,
 ) -> None:
     persistent_logger = PersistentRunLogger(output)
@@ -184,8 +219,146 @@ def terminalize_component_setup_failure(
         warning_sink=warning_recorder.sink,
     ) as hub:
         warning_recorder.flush_queued()
-        commit_terminalization_with_retry(terminalization, hub, "failed", str(exc))
+        commit_terminalization_with_retry(terminalization, hub, status, str(reason))
     terminalization.acknowledge_observer_shutdown()
+
+
+async def _compile_run_preflight(
+    context: WorkflowRunContext,
+    no_live: bool,
+    which_fn: Callable[[str], str | None] | None,
+) -> tuple[RuntimeConfigSnapshotBuildResult, PreflightCompilationPreview]:
+    try:
+        snapshot_result = await run_blocking_work(
+            partial(
+                build_runtime_config_snapshot,
+                config=context.config,
+                console=context.console,
+                no_live=no_live,
+                project_root=context.project_root,
+            )
+        )
+    except Exception as exc:
+        _raise_runtime_config_preflight_failure(context, exc)
+    if uses_mock_invoker(context.config):
+        context.console.print(
+            "Mock invoker active: no provider CLI commands will be started."
+        )
+    try:
+        invoker_diagnostics = await collect_invoker_availability_diagnostics(
+            inventory_workflow(context.source),
+            context.config,
+            context.project_root,
+            snapshot_result.invoker_options,
+            which_fn,
+        )
+        preview = await run_blocking_work(
+            partial(
+                compile_preview,
+                context=context,
+                snapshot_result=snapshot_result,
+                fingerprint_key_policy="persist_if_needed",
+                invoker_diagnostics=invoker_diagnostics,
+                workspace_real_execution=True,
+            )
+        )
+    except AdapterContractError as exc:
+        _raise_runtime_config_preflight_failure(context, exc)
+    return snapshot_result, preview
+
+
+async def _prepare_run_resume(
+    context: WorkflowRunContext,
+    preview: PreflightCompilationPreview,
+    force: bool,
+) -> ResumePlan | None:
+    def reconcile_history() -> ResumePlan | None:
+        resume_plan = build_resume_plan(
+            context.config,
+            context.source,
+            preview,
+            context.project_root,
+            context.state_dir,
+            force,
+        )
+        if handle_duplicate_skip(context, preview, resume_plan):
+            return None
+        resume_source = resume_plan.decision.resume_source
+        if resume_source is not None:
+            fulfill_historical_branch_exports(
+                context,
+                preview,
+                resume_source,
+                resume_plan.resumed_node_ids,
+            )
+        return resume_plan
+
+    return await run_blocking_work(reconcile_history)
+
+
+async def _hydrate_and_build_run_components(
+    context: WorkflowRunContext,
+    snapshot_result: RuntimeConfigSnapshotBuildResult,
+    workflow_topology: WorkflowTopology,
+    output: ArtifactStorePort,
+    plan: PreflightExecutionPlan,
+    resume_plan: ResumePlan,
+    warning_recorder: WorkflowWarningRecorder,
+    terminalization: TerminalizationCoordinator,
+    no_live: bool,
+    which_fn: Callable[[str], str | None] | None,
+    observability_hub_cls: ObservabilityHubFactory | None,
+) -> tuple[PreflightExecutionPlan, RuntimeComponents]:
+    frontier = resume_plan.frontier
+    try:
+        if frontier is not None:
+
+            def hydrate_run_plan() -> None:
+                nonlocal plan, workflow_topology
+                plan = hydrate_expansions(frontier, plan, output)
+                workflow_topology = workflow_topology_from_plan(plan)
+                hydrate_resume_frontier(frontier, plan, output)
+                hydrate_review_checkpoints(frontier, plan, output)
+
+            await run_blocking_work(hydrate_run_plan)
+            resume_source = resume_plan.decision.resume_source
+            if resume_source is not None:
+                print_resume_context_message(
+                    context,
+                    len(resume_plan.resumed_node_ids),
+                    resume_source.manifest.run_id,
+                )
+        components = build_components_for_run(
+            context=context,
+            snapshot_result=snapshot_result,
+            workflow_topology=workflow_topology,
+            artifact_store=output,
+            no_live=no_live,
+            warning_recorder=warning_recorder,
+            which_fn=which_fn,
+        )
+    except asyncio.CancelledError:
+        _terminalize_component_setup(
+            output,
+            plan,
+            warning_recorder,
+            terminalization,
+            "cancelled",
+            EXTERNAL_CANCEL_REASON,
+            observability_hub_cls,
+        )
+        raise
+    except Exception as exc:
+        terminalize_component_setup_failure(
+            output,
+            plan,
+            warning_recorder,
+            terminalization,
+            exc,
+            observability_hub_cls,
+        )
+        raise
+    return plan, components
 
 
 async def execute_workflow_run(
@@ -201,81 +374,49 @@ async def execute_workflow_run(
     state_dir: Path | None = None,
 ) -> None:
     """Compile preflight, execute the plan, and finalize the run manifest."""
-
     context = build_workflow_run_context(
         config, source, console, project_root, state_dir
     )
-    workflow = source.workflow
-    warning_recorder = WorkflowWarningRecorder(workflow=workflow, console=console)
-    try:
-        snapshot_result = build_runtime_config_snapshot(
-            config=config,
-            console=console,
-            no_live=no_live,
-        )
-    except Exception as exc:
-        _raise_runtime_config_preflight_failure(context, exc)
-    if uses_mock_invoker(config):
-        context.console.print(
-            "Mock invoker active: no provider CLI commands will be started."
-        )
-    try:
-        invoker_diagnostics = await collect_invoker_availability_diagnostics(
-            inventory_workflow(source),
-            config,
-            context.project_root,
-            snapshot_result.invoker_options,
-            which_fn,
-        )
-        preview = compile_preview(
-            context=context,
-            snapshot_result=snapshot_result,
-            fingerprint_key_policy="persist_if_needed",
-            invoker_diagnostics=invoker_diagnostics,
-            workspace_real_execution=True,
-        )
-    except AdapterContractError as exc:
-        _raise_runtime_config_preflight_failure(context, exc)
+    warning_recorder = WorkflowWarningRecorder(
+        workflow=source.workflow, console=console
+    )
+    snapshot_result, preview = await _compile_run_preflight(context, no_live, which_fn)
     print_preflight_diagnostics(preview.diagnostics, context.console)
     if preview.has_errors() or preview.workflow_signature is None:
-        raise_run_preflight_errors(context, snapshot_result, preview, workflow.name)
+        raise_run_preflight_errors(
+            context, snapshot_result, preview, source.workflow.name
+        )
 
     raise_for_workspace_runtime_error(context, snapshot_result, config, preview)
 
     require_filesystem_artifacts_backend(config)
     workflow_identity = workflow_identity_for_source(source, context.project_root)
-    same_context_lock = acquire_same_context_lock(
-        context.state_dir,
-        context.workflow.name,
-        workflow_identity,
-        preview.workflow_signature,
+    same_context_lock, cancellation = await settle_run_work(
+        partial(
+            acquire_same_context_lock,
+            context.state_dir,
+            context.workflow.name,
+            workflow_identity,
+            preview.workflow_signature,
+        )
     )
     terminalization: TerminalizationCoordinator | None = None
     running_manifest_written = False
     try:
-        resume_plan = build_resume_plan(
-            config,
-            source,
-            preview,
-            context.project_root,
-            context.state_dir,
-            force,
-        )
-        if handle_duplicate_skip(context, preview, resume_plan):
+        if cancellation is not None:
+            raise cancellation
+        resume_plan = await _prepare_run_resume(context, preview, force)
+        if resume_plan is None:
             return
-        resume_source = resume_plan.decision.resume_source
-        if resume_source is not None:
-            fulfill_historical_branch_exports(
-                context,
-                preview,
-                resume_source,
-                resume_plan.resumed_node_ids,
-            )
 
         workflow_topology = workflow_topology_from_preview(preview)
         output = allocate_run_output(context, snapshot_result, warning_recorder)
         same_context_lock.update_run(output.run_id, output.run_key_name)
-        plan = materialize_preflight_success(output, preview, context.project_root)
+        plan = await run_blocking_work(
+            partial(
+                materialize_preflight_success, output, preview, context.project_root
+            )
+        )
         write_initial_run_manifest(
             output,
             plan,
@@ -288,37 +429,19 @@ async def execute_workflow_run(
             workflow_name=plan.workflow_name,
             terminal_recovery_recorder=same_context_lock,
         )
-        try:
-            if resume_plan.frontier is not None:
-                plan = hydrate_expansions(resume_plan.frontier, plan, output)
-                workflow_topology = workflow_topology_from_plan(plan)
-                hydrate_resume_frontier(resume_plan.frontier, plan, output)
-                hydrate_review_checkpoints(resume_plan.frontier, plan, output)
-                if resume_source is not None:
-                    print_resume_context_message(
-                        context,
-                        len(resume_plan.resumed_node_ids),
-                        resume_source.manifest.run_id,
-                    )
-            components = build_components_for_run(
-                context=context,
-                snapshot_result=snapshot_result,
-                workflow_topology=workflow_topology,
-                artifact_store=output,
-                no_live=no_live,
-                warning_recorder=warning_recorder,
-                which_fn=which_fn,
-            )
-        except Exception as exc:
-            terminalize_component_setup_failure(
-                output,
-                plan,
-                warning_recorder,
-                terminalization,
-                exc,
-                observability_hub_cls,
-            )
-            raise
+        plan, components = await _hydrate_and_build_run_components(
+            context,
+            snapshot_result,
+            workflow_topology,
+            output,
+            plan,
+            resume_plan,
+            warning_recorder,
+            terminalization,
+            no_live,
+            which_fn,
+            observability_hub_cls,
+        )
 
         await run_and_finalize_workflow(
             context,

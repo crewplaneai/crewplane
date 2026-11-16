@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
 from crewplane.architecture.contracts import (
     EventType,
@@ -68,7 +69,14 @@ def test_cli_repetition_bypasses_failed_history(
     assert isinstance(failed.exception, RuntimeError)
     (failed_manifest,) = project.manifests()
     project.set_count(count)
-    result = project.run("--no-live", *(["--force"] if force else []))
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
+    monkeypatch.chdir(child)
+    result = CliRunner().invoke(
+        cli.app, ["run", "--no-live", *(["--force"] if force else [])]
+    )
+    assert Path.cwd() == child
+    assert not (child / ".crewplane").exists()
     assert result.exit_code == 0, result.output
     records = project.manifests()
     assert len(records) == 1 + (count or 1)

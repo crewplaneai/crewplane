@@ -58,6 +58,7 @@ def _preview(
 ) -> PreflightCompilationPreview:
     config = _config()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -440,6 +441,7 @@ def test_preflight_preview_warns_on_argv_prompt_transport(
     config.agents["alpha"].prompt_transport = "argv"
     config.agents["alpha"].prompt_transport_arg = "--prompt"
     config_snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path,
         config=config,
         console=Console(file=None),
         no_live=True,

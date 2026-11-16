@@ -72,7 +72,9 @@ def measure(root: Path) -> None:
     tracemalloc.start()
     started = perf_counter()
     source = load_workflow_source_for_preflight(path, root)
-    snapshot = build_runtime_config_snapshot(config, Console(), no_live=True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), no_live=True, project_root=root
+    ).snapshot
     preview = compile_preflight_preview(
         source, config, snapshot, PreflightCompileOptions(root, root / ".crewplane")
     )

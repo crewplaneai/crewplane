@@ -31,7 +31,9 @@ def test_documented_folder_and_chunk_workflows_compile_with_mock(
             max_concurrent_nodes=4, integrations={"invoker": {"implementation": "mock"}}
         ),
     )
-    snapshot = build_runtime_config_snapshot(config, Console(), no_live=True).snapshot
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), no_live=True, project_root=tmp_path
+    ).snapshot
     for name in ("folder-audit.task.md", "chunk-analysis.task.md"):
         source = load_workflow_source_for_preflight(directory / name, tmp_path)
         preview = compile_preflight_preview(

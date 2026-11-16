@@ -149,7 +149,7 @@ def test_full_preflight_resolves_relative_path_entries_against_project(
         check_cli_availability=True,
     )
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=project
     ).invoker_options
     diagnostics = asyncio.run(
         collect_invoker_availability_diagnostics(

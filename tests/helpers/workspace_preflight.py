@@ -118,6 +118,7 @@ def compile_workflow_with_source_snapshot(
 ):
     config = workspace_config()
     runtime_snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,

@@ -61,6 +61,7 @@ def _config() -> Config:
 def _compile_preview(root: Path, workflow: WorkflowPlan):
     config = _config()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,

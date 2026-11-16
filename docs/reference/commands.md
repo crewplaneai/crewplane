@@ -94,7 +94,8 @@ package-manager commands and manual update instructions.
 
 ## `crewplane init`
 
-Initialize project-local config and example workflows.
+Initialize config and example workflows in the current directory, even when
+an ancestor contains a Crewplane project.
 
 ```bash
 crewplane init
@@ -118,7 +119,8 @@ supported, recommends WSL, and then continues.
 
 ## `crewplane onboarding`
 
-Prepare real providers after the provider-free first run.
+Prepare real providers after the provider-free first run. Onboarding inspects
+only the current directory's starter files, not ancestor projects.
 
 ```bash
 crewplane onboarding
@@ -160,8 +162,11 @@ Arguments and options:
 
 | Name | Description |
 | --- | --- |
-| `TASKS_FILE` | Workflow file to validate. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
-| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
+| `TASKS_FILE` | Workflow file; relative paths start at the selected project root. Defaults to its single top-level `.crewplane/workflows/*.task.md`. |
+| `--config`, `-c` | Explicit config file, relative to the invocation directory. If omitted, selects the nearest ancestor `.crewplane/config.yml`, including the current directory. |
+
+See [project and workflow selection](../guides/running-workflows.md#project-and-workflow-selection)
+for config discovery, path bases, and the displayed context.
 
 `validate` writes no run artifacts. The `cli` invoker checks executables and
 awaits availability callbacks for configured capabilities. Ollama checks model
@@ -176,6 +181,9 @@ disabled and no worktrees are declared.
 
 Execute a workflow DAG.
 
+Run uses the same [project and workflow selection](../guides/running-workflows.md#project-and-workflow-selection)
+and context display as `validate`, including in dry-run mode.
+
 ```bash
 crewplane run
 crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
@@ -186,8 +194,8 @@ Options:
 
 | Name | Description |
 | --- | --- |
-| `--tasks`, `-t` | Workflow file. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
-| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
+| `--tasks`, `-t` | Workflow file; relative paths start at the selected project root. Defaults to its single top-level `.crewplane/workflows/*.task.md`. |
+| `--config`, `-c` | Explicit config file, relative to the invocation directory. If omitted, selects the nearest ancestor `.crewplane/config.yml`, including the current directory. |
 | `--dry-run`, `-n` | Preview the first run and, if repetition is set, show the total planned runs. Does not run providers or write run artifacts. |
 | `--force` | Run from the beginning, even if results from an earlier run could be reused. |
 | `--no-live` | Disable live topology dashboard output. |
@@ -364,7 +372,7 @@ Options:
 
 | Name | Description |
 | --- | --- |
-| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
+| `--config`, `-c` | Explicit config file, relative to the invocation directory. If omitted, selects the nearest ancestor `.crewplane/config.yml`, including the current directory. |
 | `--dry-run` | Show workspaces that would be removed. |
 | `--run` | Only clean workspaces for this run key. |
 | `--older-than` | Only clean entries older than a duration such as `30m`, `12h`, or `7d`. |
@@ -375,7 +383,9 @@ Options:
 | `--orphans` | Only clean cache paths without workspace state. |
 | `--all-projects` | Clean every repository bucket under the workspace cache. |
 
-By default, cleanup is scoped to the current Git repository. Non-Git projects
+Cleanup displays the selected project before its results. Config selection follows
+[project discovery](../guides/running-workflows.md#project-and-workflow-selection);
+by default, cleanup is scoped to that project's Git repository. Non-Git projects
 must use `--all-projects`. `--all-projects` cannot be combined with
 `--orphans`, `--successful`, `--failed`, or `--cancelled` because those filters
 depend on current-project artifacts. Cross-project ownership and activity are

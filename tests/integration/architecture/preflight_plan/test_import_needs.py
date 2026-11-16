@@ -22,7 +22,9 @@ def _compile(root: Path, workflow: Path) -> PreflightCompilationPreview:
     config = mock_config().model_copy(
         update={"agents": {"alpha": AgentConfig(cli_cmd=["mock"])}}
     )
-    snapshot = build_runtime_config_snapshot(config, Console(), no_live=True)
+    snapshot = build_runtime_config_snapshot(
+        config, Console(), no_live=True, project_root=root
+    )
     return compile_preflight_preview(
         source=load_workflow_source_for_preflight(workflow, project_root=root),
         config=config,

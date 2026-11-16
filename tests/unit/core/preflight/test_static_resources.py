@@ -91,6 +91,7 @@ def _compile_file_prompt(root: Path, prompt: str):
 def _compile_source(root: Path, source: PreflightWorkflowSource):
     config = _config()
     snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=config,
         console=Console(file=None),
         no_live=True,
@@ -191,6 +192,7 @@ def test_file_token_allows_allowlisted_external_path(
     )
     config = _config()
     snapshot = build_runtime_config_snapshot(
+        project_root=tmp_path / "project",
         config=config,
         console=Console(file=None),
         no_live=True,

@@ -78,6 +78,7 @@ def compile_source_with_source_snapshot(
 ):
     resolved_config = config or workspace_signature_config({"enabled": True})
     runtime_snapshot = build_runtime_config_snapshot(
+        project_root=root,
         config=resolved_config,
         console=Console(file=None),
         no_live=True,

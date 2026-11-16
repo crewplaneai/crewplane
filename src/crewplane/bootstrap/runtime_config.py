@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.adapters.invokers.mock_invoker.options import bind_project_options
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     JsonObject,
 )
 from crewplane.architecture.loader import (
     instantiate_adapter,
+    is_builtin_implementation,
     resolve_implementation_path,
 )
 from crewplane.core.config import Config
@@ -34,6 +37,7 @@ def build_runtime_config_snapshot(
     config: Config,
     console: Console,
     no_live: bool,
+    project_root: Path,
 ) -> RuntimeConfigSnapshotBuildResult:
     """Resolve adapters and canonicalize options without run side effects."""
 
@@ -55,11 +59,14 @@ def build_runtime_config_snapshot(
     artifacts_adapter = instantiate_adapter("artifacts", artifacts_spec.implementation)
     ui_adapter = instantiate_adapter("ui", ui_spec.implementation)
 
+    invoker_options = dict(invoker_spec.options)
+    if is_builtin_implementation("invoker", invoker_spec.implementation, "mock"):
+        invoker_options = bind_project_options(invoker_options, project_root)
     invoker_config = _canonicalize_integration_options(
         "invoker",
         invoker_spec.implementation,
         invoker_identity,
-        dict(invoker_spec.options),
+        invoker_options,
         invoker_adapter.canonicalize_options,
     )
     artifact_config = _canonicalize_integration_options(

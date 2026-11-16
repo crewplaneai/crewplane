@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from typer.testing import CliRunner
 
 import crewplane.cli.app as cli
 from tests.helpers import mock_resume
@@ -14,6 +15,7 @@ from tests.helpers.foreach import (
     workflow_document,
     write_workflow_document,
 )
+from tests.helpers.platforms import requires_resume_support
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     cli_process_state,
@@ -127,14 +129,28 @@ def test_run_force_executes_duplicate_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    config_path = tmp_path / "config.yml"
-    workflow_path = tmp_path / "workflow.task.md"
+    config_path = tmp_path / ".crewplane/config.yml"
+    workflow_path = tmp_path / ".crewplane/workflows/workflow.task.md"
+    workflow_path.parent.mkdir(parents=True)
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
     write_mock_config(config_path)
     write_basic_workflow(workflow_path)
     signatures = []
-    for force, expected_count in [(False, 1), (False, 1), (True, 2)]:
-        cli.run(
-            tasks_file=workflow_path, config_file=config_path, no_live=True, force=force
+    for invocation_root, force, expected_count in [
+        (tmp_path, False, 1),
+        (child, False, 1),
+        (child, True, 2),
+    ]:
+        monkeypatch.chdir(invocation_root)
+        result = CliRunner().invoke(
+            cli.app, ["run", "--no-live", *(["--force"] if force else [])]
+        )
+        assert result.exit_code == 0, result.output
+        assert Path.cwd() == invocation_root
+        assert not (child / ".crewplane").exists()
+        assert all(
+            record["cwd"] == str(tmp_path) for record in mock_invocations(tmp_path)
         )
         assert len(mock_invocations(tmp_path)) == expected_count
         assert len(run_directories(tmp_path)) == expected_count
@@ -215,3 +231,35 @@ def test_dynamic_collection_cap_controls_dedupe_and_force(
         assert (expansion / "expansion.json").is_file()
         assert json.loads((expansion / "items/0.json").read_bytes()) == {"chunk": "a"}
     assert signatures[4] != signatures[2]
+
+
+@requires_resume_support
+def test_descendant_run_contends_for_root_context_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from crewplane.artifacts.locks import acquire_same_context_lock
+    from tests.integration.cli.repeat_force_run_support import create_project
+
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, None, node_count=1)
+    result = CliRunner().invoke(cli.app, ["run", "--no-live"])
+    assert result.exit_code == 0, result.output
+    (manifest,) = project.manifests()
+    child = tmp_path / "backend/api"
+    child.mkdir(parents=True)
+    lock = acquire_same_context_lock(
+        tmp_path / ".crewplane",
+        manifest["workflow_name"],
+        manifest["workflow_identity"],
+        manifest["workflow_signature"],
+    )
+    try:
+        monkeypatch.chdir(child)
+        result = CliRunner().invoke(cli.app, ["run", "--no-live", "--force"])
+        assert result.exit_code != 0
+        assert "already holds the lock" in " ".join(result.output.split())
+        assert len(project.manifests()) == 1
+        assert not (child / ".crewplane").exists()
+        assert Path.cwd() == child
+    finally:
+        lock.release()

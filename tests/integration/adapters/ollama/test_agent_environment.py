@@ -47,7 +47,7 @@ def test_configured_path_and_host_apply_to_preflight_and_execution(
     )
     config = provider_config(agent, ollama.options)
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=tmp_path
     ).invoker_options
     adapter = CliInvokerAdapter()
     errors = asyncio.run(
@@ -87,7 +87,7 @@ def test_overlapping_agents_keep_distinct_environments(ollama, tmp_path, monkeyp
     ]
     config = provider_config(agents[0], ollama.options)
     canonical = build_runtime_config_snapshot(
-        config, quiet_console(), True
+        config, quiet_console(), True, project_root=tmp_path
     ).invoker_options
     invoker = CliInvokerAdapter().create_invoker(config, canonical)
 

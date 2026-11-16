@@ -158,6 +158,7 @@ def compile_test_plan(
     output: OutputManager,
 ) -> tuple[PreflightExecutionPlan, CompiledRuntimeContext]:
     snapshot = build_runtime_config_snapshot(
+        project_root=output.base_dir,
         config=config,
         console=Console(file=None),
         no_live=True,
