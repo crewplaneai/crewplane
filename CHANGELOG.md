@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-15
+
 ### Added
 
 - Inspect project-local saved executions with `crewplane runs list`, `show`, `open`, and `logs`, including reused-node evidence and pinned log following.
